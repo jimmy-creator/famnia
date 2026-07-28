@@ -9,7 +9,7 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>1. Who We Are</h2>
         <p>
-          This Privacy Policy is issued by <strong>Elegant Bayt</strong>, operating the brand <strong>Elegant Bayt</strong>, with its registered office at 5C6J+JMG, Ar-Rayyan, Qatar ("Elegant Bayt", "we", "us"). It explains how we collect and handle personal information when you visit our website or place an order with us.
+          This Privacy Policy is issued by <strong>Femnia Fashion</strong>, operating the brand <strong>Femnia Fashion</strong>, with its registered office at 5C6J+JMG, Ar-Rayyan, Qatar ("Femnia Fashion", "we", "us"). It explains how we collect and handle personal information when you visit our website or place an order with us.
         </p>
       </section>
 
@@ -50,7 +50,7 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>5. Data Retention</h2>
         <p>
-          We retain your personal data only for as long as needed to provide our services, comply with tax and accounting obligations under Qatar law, and resolve disputes. You may request deletion of your account and associated data at any time by emailing us at <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a>.
+          We retain your personal data only for as long as needed to provide our services, comply with tax and accounting obligations under Qatar law, and resolve disputes. You may request deletion of your account and associated data at any time by emailing us at <a href="mailto:info@femnia.com">info@femnia.com</a>.
         </p>
       </section>
 
@@ -62,7 +62,7 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>7. Your Rights</h2>
         <p>
-          Subject to Qatar law (including the applicable data protection law), you have the right to access, correct, or delete the personal data we hold about you, and to withdraw consent at any time. To exercise these rights, write to <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a>.
+          Subject to Qatar law (including the applicable data protection law), you have the right to access, correct, or delete the personal data we hold about you, and to withdraw consent at any time. To exercise these rights, write to <a href="mailto:info@femnia.com">info@femnia.com</a>.
         </p>
       </section>
 
@@ -80,11 +80,11 @@ function EnglishBody() {
         <h2>10. Contact / Grievance Officer</h2>
         <p>For any privacy-related questions or to raise a grievance:</p>
         <p>
-          <strong>Elegant Bayt</strong><br />
+          <strong>Femnia Fashion</strong><br />
           5C6J+JMG<br />
           Ar-Rayyan, Qatar<br />
-          Email: <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a><br />
-          Phone / WhatsApp: <a href="tel:+97470338065">+974 7033 8065</a>
+          Email: <a href="mailto:info@femnia.com">info@femnia.com</a><br />
+          Phone / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a>
         </p>
         <p>We will acknowledge complaints within 24 hours and aim to resolve them within 15 days, in line with applicable Qatar regulations.</p>
       </section>
@@ -100,7 +100,7 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>1. من نحن</h2>
         <p>
-          صادرة هذه السياسة عن <strong>Elegant Bayt</strong>، المالكة لعلامة <strong>Elegant Bayt</strong>، ومقرّها المسجَّل في 5C6J+JMG، الريان، قطر ("Elegant Bayt"، "نحن"، "لدينا"). توضّح هذه السياسة كيف نقوم بجمع ومعالجة المعلومات الشخصية عند زيارتك لموقعنا الإلكتروني أو إجراء طلب لدينا.
+          صادرة هذه السياسة عن <strong>Femnia Fashion</strong>، المالكة لعلامة <strong>Femnia Fashion</strong>، ومقرّها المسجَّل في 5C6J+JMG، الريان، قطر ("Femnia Fashion"، "نحن"، "لدينا"). توضّح هذه السياسة كيف نقوم بجمع ومعالجة المعلومات الشخصية عند زيارتك لموقعنا الإلكتروني أو إجراء طلب لدينا.
         </p>
       </section>
 
@@ -141,7 +141,7 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>5. الاحتفاظ بالبيانات</h2>
         <p>
-          نحتفظ ببياناتك الشخصية فقط طوال الفترة اللازمة لتقديم خدماتنا، والامتثال للالتزامات الضريبية والمحاسبية بموجب القانون القطري، ولحل النزاعات. يمكنك طلب حذف حسابك والبيانات المرتبطة به في أي وقت بمراسلتنا على <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a>.
+          نحتفظ ببياناتك الشخصية فقط طوال الفترة اللازمة لتقديم خدماتنا، والامتثال للالتزامات الضريبية والمحاسبية بموجب القانون القطري، ولحل النزاعات. يمكنك طلب حذف حسابك والبيانات المرتبطة به في أي وقت بمراسلتنا على <a href="mailto:info@femnia.com">info@femnia.com</a>.
         </p>
       </section>
 
@@ -153,7 +153,7 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>7. حقوقك</h2>
         <p>
-          مع مراعاة القانون القطري (بما في ذلك قانون حماية البيانات المعمول به متى انطبق)، يحقّ لك الوصول إلى بياناتك الشخصية لدينا أو تصحيحها أو حذفها، وسحب موافقتك في أي وقت. لممارسة هذه الحقوق، يرجى المراسلة على <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a>.
+          مع مراعاة القانون القطري (بما في ذلك قانون حماية البيانات المعمول به متى انطبق)، يحقّ لك الوصول إلى بياناتك الشخصية لدينا أو تصحيحها أو حذفها، وسحب موافقتك في أي وقت. لممارسة هذه الحقوق، يرجى المراسلة على <a href="mailto:info@femnia.com">info@femnia.com</a>.
         </p>
       </section>
 
@@ -171,11 +171,11 @@ function ArabicBody() {
         <h2>10. التواصل / مسؤول الشكاوى</h2>
         <p>لأي أسئلة تتعلق بالخصوصية أو لتقديم شكوى:</p>
         <p>
-          <strong>Elegant Bayt</strong><br />
+          <strong>Femnia Fashion</strong><br />
           محل رقم 03، مبنى رقم 3360، المنطقة الصناعية 17<br />
           الريان، قطر<br />
-          البريد الإلكتروني: <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a><br />
-          الهاتف / واتساب: <a href="tel:+97470338065">+974 7033 8065</a>
+          البريد الإلكتروني: <a href="mailto:info@femnia.com">info@femnia.com</a><br />
+          الهاتف / واتساب: <a href="tel:+97466543343">+974 6654 3343</a>
         </p>
         <p>سنُقرّ باستلام الشكاوى خلال 24 ساعة ونسعى إلى حلّها خلال 15 يومًا، وفقًا للأنظمة القطرية المعمول بها.</p>
       </section>
@@ -190,8 +190,8 @@ export default function PrivacyPolicy() {
     <StaticPage
       title="Privacy Policy"
       titleAr="سياسة الخصوصية"
-      description="Privacy Policy for Elegant Bayt. How we collect, use, and protect your personal information."
-      descriptionAr="سياسة الخصوصية لـ Elegant Bayt. كيف نقوم بجمع معلوماتك الشخصية واستخدامها وحمايتها."
+      description="Privacy Policy for Femnia Fashion. How we collect, use, and protect your personal information."
+      descriptionAr="سياسة الخصوصية لـ Femnia Fashion. كيف نقوم بجمع معلوماتك الشخصية واستخدامها وحمايتها."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

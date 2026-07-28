@@ -3,10 +3,11 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/axios';
 import { localizedName } from '../../utils/i18nHelpers';
+import FemniaLogo from './Logo';
 import { Separator } from '@/components/ui/separator';
 
 const B2B_ENABLED = import.meta.env.VITE_FEATURE_B2B === 'true';
-const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Elegant Bayt';
+const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia';
 
 function FooterCol({ title, children }) {
   return (
@@ -40,19 +41,12 @@ export default function Footer() {
       <div className="mx-auto max-w-7xl px-4 py-14 lg:px-8">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-3 lg:grid-cols-5">
           <div className="col-span-2 md:col-span-3 lg:col-span-1">
-            <Link to="/" className="flex items-center gap-2.5">
-              <span className="inline-flex items-center justify-center rounded-lg bg-white p-1.5">
-                <img src="/images/elegant-bayt-monogram.png" alt={STORE_NAME} className="h-7 w-auto" />
-              </span>
-              <span className="flex flex-col leading-none">
-                <span className="font-serif text-base font-extrabold tracking-[0.14em]">
-                  ELEGANT <span style={{ color: 'var(--gold)' }}>BAYT</span>
-                </span>
-                <span className="mt-1 text-[8px] font-medium uppercase tracking-[0.28em] text-white/60">
-                  {t('brand.tagline')}
-                </span>
-              </span>
+            <Link to="/" aria-label={STORE_NAME} className="inline-flex items-center">
+              <FemniaLogo className="h-16 w-auto text-white" title={STORE_NAME} />
             </Link>
+            <p className="mt-2 text-[9px] font-medium uppercase tracking-[0.28em] text-white/60">
+              {t('brand.tagline')}
+            </p>
             <p className="mt-4 max-w-xs text-sm text-white/70">{t('home.seoDescription')}</p>
             <div className="mt-5 flex gap-2.5">
               {SOCIALS.map((s) => (

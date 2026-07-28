@@ -1,16 +1,10 @@
 import PDFDocument from 'pdfkit';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Brand monogram (the "eb" mark used in the navbar/footer). Falls back to
-// text-only header if the file is missing on the deploy target.
-const LOGO_PATH = path.resolve(__dirname, '../../../client/public/images/elegant-bayt-monogram.png');
-
-const storeName = process.env.STORE_NAME || 'ShopHub';
-const storeTagline = process.env.STORE_TAGLINE || 'Elegance at Home';
-const storeEmail = process.env.SMTP_EMAIL || '';
+const storeName = process.env.STORE_NAME || 'Femnia Fashion';
+const storeTagline = process.env.STORE_TAGLINE || 'Timeless Elegance';
+// Public contact address for the invoice — falls back to the SMTP sender when
+// a dedicated STORE_EMAIL isn't configured.
+const storeEmail = process.env.STORE_EMAIL || process.env.SMTP_EMAIL || '';
 const storeTRN = process.env.STORE_TRN || process.env.STORE_GSTIN || '';
 const storeAddress = process.env.STORE_ADDRESS || '';
 const storePhone = process.env.STORE_PHONE || '';
@@ -25,6 +19,35 @@ const currencyDecimals = (() => {
 
 function formatPrice(amount) {
   return `${currencySymbol}${(parseFloat(amount) || 0).toFixed(currencyDecimals)}`;
+}
+
+/**
+ * SVG arc path for the open gold ring in the Femnia mark. PDFKit parses SVG
+ * path data, so the monogram is drawn natively — no raster asset to ship or
+ * keep in sync with the storefront's inline SVG logo.
+ */
+function ringPath(cx, cy, r, startDeg, endDeg) {
+  const rad = (d) => (d * Math.PI) / 180;
+  const x1 = cx + r * Math.cos(rad(startDeg));
+  const y1 = cy + r * Math.sin(rad(startDeg));
+  const x2 = cx + r * Math.cos(rad(endDeg));
+  const y2 = cy + r * Math.sin(rad(endDeg));
+  const sweptDeg = (endDeg - startDeg + 360) % 360;
+  return `M ${x1} ${y1} A ${r} ${r} 0 ${sweptDeg > 180 ? 1 : 0} 1 ${x2} ${y2}`;
+}
+
+/** Femnia lockup: open gold ring + FN monogram, drawn at (x, y) top-left. */
+function drawMonogram(doc, x, y, size, gold, ink) {
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  doc.save();
+  doc.path(ringPath(cx, cy, size / 2 - 1, 150, 80))
+    .lineWidth(1.2)
+    .strokeColor(gold)
+    .stroke();
+  doc.font('Times-Bold').fontSize(size * 0.52).fillColor(ink)
+    .text('FN', x, cy - size * 0.2, { width: size, align: 'center', characterSpacing: -1 });
+  doc.restore();
 }
 
 export function generateInvoice(order) {
@@ -43,43 +66,41 @@ export function generateInvoice(order) {
       const taxAmount = parseFloat(order.taxAmount) || 0;
       const totalAmount = parseFloat(order.totalAmount);
 
-      // Colors — Elegant Bayt brand (matches the storefront elegantBayt theme)
-      const dark = '#16264d';       // navy (--copper)
-      const copper = '#c6a24c';     // gold (--gold)
-      const grey = '#5b6478';       // --text-secondary
-      const lightGrey = '#e5e7eb';  // --border
-      const bg = '#f5f6f9';         // --bg-warm
+      // Colors — Femnia theme (mirrors the storefront `femnia` theme tokens)
+      const dark = '#17130f';       // ink (--copper / primary)
+      const copper = '#c08b5c';     // gold (--gold)
+      const grey = '#6b6058';       // --text-secondary
+      const lightGrey = '#e6dccd';  // --border
+      const bg = '#faf6f0';         // --bg (cream page tint for zebra rows)
+      const cream = '#efe4d5';      // --bg-warm
       const success = '#10b981';    // --success
 
-      // ===== HEADER (navy band, monogram + two-tone wordmark + tagline) =====
+      // ===== HEADER (ink band, ring monogram + two-tone wordmark + tagline) =====
       doc.rect(0, 0, 595.28, 100).fill(dark);
 
-      let brandX = 50;
-      if (fs.existsSync(LOGO_PATH)) {
-        // Monogram sits in a white rounded tile, like the navbar.
-        doc.roundedRect(50, 26, 48, 48, 8).fill('#ffffff');
-        doc.image(LOGO_PATH, 55, 31, { fit: [38, 38], align: 'center', valign: 'center' });
-        brandX = 112;
-      }
+      // Monogram in a cream tile so the ink FN stays legible on the dark band.
+      doc.roundedRect(50, 26, 48, 48, 4).fill(cream);
+      drawMonogram(doc, 50, 26, 48, copper, dark);
+      const brandX = 112;
 
-      // Two-tone wordmark: first word white, rest gold (ELEGANT BAYT).
+      // Two-tone wordmark: first word cream, rest gold (FEMNIA FASHION).
       const words = storeName.toUpperCase().split(' ');
       const firstWord = words.shift();
       const restWords = words.join(' ');
-      doc.fontSize(20).font('Helvetica-Bold').fill('#ffffff')
-        .text(firstWord + (restWords ? ' ' : ''), brandX, 36, { characterSpacing: 2, continued: !!restWords });
-      if (restWords) doc.fill(copper).text(restWords, { characterSpacing: 2 });
+      doc.fontSize(18).font('Times-Bold').fill('#ffffff')
+        .text(firstWord + (restWords ? ' ' : ''), brandX, 36, { characterSpacing: 3, continued: !!restWords });
+      if (restWords) doc.fill(copper).text(restWords, { characterSpacing: 3 });
 
-      doc.fontSize(7).fill('#8fa0c9').font('Helvetica-Bold')
+      doc.fontSize(7).fill('#9a8c7d').font('Helvetica-Bold')
         .text(storeTagline.toUpperCase(), brandX, 60, { characterSpacing: 3 });
 
-      doc.fontSize(24).fill(copper).font('Helvetica-Bold')
-        .text('INVOICE', 400, 30, { width: 150, align: 'right' });
+      doc.fontSize(22).fill(copper).font('Times-Bold')
+        .text('INVOICE', 400, 30, { width: 150, align: 'right', characterSpacing: 2 });
 
-      doc.fontSize(9).fill('#aab4cd')
+      doc.fontSize(9).fill('#a89c91').font('Helvetica')
         .text(`#${order.orderNumber}`, 400, 58, { width: 150, align: 'right' });
 
-      doc.fontSize(9).fill('#aab4cd')
+      doc.fontSize(9).fill('#a89c91')
         .text(new Date(order.createdAt).toLocaleDateString('en-QA', {
           day: 'numeric', month: 'long', year: 'numeric',
         }), 400, 72, { width: 150, align: 'right' });
@@ -195,34 +216,37 @@ export function generateInvoice(order) {
       // ===== TOTALS =====
       const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-      const labelX = 350;
+      // Label column starts at 330 (not 350) so a coupon code like
+      // "Discount (WELCOME10)" fits without being ellipsised.
+      const labelX = 330;
+      const labelW = 120;
       const valueX = 460;
       const rowHeight = 18;
 
       doc.fontSize(9).fill(grey).font('Helvetica');
-      doc.text('Subtotal', labelX, y, { width: 100 });
+      doc.text('Subtotal', labelX, y, { width: labelW });
       doc.fill(dark).text(formatPrice(subtotal), valueX, y, { width: 80, align: 'right' });
       y += rowHeight;
 
       if (discount > 0) {
-        doc.fill(grey).text(`Discount${order.couponCode ? ` (${order.couponCode})` : ''}`, labelX, y, { width: 100, height: 12, ellipsis: true });
+        doc.fill(grey).text(`Discount${order.couponCode ? ` (${order.couponCode})` : ''}`, labelX, y, { width: labelW, height: 12, ellipsis: true });
         doc.fill(success).text(`-${formatPrice(discount)}`, valueX, y, { width: 80, align: 'right' });
         y += rowHeight;
       }
 
       const shippingCharge = parseFloat(order.shippingCharge) || 0;
       if (shippingCharge > 0) {
-        doc.fill(grey).text(`Shipping${order.shippingMethod === 'express' ? ' (Express)' : ''}`, labelX, y, { width: 100 });
+        doc.fill(grey).text(`Shipping${order.shippingMethod === 'express' ? ' (Express)' : ''}`, labelX, y, { width: labelW });
         doc.fill(dark).text(formatPrice(shippingCharge), valueX, y, { width: 80, align: 'right' });
         y += rowHeight;
       } else if (shippingCharge === 0 && order.shippingMethod) {
-        doc.fill(grey).text('Shipping', labelX, y, { width: 100 });
+        doc.fill(grey).text('Shipping', labelX, y, { width: labelW });
         doc.fill(success).text('Free', valueX, y, { width: 80, align: 'right' });
         y += rowHeight;
       }
 
       if (taxAmount > 0) {
-        doc.fill(grey).text('VAT', labelX, y, { width: 100 });
+        doc.fill(grey).text('VAT', labelX, y, { width: labelW });
         doc.fill(dark).text(formatPrice(taxAmount), valueX, y, { width: 80, align: 'right' });
         y += rowHeight;
 
@@ -233,7 +257,9 @@ export function generateInvoice(order) {
 
       // Total bar
       y += 5;
-      doc.rect(labelX - 10, y, 205.28, 30).fill(dark);
+      // Width must reach the right margin (545.28) so the total value never
+      // overruns the dark bar and turns white-on-white.
+      doc.rect(labelX - 10, y, 545.28 - (labelX - 10), 30).fill(dark);
       doc.fontSize(11).fill('#ffffff').font('Helvetica-Bold')
         .text('TOTAL', labelX, y + 8, { width: 90 });
       doc.text(formatPrice(totalAmount), valueX, y + 8, { width: 80, align: 'right' });
@@ -252,9 +278,16 @@ export function generateInvoice(order) {
       doc.fill(dark).font('Helvetica-Bold')
         .text(`${storeName} — ${storeTagline}`, 50, y, { width: 495.28, align: 'center' });
       y += 12;
-      doc.fill(grey).font('Helvetica')
-        .text(`${storeEmail}${storePhone ? ` • ${storePhone}` : ''}${storeTRN ? ` • TRN: ${storeTRN}` : ''}`, 50, y, { width: 495.28, align: 'center' });
-      y += 14;
+      // Joined from the parts that are actually set — concatenating directly
+      // left a dangling "• " whenever the email or phone was unconfigured.
+      const contactLine = [storeEmail, storePhone, storeTRN && `TRN: ${storeTRN}`]
+        .filter(Boolean)
+        .join('  •  ');
+      if (contactLine) {
+        doc.fill(grey).font('Helvetica')
+          .text(contactLine, 50, y, { width: 495.28, align: 'center' });
+        y += 14;
+      }
       doc.text('This is a computer-generated invoice and does not require a signature.', 50, y, { width: 495.28, align: 'center' });
 
       doc.end();

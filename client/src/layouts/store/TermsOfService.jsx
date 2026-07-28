@@ -14,7 +14,7 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>2. About Us</h2>
         <p>
-          The website and the brand <strong>Elegant Bayt</strong> are operated by <strong>Elegant Bayt</strong>. We are an online store selling quality products to customers across Qatar.
+          The website and the brand <strong>Femnia Fashion</strong> are operated by <strong>Femnia Fashion</strong>. We are an online womenswear store selling clothing and accessories to customers across Qatar.
         </p>
       </section>
 
@@ -41,14 +41,14 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>5. Authenticity</h2>
         <p>
-          All branded products sold by Elegant Bayt are sourced through authorised channels and are 100% genuine. We do not deal in counterfeit, refurbished, or unauthorised parallel-imported goods.
+          Everything sold by Femnia Fashion is genuine own-label product or sourced through authorised channels. We do not deal in counterfeit or misrepresented goods. Fabric composition and care instructions are stated on each product page and on the garment label.
         </p>
       </section>
 
       <section className="s2-static-section">
         <h2>6. Returns &amp; Refunds</h2>
         <p>
-          We offer 14-day returns on unused items in original packaging. Full details in our <a href="/return-policy">Return Policy</a> and <a href="/refund-policy">Refund Policy</a>.
+          We offer 14-day returns on unworn items with their original tags attached. Full details in our <a href="/return-policy">Return Policy</a> and <a href="/refund-policy">Refund Policy</a>.
         </p>
       </section>
 
@@ -68,12 +68,12 @@ function EnglishBody() {
 
       <section className="s2-static-section">
         <h2>9. Intellectual Property</h2>
-        <p>All content on this website — including text, photography, logos, and design — is owned by Elegant Bayt or its licensors. Reproduction, redistribution, or commercial use without our written permission is prohibited. Third-party brand names and logos remain the property of their respective owners.</p>
+        <p>All content on this website — including text, photography, logos, and design — is owned by Femnia Fashion or its licensors. Reproduction, redistribution, or commercial use without our written permission is prohibited. Third-party brand names and logos remain the property of their respective owners.</p>
       </section>
 
       <section className="s2-static-section">
         <h2>10. Limitation of Liability</h2>
-        <p>To the fullest extent permitted by applicable law, Elegant Bayt shall not be liable for any indirect, incidental, or consequential loss arising from the use of our website or products. Our total liability for any direct loss is limited to the amount paid for the affected order.</p>
+        <p>To the fullest extent permitted by applicable law, Femnia Fashion shall not be liable for any indirect, incidental, or consequential loss arising from the use of our website or products. Our total liability for any direct loss is limited to the amount paid for the affected order.</p>
       </section>
 
       <section className="s2-static-section">
@@ -90,10 +90,10 @@ function EnglishBody() {
         <h2>13. Contact</h2>
         <p>For any questions regarding these terms or our services:</p>
         <p>
-          <strong>Elegant Bayt</strong><br />
+          <strong>Femnia Fashion</strong><br />
           📍 5C6J+JMG, Ar-Rayyan, Qatar<br />
-          📧 <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a><br />
-          📞 / WhatsApp: <a href="tel:+97470338065">+974 7033 8065</a>
+          📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
+          📞 / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a>
         </p>
       </section>
     </>
@@ -113,7 +113,7 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>2. من نحن</h2>
         <p>
-          هذا الموقع وعلامة <strong>Elegant Bayt</strong> تديرهما <strong>Elegant Bayt</strong>. نحن متجر إلكتروني يبيع منتجات عالية الجودة لعملائنا في دولة قطر.
+          هذا الموقع وعلامة <strong>Femnia Fashion</strong> تديرهما <strong>Femnia Fashion</strong>. نحن متجر أزياء نسائية إلكتروني يبيع الملابس والإكسسوارات لعملائنا في دولة قطر.
         </p>
       </section>
 
@@ -140,14 +140,14 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>5. الأصالة</h2>
         <p>
-          جميع المنتجات الموسومة بعلامات تجارية والتي يبيعها Elegant Bayt مصدرها قنوات معتمدة وأصلية 100%. لا نتعامل في منتجات مقلَّدة أو مُجدَّدة أو مستوردة بشكل غير رسمي.
+          كل ما تبيعه Femnia Fashion هو من إنتاج علامتنا أو من قنوات معتمدة وأصلي 100%. لا نتعامل في منتجات مقلَّدة أو مغلوطة الوصف. تركيبة القماش وتعليمات العناية مذكورة في صفحة كل منتج وعلى بطاقة القطعة.
         </p>
       </section>
 
       <section className="s2-static-section">
         <h2>6. الإرجاع والاسترداد</h2>
         <p>
-          نوفّر إمكانية الإرجاع خلال 14 يومًا للمنتجات غير المستعمَلة في تغليفها الأصلي. التفاصيل الكاملة في <a href="/ar/return-policy">سياسة الإرجاع</a> و<a href="/ar/refund-policy">سياسة استرداد المبالغ</a>.
+          نوفّر إمكانية الإرجاع خلال 14 يومًا للقطع غير الملبوسة مع بطاقاتها الأصلية. التفاصيل الكاملة في <a href="/ar/return-policy">سياسة الإرجاع</a> و<a href="/ar/refund-policy">سياسة استرداد المبالغ</a>.
         </p>
       </section>
 
@@ -167,12 +167,12 @@ function ArabicBody() {
 
       <section className="s2-static-section">
         <h2>9. الملكية الفكرية</h2>
-        <p>جميع المحتويات على هذا الموقع — بما في ذلك النصوص والصور والشعارات والتصميم — مملوكة لـ Elegant Bayt أو الجهات المُرخِّصة لها. يُحظَر النسخ أو إعادة التوزيع أو الاستخدام التجاري دون إذن خطّي منّا. تبقى أسماء وشعارات العلامات التجارية لأطراف ثالثة ملكًا لأصحابها.</p>
+        <p>جميع المحتويات على هذا الموقع — بما في ذلك النصوص والصور والشعارات والتصميم — مملوكة لـ Femnia Fashion أو الجهات المُرخِّصة لها. يُحظَر النسخ أو إعادة التوزيع أو الاستخدام التجاري دون إذن خطّي منّا. تبقى أسماء وشعارات العلامات التجارية لأطراف ثالثة ملكًا لأصحابها.</p>
       </section>
 
       <section className="s2-static-section">
         <h2>10. تحديد المسؤولية</h2>
-        <p>إلى أقصى حد يسمح به القانون المعمول به، لن تكون Elegant Bayt مسؤولة عن أي خسائر غير مباشرة أو عرضية أو تبعية ناتجة عن استخدام موقعنا أو منتجاتنا. مسؤوليتنا الإجمالية عن أي خسارة مباشرة تقتصر على المبلغ المدفوع للطلب المتأثّر.</p>
+        <p>إلى أقصى حد يسمح به القانون المعمول به، لن تكون Femnia Fashion مسؤولة عن أي خسائر غير مباشرة أو عرضية أو تبعية ناتجة عن استخدام موقعنا أو منتجاتنا. مسؤوليتنا الإجمالية عن أي خسارة مباشرة تقتصر على المبلغ المدفوع للطلب المتأثّر.</p>
       </section>
 
       <section className="s2-static-section">
@@ -189,10 +189,10 @@ function ArabicBody() {
         <h2>13. التواصل</h2>
         <p>لأي استفسارات تتعلق بهذه الشروط أو خدماتنا:</p>
         <p>
-          <strong>Elegant Bayt</strong><br />
+          <strong>Femnia Fashion</strong><br />
           📍 5C6J+JMG، الريان، قطر<br />
-          📧 <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a><br />
-          📞 / واتساب: <a href="tel:+97470338065">+974 7033 8065</a>
+          📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
+          📞 / واتساب: <a href="tel:+97466543343">+974 6654 3343</a>
         </p>
       </section>
     </>
@@ -206,8 +206,8 @@ export default function TermsOfService() {
     <StaticPage
       title="Terms of Service"
       titleAr="شروط الخدمة"
-      description="Terms and conditions for using the Elegant Bayt website and services."
-      descriptionAr="الشروط والأحكام لاستخدام موقع Elegant Bayt وخدماتنا."
+      description="Terms and conditions for using the Femnia Fashion website and services."
+      descriptionAr="الشروط والأحكام لاستخدام موقع Femnia Fashion وخدماتنا."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

@@ -12,7 +12,8 @@
     "build": "npm run install:all && npm run build:client",
     "postinstall": "npm run install:all && npm run build:client",
     "start": "cd server && node src/index.js",
-    "seed": "cd server && npm run seed"
+    "seed": "cd server && npm run seed",
+    "seed:femnia": "cd server && npm run seed:femnia"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

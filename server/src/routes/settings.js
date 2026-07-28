@@ -154,6 +154,32 @@ router.put('/announcements', protect, admin, async (req, res) => {
   }
 });
 
+// Hero seal — the rotating circular badge on the home hero banner.
+// Shape: { enabled: boolean, text: string }
+router.get('/hero-seal', async (req, res) => {
+  try {
+    const setting = await Setting.findByPk('hero-seal');
+    const seal = setting?.value ? JSON.parse(setting.value) : null;
+    res.json(seal || { enabled: true, text: 'Timeless · Elegance' });
+  } catch (error) {
+    res.json({ enabled: true, text: 'Timeless · Elegance' });
+  }
+});
+
+router.put('/hero-seal', protect, admin, async (req, res) => {
+  try {
+    const { enabled, text } = req.body;
+    const seal = {
+      enabled: enabled !== false,
+      text: String(text || '').trim().slice(0, 60),
+    };
+    await Setting.upsert({ key: 'hero-seal', value: JSON.stringify(seal) });
+    res.json(seal);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // B2B bank-transfer details — free-form text included in the quote email when
 // the admin picks the bank-transfer payment method.
 router.get('/b2b-bank-details', protect, admin, async (req, res) => {

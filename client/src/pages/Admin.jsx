@@ -690,6 +690,63 @@ function AnnouncementEditor() {
   );
 }
 
+function HeroSealEditor() {
+  const [seal, setSeal] = useState({ enabled: true, text: '' });
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.get('/settings/hero-seal')
+      .then((res) => { if (res.data) setSeal({ enabled: res.data.enabled !== false, text: res.data.text || '' }); })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  const save = async (next) => {
+    try {
+      await api.put('/settings/hero-seal', next);
+      setSeal(next);
+      toast.success('Hero seal saved');
+    } catch {
+      toast.error('Failed to save hero seal');
+    }
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <div style={{ marginTop: '3rem' }}>
+      <h3 style={{ fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '1rem' }}>
+        Hero Seal
+      </h3>
+      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
+        The rotating circular badge on the home hero banner. Separate words with &middot; (e.g. &ldquo;Timeless &middot; Elegance&rdquo;). Keep it short — long text wraps around the circle and overlaps itself.
+      </p>
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', fontSize: '0.88rem', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={seal.enabled}
+          onChange={(e) => save({ ...seal, enabled: e.target.checked })}
+        />
+        Show the seal on the hero banner
+      </label>
+
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <input
+          value={seal.text}
+          onChange={(e) => setSeal({ ...seal, text: e.target.value })}
+          onBlur={() => save(seal)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(seal); } }}
+          maxLength={60}
+          placeholder="Timeless · Elegance"
+          style={{ flex: 1, padding: '0.6rem 0.85rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: '0.88rem', background: 'var(--bg-warm)' }}
+        />
+        <button type="button" onClick={() => save(seal)} className="btn btn-secondary">Save</button>
+      </div>
+    </div>
+  );
+}
+
 function HeroBannerEditor() {
   const [heroImage, setHeroImage] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -4547,6 +4604,9 @@ export default function Admin() {
 
             {/* Announcement bar — rotating promo strings shown above the navbar */}
             <AnnouncementEditor />
+
+            {/* Hero seal — rotating circular badge on the home hero banner */}
+            <HeroSealEditor />
 
             {/* B2B bank transfer details — included in quote emails on bank_transfer */}
             <B2BBankDetailsEditor />

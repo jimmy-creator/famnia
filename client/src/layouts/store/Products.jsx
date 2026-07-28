@@ -23,7 +23,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
-const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Elegant Bayt';
+const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
 
 export default function Products() {
   const { t } = useTranslation();

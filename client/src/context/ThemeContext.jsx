@@ -12,7 +12,11 @@ export const themeList = Object.entries(themes).map(([id, t]) => ({
 
 export function ThemeProvider({ children }) {
   const [currentTheme, setCurrentTheme] = useState(() => {
-    return localStorage.getItem('store-theme') || defaultTheme || 'marketplace';
+    // Ignore a cached theme id that no longer exists (e.g. after a rebrand
+    // removed it) — otherwise no vars get applied and the store renders unstyled.
+    const saved = localStorage.getItem('store-theme');
+    if (saved && themes[saved]) return saved;
+    return defaultTheme || 'marketplace';
   });
 
   // Fetch store theme setting on mount

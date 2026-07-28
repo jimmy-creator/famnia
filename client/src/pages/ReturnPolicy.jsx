@@ -44,7 +44,7 @@ export default function ReturnPolicy() {
                 <span className="step-number">2</span>
                 <div>
                   <h4>Pack the Item</h4>
-                  <p>Pack the item securely in its original packaging. Include all tags, accessories, and the invoice.</p>
+                  <p>Pack the item securely with its original tags still attached. Include the invoice, and any dust bag or box it came in.</p>
                 </div>
               </div>
               <div className="step">

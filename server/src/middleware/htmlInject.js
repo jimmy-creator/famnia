@@ -103,28 +103,52 @@ function renderHtml({ title, description, image, url, type = 'website', jsonLd =
   // the store keeps icon/button/banner positions fixed across locales.
   const dir = 'ltr';
 
+  // Every rewritten tag keeps `data-ssr` so the client can drop it once
+  // react-helmet-async has injected its own copy — otherwise each page ends up
+  // with two canonicals/og:titles, and Google discards duplicate rel=canonical.
+  // Matching on [^>]* (not content="[^"]*") so the marker doesn't break the
+  // regexes on the next pass.
   html = html
     .replace(/<html([^>]*)\blang="[^"]*"/, `<html$1 lang="${lang}" dir="${dir}"`)
     .replace(/<title>[^<]*<\/title>/, `<title>${t}</title>`)
-    .replace(/<meta name="description" content="[^"]*"\s*\/?>/, `<meta name="description" content="${d}" />`)
-    .replace(/<link rel="canonical" href="[^"]*"\s*\/?>/, `<link rel="canonical" href="${u}" />`)
-    .replace(/<meta property="og:type" content="[^"]*"\s*\/?>/, `<meta property="og:type" content="${type}" />`)
-    .replace(/<meta property="og:title" content="[^"]*"\s*\/?>/, `<meta property="og:title" content="${t}" />`)
-    .replace(/<meta property="og:description" content="[^"]*"\s*\/?>/, `<meta property="og:description" content="${d}" />`)
-    .replace(/<meta property="og:url" content="[^"]*"\s*\/?>/, `<meta property="og:url" content="${u}" />`)
-    .replace(/<meta property="og:image" content="[^"]*"\s*\/?>/, `<meta property="og:image" content="${i}" />`)
-    .replace(/<meta name="twitter:title" content="[^"]*"\s*\/?>/, `<meta name="twitter:title" content="${t}" />`)
-    .replace(/<meta name="twitter:description" content="[^"]*"\s*\/?>/, `<meta name="twitter:description" content="${d}" />`)
-    .replace(/<meta name="twitter:image" content="[^"]*"\s*\/?>/, `<meta name="twitter:image" content="${i}" />`)
+    .replace(/<meta name="description"[^>]*>/, `<meta name="description" content="${d}" data-ssr />`)
+    .replace(/<link rel="canonical"[^>]*>/, `<link rel="canonical" href="${u}" data-ssr />`)
+    .replace(/<meta property="og:type"[^>]*>/, `<meta property="og:type" content="${type}" data-ssr />`)
+    .replace(/<meta property="og:title"[^>]*>/, `<meta property="og:title" content="${t}" data-ssr />`)
+    .replace(/<meta property="og:description"[^>]*>/, `<meta property="og:description" content="${d}" data-ssr />`)
+    .replace(/<meta property="og:url"[^>]*>/, `<meta property="og:url" content="${u}" data-ssr />`)
+    .replace(/<meta property="og:image"(?!:)[^>]*>/, `<meta property="og:image" content="${i}" data-ssr />`)
+    .replace(/<meta property="og:image:alt"[^>]*>/, `<meta property="og:image:alt" content="${t}" data-ssr />`)
+    .replace(/<meta name="twitter:image:alt"[^>]*>/, `<meta name="twitter:image:alt" content="${t}" data-ssr />`)
+    .replace(/<meta name="twitter:title"[^>]*>/, `<meta name="twitter:title" content="${t}" data-ssr />`)
+    .replace(/<meta name="twitter:description"[^>]*>/, `<meta name="twitter:description" content="${d}" data-ssr />`)
+    .replace(/<meta name="twitter:image"[^>]*>/, `<meta name="twitter:image" content="${i}" data-ssr />`)
     // og:locale follows the page locale so Facebook/LinkedIn pick the right one.
-    .replace(/<meta property="og:locale" content="[^"]*"\s*\/?>/, `<meta property="og:locale" content="${locale === 'ar' ? 'ar_QA' : 'en_US'}" />`);
+    .replace(/<meta property="og:locale"[^>]*>/, `<meta property="og:locale" content="${locale === 'ar' ? 'ar_QA' : 'en_US'}" data-ssr />`);
+
+  // The template's og:image:width/height describe the default share image.
+  // Product pages swap in artwork resized with fit:'inside' (see
+  // getOrCreateOg), so its dimensions vary per upload — declaring the default
+  // 1200x630 there would tell crawlers the wrong size. Drop them instead and
+  // let the crawler measure.
+  // Compared by path, not full URL: DEFAULT_OG carries the build-time origin
+  // (VITE_SITE_URL) while callers pass request-origin URLs, so a raw string
+  // compare would never match. Checked at all rather than just "was an image
+  // passed?" because a product with no artwork falls back to the default share
+  // image, and 1200x630 is still accurate in that case.
+  const imgPath = (v) => { try { return new URL(v, origin).pathname; } catch { return v; } };
+  if (imgPath(rawImage) !== imgPath(DEFAULT_OG)) {
+    html = html
+      .replace(/\s*<meta property="og:image:width"[^>]*>/, '')
+      .replace(/\s*<meta property="og:image:height"[^>]*>/, '');
+  }
 
   // hreflang alternates — emitted next to canonical so crawlers see them.
   if (alternates) {
     const hreflangBlock = [
-      `<link rel="alternate" hreflang="en" href="${escapeAttr(alternates.en)}" />`,
-      `<link rel="alternate" hreflang="ar" href="${escapeAttr(alternates.ar)}" />`,
-      `<link rel="alternate" hreflang="x-default" href="${escapeAttr(alternates.en)}" />`,
+      `<link rel="alternate" hreflang="en" href="${escapeAttr(alternates.en)}" data-ssr />`,
+      `<link rel="alternate" hreflang="ar" href="${escapeAttr(alternates.ar)}" data-ssr />`,
+      `<link rel="alternate" hreflang="x-default" href="${escapeAttr(alternates.en)}" data-ssr />`,
     ].join('\n    ');
     html = html.replace(
       /(<link rel="canonical"[^>]*\/?>)/,
@@ -134,7 +158,10 @@ function renderHtml({ title, description, image, url, type = 'website', jsonLd =
 
   if (jsonLd.length) {
     const blocks = jsonLd
-      .map(obj => `<script type="application/ld+json">${JSON.stringify(obj).replace(/<\/script/gi, '<\\/script')}</script>`)
+      // data-ssr: SEO.jsx emits the same Product/Breadcrumb entities once React
+      // mounts, so the client drops these to avoid two of each in the DOM Google
+      // renders. Crawlers that don't run JS still get them from this HTML.
+      .map(obj => `<script type="application/ld+json" data-ssr>${JSON.stringify(obj).replace(/<\/script/gi, '<\\/script')}</script>`)
       .join('\n    ');
     html = html.replace('</head>', `    ${blocks}\n  </head>`);
   }

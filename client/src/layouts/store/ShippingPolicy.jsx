@@ -84,8 +84,8 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>9. Contact</h2>
         <p>
-          📞 / WhatsApp: <a href="tel:+97470338065">+974 7033 8065</a><br />
-          📧 <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a>
+          📞 / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          📧 <a href="mailto:info@femnia.com">info@femnia.com</a>
         </p>
       </section>
     </>
@@ -175,8 +175,8 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>9. التواصل</h2>
         <p>
-          📞 / واتساب: <a href="tel:+97470338065">+974 7033 8065</a><br />
-          📧 <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a>
+          📞 / واتساب: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          📧 <a href="mailto:info@femnia.com">info@femnia.com</a>
         </p>
       </section>
     </>
@@ -190,8 +190,8 @@ export default function ShippingPolicy() {
     <StaticPage
       title="Shipping Policy"
       titleAr="سياسة الشحن"
-      description="Elegant Bayt delivery across Qatar. Free over a minimum order, fast delivery to most areas."
-      descriptionAr="توصيل Elegant Bayt في جميع أنحاء قطر. توصيل مجاني فوق الحد الأدنى للطلب، وتوصيل سريع لمعظم المناطق."
+      description="Femnia Fashion delivery across Qatar. Free over a minimum order, fast delivery to most areas."
+      descriptionAr="توصيل Femnia Fashion في جميع أنحاء قطر. توصيل مجاني فوق الحد الأدنى للطلب، وتوصيل سريع لمعظم المناطق."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

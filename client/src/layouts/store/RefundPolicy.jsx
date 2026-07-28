@@ -19,7 +19,7 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>1. Refund-Eligible Returns</h2>
         <ul>
-          <li><strong>Unused, unworn, in original packaging</strong> with all tags, labels and accessories attached.</li>
+          <li><strong>Unworn and unwashed</strong> with all original tags and labels still attached.</li>
           <li>Returned within <strong>14 days</strong> of in-store purchase or delivery.</li>
           <li>Proof of purchase: original receipt or order number.</li>
           <li>For online orders, the original courier packaging should be intact where possible.</li>
@@ -29,10 +29,11 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>2. Non-Refundable Items</h2>
         <ul>
-          <li>Items that have been used, or that show signs of use.</li>
-          <li>Items returned without their original packaging, labels, or included accessories.</li>
+          <li>Items that have been worn, washed or altered, or that show signs of wear.</li>
+          <li>Items returned with the tags or labels removed.</li>
+          <li>Pierced jewellery, and swimwear or intimates with the hygiene seal removed.</li>
           <li>Items returned after the return window has expired.</li>
-          <li>Customised or made-to-order items.</li>
+          <li>Customised, monogrammed or made-to-measure items.</li>
           <li>Gift cards.</li>
           <li>Sale or clearance items marked "Final Sale".</li>
           <li>Items damaged through misuse, improper handling, or normal wear and tear.</li>
@@ -66,10 +67,10 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>6. Contact</h2>
         <p>
-          <strong>Elegant Bayt</strong><br />
+          <strong>Femnia Fashion</strong><br />
           📍 5C6J+JMG, Ar-Rayyan, Qatar<br />
-          📧 <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a><br />
-          📞 / WhatsApp: <a href="tel:+97470338065">+974 7033 8065</a>
+          📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
+          📞 / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a>
         </p>
       </section>
     </>
@@ -94,7 +95,7 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>1. الإرجاعات المؤهَّلة لاسترداد المبلغ</h2>
         <ul>
-          <li><strong>غير مستعمل، لم يُرتدَ، وفي تغليفه الأصلي</strong> مع جميع البطاقات والملصقات والملحقات.</li>
+          <li><strong>غير ملبوسة وغير مغسولة</strong> مع جميع البطاقات والملصقات الأصلية مثبَّتة.</li>
           <li>الإرجاع خلال <strong>14 يومًا</strong> من تاريخ الشراء من المعرض أو التسليم.</li>
           <li>إثبات الشراء: الفاتورة الأصلية أو رقم الطلب.</li>
           <li>للطلبات الإلكترونية، يُفضَّل أن يكون التغليف الأصلي للشحن سليمًا قدر الإمكان.</li>
@@ -104,10 +105,11 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>2. منتجات غير قابلة للاسترداد</h2>
         <ul>
-          <li>المنتجات التي استُخدمت أو تظهر عليها آثار الاستخدام.</li>
-          <li>المنتجات المُعادة دون تغليفها الأصلي أو ملصقاتها أو ملحقاتها المرفقة.</li>
+          <li>القطع التي لُبست أو غُسلت أو عُدِّلت أو تظهر عليها آثار الاستعمال.</li>
+          <li>القطع المُعادة دون بطاقاتها أو ملصقاتها الأصلية.</li>
+          <li>مجوهرات الثقب، وملابس السباحة أو الملابس الداخلية إذا أُزيل ختم النظافة.</li>
           <li>المنتجات المُعادة بعد انتهاء مدة الإرجاع.</li>
-          <li>المنتجات المخصَّصة أو المصنوعة حسب الطلب.</li>
+          <li>القطع المخصَّصة أو المطرَّزة بالأحرف أو المفصَّلة حسب المقاس.</li>
           <li>بطاقات الهدايا.</li>
           <li>منتجات التخفيضات أو التصفية الموسومة بـ "بيع نهائي".</li>
           <li>المنتجات التالفة بسبب سوء الاستخدام أو التعامل غير السليم أو الاستهلاك الطبيعي.</li>
@@ -141,10 +143,10 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>6. التواصل</h2>
         <p>
-          <strong>Elegant Bayt</strong><br />
+          <strong>Femnia Fashion</strong><br />
           📍 5C6J+JMG، الريان، قطر<br />
-          📧 <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a><br />
-          📞 / واتساب: <a href="tel:+97470338065">+974 7033 8065</a>
+          📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
+          📞 / واتساب: <a href="tel:+97466543343">+974 6654 3343</a>
         </p>
       </section>
     </>
@@ -158,8 +160,8 @@ export default function RefundPolicy() {
     <StaticPage
       title="Refund Policy"
       titleAr="سياسة استرداد المبالغ"
-      description="Elegant Bayt refund policy. Returns accepted within 14 days on unused items in original packaging."
-      descriptionAr="سياسة استرداد المبالغ لدى Elegant Bayt. نقبل الإرجاع خلال 14 يومًا للمنتجات غير المستعملة في تغليفها الأصلي."
+      description="Femnia Fashion refund policy. Returns accepted within 14 days on unworn items with tags attached."
+      descriptionAr="سياسة استرداد المبالغ لدى Femnia Fashion. نقبل الإرجاع خلال 14 يومًا للقطع غير الملبوسة مع بطاقاتها الأصلية."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

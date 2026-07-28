@@ -9,7 +9,7 @@ import { CartProvider } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { RecentlyViewedProvider } from './context/RecentlyViewedContext';
-import { Home, Navbar, Footer, Products, ProductDetail, ContactUs, AboutUs, PrivacyPolicy, RefundPolicy, ReturnPolicy, ShippingPolicy, TermsOfService, FloatingWhatsApp } from '@layout';
+import { Home, Navbar, Footer, Products, ProductDetail, ContactUs, AboutUs, PrivacyPolicy, RefundPolicy, ReturnPolicy, ShippingPolicy, TermsOfService } from '@layout';
 import Wishlist from './pages/Wishlist';
 import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
@@ -172,7 +172,6 @@ export default function App() {
               </PageWrapper>
             </main>
             <PosAware><Footer /></PosAware>
-            <PosAware><FloatingWhatsApp /></PosAware>
           </div>
         </ThemeProvider>
         </RecentlyViewedProvider>

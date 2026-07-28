@@ -12,7 +12,7 @@ export default function ContactUs() {
     phone: '',
     address: '',
     hours: 'Mon - Sat: 9AM - 7PM',
-    storeName: 'Elegant Bayt',
+    storeName: 'Femnia Fashion',
   });
 
   useEffect(() => {

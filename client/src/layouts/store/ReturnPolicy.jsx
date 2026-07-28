@@ -9,29 +9,29 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>14-Day Returns, No Hassle</h2>
         <p>
-          You have <strong>14 days</strong> from the date of delivery to return any unused item in its original packaging for a refund or exchange. The item must be unused and the packaging undamaged.
+          You have <strong>14 days</strong> from the date of delivery to return any unworn item for a refund or exchange. The item must be unworn, unwashed and still have its original tags attached.
         </p>
       </section>
 
       <section className="s2-static-section">
         <h2>1. What We Accept</h2>
         <ul>
-          <li>Items sealed in their original packaging, unused.</li>
-          <li>Sets complete and unopened, exactly as delivered.</li>
-          <li>Equipment and accessories in original packaging and unused.</li>
-          <li>Items must include any free gifts, manuals or warranty cards that came with them.</li>
+          <li>Unworn, unwashed garments with all original tags still attached.</li>
+          <li>Items free of make-up marks, deodorant, perfume or other scents.</li>
+          <li>Co-ord sets returned complete — both pieces together.</li>
+          <li>Accessories, bags and shoes returned unused, with any dust bag or box they came in.</li>
         </ul>
       </section>
 
       <section className="s2-static-section">
         <h2>2. What We Don't Accept</h2>
         <ul>
-          <li>Opened or used items with a broken seal — for hygiene and authenticity reasons.</li>
-          <li>Opened samples or testers.</li>
-          <li>Personalised or engraved items.</li>
+          <li>Items worn, washed, altered or with the tags removed.</li>
+          <li>Pierced jewellery, and swimwear or intimates with the hygiene seal removed.</li>
+          <li>Personalised, monogrammed or made-to-measure pieces.</li>
           <li>Sale or clearance items marked "Final Sale".</li>
           <li>Items past the 14-day window.</li>
-          <li>Items damaged through use, mishandling or washing not per label.</li>
+          <li>Items damaged through wear, mishandling, or washing not per the care label.</li>
         </ul>
       </section>
 
@@ -68,10 +68,10 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>7. Contact</h2>
         <p>
-          <strong>Elegant Bayt</strong><br />
+          <strong>Femnia Fashion</strong><br />
           📍 5C6J+JMG, Ar-Rayyan, Qatar<br />
-          📧 <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a><br />
-          📞 / WhatsApp: <a href="tel:+97470338065">+974 7033 8065</a>
+          📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
+          📞 / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a>
         </p>
       </section>
     </>
@@ -86,29 +86,29 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>إرجاع خلال 14 يومًا بدون متاعب</h2>
         <p>
-          لديك <strong>14 يومًا</strong> من تاريخ الشراء من المعرض أو التسليم لإرجاع أي منتج غير مستعمَل في تغليفه الأصلي لاسترداد المبلغ أو الاستبدال، بشرط وجود الملصقات وعدم تلف العلبة.
+          لديك <strong>14 يومًا</strong> من تاريخ الشراء من المعرض أو التسليم لإرجاع أي قطعة غير ملبوسة لاسترداد المبلغ أو الاستبدال، بشرط أن تكون غير مغسولة وبطاقاتها الأصلية ما زالت مثبّتة.
         </p>
       </section>
 
       <section className="s2-static-section">
         <h2>1. ما نقبله</h2>
         <ul>
-          <li>المنتجات المغلقة في تغليفها الأصلي وغير المستعمَلة.</li>
-          <li>الأطقم كاملة وغير مفتوحة، تمامًا كما تمّ تسليمها.</li>
-          <li>المعدّات والإكسسوارات في تغليفها الأصلي وغير مستعمَلة.</li>
-          <li>يجب أن يشمل المنتج أي هدايا مجانية أو كتيّبات أو بطاقات ضمان مرفقة به.</li>
+          <li>القطع غير الملبوسة وغير المغسولة مع جميع بطاقاتها الأصلية.</li>
+          <li>القطع الخالية من آثار المكياج أو مزيل العرق أو العطر أو أي روائح.</li>
+          <li>الأطقم المتناسقة عند إرجاعها كاملة — بقطعتيها معًا.</li>
+          <li>الإكسسوارات والحقائب والأحذية غير المستعمَلة، مع كيس الحفظ أو العلبة المرفقة.</li>
         </ul>
       </section>
 
       <section className="s2-static-section">
         <h2>2. ما لا نقبله</h2>
         <ul>
-          <li>المنتجات المفتوحة أو المستعمَلة أو التي كُسر ختمها — لأسباب تتعلق بالنظافة والأصالة.</li>
-          <li>العيّنات أو المنتجات التجريبية المفتوحة.</li>
-          <li>المنتجات المخصَّصة أو المنقوشة حسب الطلب.</li>
+          <li>القطع الملبوسة أو المغسولة أو المعدَّلة أو التي أُزيلت بطاقاتها.</li>
+          <li>مجوهرات الثقب، وملابس السباحة أو الملابس الداخلية إذا أُزيل ختم النظافة.</li>
+          <li>القطع المخصَّصة أو المطرَّزة بالأحرف أو المفصَّلة حسب المقاس.</li>
           <li>منتجات التخفيضات أو التصفية الموسومة بـ "بيع نهائي".</li>
           <li>المنتجات المُرجَعة بعد انتهاء مهلة 14 يومًا.</li>
-          <li>المنتجات التالفة بسبب الاستعمال أو سوء المعاملة أو التنظيف بشكل غير سليم.</li>
+          <li>القطع التالفة بسبب الاستعمال أو سوء المعاملة أو الغسل بخلاف تعليمات بطاقة العناية.</li>
         </ul>
       </section>
 
@@ -145,10 +145,10 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>7. التواصل</h2>
         <p>
-          <strong>Elegant Bayt</strong><br />
+          <strong>Femnia Fashion</strong><br />
           📍 5C6J+JMG، الريان، قطر<br />
-          📧 <a href="mailto:info@elegantbayt.com">info@elegantbayt.com</a><br />
-          📞 / واتساب: <a href="tel:+97470338065">+974 7033 8065</a>
+          📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
+          📞 / واتساب: <a href="tel:+97466543343">+974 6654 3343</a>
         </p>
       </section>
     </>
@@ -162,8 +162,8 @@ export default function ReturnPolicy() {
     <StaticPage
       title="Return Policy"
       titleAr="سياسة الإرجاع"
-      description="Elegant Bayt return policy. 14-day returns on unused items in original packaging, in-store and online."
-      descriptionAr="سياسة الإرجاع لدى Elegant Bayt. إرجاع خلال 14 يومًا للمنتجات غير المستعملة في تغليفها الأصلي في متجرنا وعبر الإنترنت."
+      description="Femnia Fashion return policy. 14-day returns on unworn items with tags attached, in-store and online."
+      descriptionAr="سياسة الإرجاع لدى Femnia Fashion. إرجاع خلال 14 يومًا للقطع غير الملبوسة مع بطاقاتها الأصلية، في متجرنا وعبر الإنترنت."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

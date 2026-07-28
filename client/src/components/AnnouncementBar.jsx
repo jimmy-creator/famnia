@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
 import api from '../api/axios';
 
+const ROTATE_MS = 4500;
+
+/**
+ * Slim promo bar pinned above the navbar. Messages come from
+ * Admin → Settings → Theme → Announcement Bar; with more than one configured
+ * they cross-fade in sequence. Renders nothing when none are set.
+ */
 export default function AnnouncementBar() {
   const [items, setItems] = useState(() => {
     const cached = localStorage.getItem('cached-announcements');
     return cached ? JSON.parse(cached) : [];
   });
+  const [active, setActive] = useState(0);
 
   useEffect(() => {
     api.get('/settings/announcements')
@@ -18,20 +26,33 @@ export default function AnnouncementBar() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (items.length <= 1) return;
+    const id = setInterval(() => setActive((prev) => prev + 1), ROTATE_MS);
+    return () => clearInterval(id);
+  }, [items.length]);
+
   if (!items.length) return null;
 
-  // Duplicate the list so the marquee animation has a seamless loop.
-  const loop = [...items, ...items];
+  // Wrap on read rather than resetting `active` in an effect, so a shrinking
+  // list can never leave the index pointing past the end.
+  const shown = active % items.length;
 
   return (
-    <div className="overflow-hidden bg-primary text-primary-foreground" role="region" aria-label="Announcements">
-      <div className="flex w-max animate-[marquee_36s_linear_infinite] items-center py-2.5">
-        {loop.map((text, i) => (
-          <span key={i} className="flex items-center whitespace-nowrap text-xs font-medium tracking-wide">
-            <span aria-hidden="true" className="px-2">✨</span>
-            <span>{text}</span>
-            <span className="px-7 opacity-60" aria-hidden="true">•</span>
-          </span>
+    <div className="bg-foreground px-4 py-2.5 text-center" role="region" aria-label="Announcements">
+      {/* Grid-stacked so the bar keeps the height of its tallest message and
+          never jumps as they rotate. */}
+      <div className="grid">
+        {items.map((text, i) => (
+          <p
+            key={i}
+            aria-hidden={shown !== i}
+            className={`col-start-1 row-start-1 text-[10px] font-medium uppercase tracking-[0.2em] text-background transition-opacity duration-500 sm:text-[11px] ${
+              shown === i ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            {text}
+          </p>
         ))}
       </div>
     </div>

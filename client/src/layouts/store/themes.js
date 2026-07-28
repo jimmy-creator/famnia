@@ -1,37 +1,39 @@
 import sharedThemes from '../../themes/shared';
 
-export const defaultTheme = 'elegantBayt';
+export const defaultTheme = 'femnia';
 
 const store4Themes = {
   ...sharedThemes,
 
-  elegantBayt: {
-    name: 'Elegant Bayt',
-    description: 'Deep navy & gold — plastic home appliances',
+  femnia: {
+    name: 'Femnia',
+    description: 'Cream, ink & gold — women’s fashion',
     vars: {
-      '--font-display': "'Plus Jakarta Sans', system-ui, sans-serif",
-      '--font-body':    "'Plus Jakarta Sans', system-ui, sans-serif",
-      '--copper':       '#16264d',
-      '--copper-light': '#26396b',
-      '--copper-dark':  '#0f1c39',
-      '--gold':         '#c6a24c',
-      '--bg':           '#ffffff',
-      '--bg-warm':      '#f5f6f9',
+      '--font-display': "'Playfair Display', Georgia, serif",
+      '--font-body':    "'Jost', system-ui, sans-serif",
+      // Primary is near-black: the mockup's buttons (SHOP NOW, JOIN NOW),
+      // promo band and bottom-nav pill are all ink, with gold as the accent.
+      '--copper':       '#17130f',
+      '--copper-light': '#3a322b',
+      '--copper-dark':  '#0b0908',
+      '--gold':         '#c08b5c',
+      '--bg':           '#faf6f0',
+      '--bg-warm':      '#efe4d5',
       '--bg-card':      '#ffffff',
-      '--bg-dark':      '#16264d',
-      '--bg-dark-warm': '#1d3160',
-      '--text':         '#1a2540',
-      '--text-secondary': '#5b6478',
-      '--text-light':   '#9aa2b1',
+      '--bg-dark':      '#141210',
+      '--bg-dark-warm': '#221d18',
+      '--text':         '#1b1714',
+      '--text-secondary': '#6b6058',
+      '--text-light':   '#a89c91',
       '--text-inverse': '#ffffff',
-      '--border':       '#e5e7eb',
-      '--border-light': '#f1f3f5',
+      '--border':       '#e6dccd',
+      '--border-light': '#f2ebe0',
       '--success':      '#10b981',
-      '--danger':       '#ef4444',
-      '--radius':       '12px',
-      '--radius-lg':    '16px',
+      '--danger':       '#c0392b',
+      '--radius':       '4px',
+      '--radius-lg':    '6px',
     },
-    font: 'Plus+Jakarta+Sans:wght@300;400;500;600;700;800',
+    font: 'Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Jost:wght@300;400;500;600',
   },
 
   blanc: {

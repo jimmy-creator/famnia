@@ -1,7 +1,29 @@
+import { useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { CURRENCY } from '../utils/currency';
 
-const SITE_NAME = import.meta.env.VITE_STORE_NAME || 'Elegant Bayt';
+const I18N_ENABLED = import.meta.env.VITE_FEATURE_I18N === 'true';
+
+/**
+ * Drop the server-rendered / static copies of the tags Helmet also manages.
+ *
+ * index.html ships description, canonical and the og/twitter tags so crawlers
+ * which don't run JS still get metadata, and the server's htmlInject rewrites
+ * them per URL. Helmet then appends its own copies rather than replacing, so
+ * without this every page would carry two canonicals — and Google discards
+ * rel=canonical entirely when it finds more than one.
+ *
+ * Runs after paint, by which point Helmet has injected, so removing the marked
+ * originals always leaves exactly one of each.
+ */
+function useDropServerMeta() {
+  useEffect(() => {
+    const stale = document.querySelectorAll('head [data-ssr]');
+    stale.forEach((el) => el.remove());
+  }, []);
+}
+
+const SITE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
 const DEFAULT_DESC = import.meta.env.VITE_STORE_DESC || `Shop the latest products at great prices. Free shipping on orders over ${CURRENCY}500.`;
 const SITE_URL = typeof window !== 'undefined' ? window.location.origin : (import.meta.env.VITE_SITE_URL || '');
 const OG_IMAGE = import.meta.env.VITE_OG_IMAGE || '/images/hero-banner.jpeg';
@@ -25,9 +47,25 @@ export default function SEO({
   product,
   breadcrumbs,
 }) {
+  useDropServerMeta();
+
   const fullTitle = title ? `${title} | ${SITE_NAME}` : SITE_NAME;
   const canonicalUrl = url || cleanCanonical();
   const ogImage = image || `${SITE_URL}${OG_IMAGE}`;
+
+  // hreflang alternates. The /ar mirror is a full translation of every route,
+  // so each locale must point at itself and the other, plus x-default on the
+  // English URL — without reciprocal annotations the two locales compete as
+  // duplicates and the Arabic half goes unindexed.
+  const alternates = (() => {
+    if (!I18N_ENABLED || typeof window === 'undefined') return null;
+    const { origin, pathname } = window.location;
+    const bare = pathname === '/ar' ? '/' : pathname.replace(/^\/ar(?=\/|$)/, '') || '/';
+    return {
+      en: `${origin}${bare}`,
+      ar: `${origin}/ar${bare === '/' ? '' : bare}`,
+    };
+  })();
 
   // Product JSON-LD
   const productSchema = product ? {
@@ -82,10 +120,18 @@ export default function SEO({
       <meta property="og:site_name" content={SITE_NAME} />
 
       {/* Twitter */}
+      <meta property="og:image:alt" content={title || SITE_NAME} />
+      {/* Dimensions only for the shipped default image — product artwork is
+          resized with fit:'inside', so its size varies and declaring a fixed
+          one would misinform the crawler. */}
+      {!image && <meta property="og:image:width" content="1200" />}
+      {!image && <meta property="og:image:height" content="630" />}
+
       <meta name="twitter:card" content="summary_large_image" />
       <meta name="twitter:title" content={fullTitle} />
       <meta name="twitter:description" content={description} />
       <meta name="twitter:image" content={ogImage} />
+      <meta name="twitter:image:alt" content={title || SITE_NAME} />
 
       {/* Product OG metadata (Facebook product feed) */}
       {product && (
@@ -97,6 +143,10 @@ export default function SEO({
       )}
 
       <link rel="canonical" href={canonicalUrl} />
+
+      {alternates && <link rel="alternate" hrefLang="en" href={alternates.en} />}
+      {alternates && <link rel="alternate" hrefLang="ar" href={alternates.ar} />}
+      {alternates && <link rel="alternate" hrefLang="x-default" href={alternates.en} />}
 
       {/* JSON-LD structured data */}
       {productSchema && (

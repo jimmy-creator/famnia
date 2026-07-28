@@ -41,10 +41,10 @@
     "wholesale": "Wholesale"
   },
   "home": {
-    "bestSellersTitle": "Best Sellers",
+    "bestSellersTitle": "New In",
     "latestLaunchesTitle": "Latest launches",
-    "seoTitle": "ELEGANCE AT HOME",
-    "seoDescription": "Elegant Bayt — premium plastic home appliances designed for durability, functionality and style."
+    "seoTitle": "Timeless Designs, Modern Elegance",
+    "seoDescription": "Femnia Fashion — timeless womenswear and accessories. Elevate your style with modern, elegant essentials."
   },
   "products": {
     "allProducts": "All Products",
@@ -159,15 +159,17 @@
     "subscribe": "Subscribe"
   },
   "brand": {
-    "tagline": "Elegance at Home"
+    "tagline": "Timeless Elegance"
   },
   "hero": {
-    "kicker": "Premium Quality",
-    "title1": "Elegance Meets",
-    "title2": "Everyday Living",
-    "desc": "Discover a wide range of high-quality plastic home appliances designed for durability, functionality and style.",
+    "kicker": "New Collection",
+    "title1": "Elevate",
+    "title2": "Your Style",
+    "desc": "Discover a curated range of timeless womenswear and accessories, designed for quality, fit and everyday elegance.",
     "trustedBy": "Trusted by",
-    "customers": "Customers"
+    "customers": "Customers",
+    "desc1": "Timeless designs.",
+    "desc2": "Modern elegance."
   },
   "stats": {
     "happyCustomers": "Happy Customers",
@@ -177,19 +179,22 @@
     "acrossCountry": "Across the Country"
   },
   "promo": {
-    "title1": "Neat. Clean.",
-    "title2": "Perfectly Organized.",
+    "title1": "Summer Sale",
+    "title2": "Up to 30% Off",
     "desc": "Smart solutions for a better and more organized home.",
-    "explore": "Explore Now"
+    "explore": "Shop the Sale",
+    "kicker": "Limited Time Only"
   },
   "newsletter": {
-    "title": "Subscribe to our newsletter",
+    "title": "Join the Femnia Club",
     "offerPre": "and get",
     "offerHighlight": "10% OFF",
     "offerPost": "your first order!",
-    "thanks": "Thanks for subscribing! 🎉",
+    "thanks": "You're in — welcome to the Femnia Club.",
     "placeholder": "Enter your email",
-    "subscribe": "Subscribe"
+    "subscribe": "Join Now",
+    "desc1": "Be the first to know about new arrivals,",
+    "desc2": "exclusive offers & style updates."
   },
   "contact": {
     "kicker": "Get in touch",
@@ -289,5 +294,15 @@
     "expressDays": "1-2 business days",
     "addMorePre": "Add",
     "addMorePost": "more for free shipping"
+  },
+  "nav": {
+    "announcement": "Free shipping on orders above QAR 500",
+    "shop": "Shop",
+    "bottomNav": "Primary"
+  },
+  "femnia": {
+    "shopByCategory": "Shop by Category",
+    "newIn": "New In",
+    "seal": "Timeless elegance"
   }
 }

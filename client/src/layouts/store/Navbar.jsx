@@ -8,7 +8,10 @@ import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import api from '../../api/axios';
 import ScrollToTopButton from '../../components/ScrollToTopButton';
+import AnnouncementBar from '../../components/AnnouncementBar';
 import ProductImage from '../../components/ProductImage';
+import FemniaLogo from './Logo';
+import BottomNav from './BottomNav';
 import { CURRENCY, formatPrice } from '../../utils/currency';
 import { localizedName } from '../../utils/i18nHelpers';
 import { Button } from '@/components/ui/button';
@@ -26,10 +29,10 @@ import {
 } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
 
-const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Elegant Bayt';
+const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia';
 
-// Shared style for the desktop top-nav links (uppercase, bold, spaced).
-const navLinkCls = 'text-[13px] font-semibold uppercase tracking-wide text-foreground/75 transition-colors hover:text-foreground';
+// Shared style for the desktop top-nav links (uppercase, letterspaced).
+const navLinkCls = 'text-[11px] font-medium uppercase tracking-[0.18em] text-foreground/70 transition-colors hover:text-foreground';
 
 export default function Navbar() {
   const { t } = useTranslation();
@@ -47,6 +50,7 @@ export default function Navbar() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [showSearch, setShowSearch] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const debounceRef = useRef(null);
   const searchInputRef = useRef(null);
 
@@ -57,6 +61,15 @@ export default function Navbar() {
 
   useEffect(() => {
     api.get('/categories').then((res) => setCategories(Array.isArray(res.data) ? res.data : [])).catch(() => {});
+  }, []);
+
+  // On the home page the bar is transparent over the hero and only takes on a
+  // solid background once the user scrolls past it.
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   useEffect(() => {
@@ -115,6 +128,7 @@ export default function Navbar() {
   };
 
   const isAccount = ['/profile', '/login', '/orders', '/admin'].includes(location.pathname);
+  const isHome = location.pathname === '/' || location.pathname === '/ar';
 
   // Clicking Home (or the logo) while already on the home page is a no-op
   // navigation — scroll to top instead. Route changes already scroll via App.jsx.
@@ -227,39 +241,29 @@ export default function Navbar() {
     </form>
   );
 
-  return (
-    <>
-      <ScrollToTopButton />
+  const announcementBar = <AnnouncementBar />;
 
-      <header className="sticky top-0 z-40 w-full border-b border-border bg-background">
-        <nav className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:gap-4 lg:px-8">
-          {/* Mobile hamburger */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setShowMobileMenu(true)}
-            aria-label={t('common.menu')}
-          >
-            <Menu className="size-5" />
-          </Button>
-
+  const header = (
+    <header
+      className={cn(
+        'sticky top-0 z-40 w-full border-b transition-colors duration-300',
+        // On the home page the bar is transparent on MOBILE ONLY, so the hero
+        // art (pulled up beneath it) shows through; it turns solid as soon as
+        // you scroll. From `md` up it is always the normal solid bar and the
+        // hero starts below it.
+        isHome && !scrolled
+          ? 'border-transparent bg-transparent md:border-border md:bg-background'
+          : 'border-border bg-background/95 backdrop-blur',
+      )}
+    >
+      <nav className="mx-auto flex h-20 max-w-7xl items-center gap-3 px-4 sm:gap-4 lg:px-8">
           {/* Logo */}
-          <Link to="/" onClick={scrollTopIfHome} className="flex shrink-0 items-center gap-2.5">
-            <img src="/images/elegant-bayt-monogram.png" alt={STORE_NAME} className="h-9 w-auto sm:h-10" />
-            <span className="hidden leading-none sm:flex sm:flex-col">
-              <span className="font-serif text-lg font-extrabold tracking-[0.14em] text-foreground lg:text-xl">
-                ELEGANT <span style={{ color: 'var(--gold)' }}>BAYT</span>
-              </span>
-              <span className="mt-1 text-[9px] font-medium uppercase tracking-[0.28em] text-muted-foreground">
-                {t('brand.tagline')}
-              </span>
-            </span>
+          <Link to="/" onClick={scrollTopIfHome} aria-label={STORE_NAME} className="flex shrink-0 items-center">
+            <FemniaLogo className="h-14 w-auto text-foreground" title={STORE_NAME} />
           </Link>
 
           {/* Desktop nav links */}
-          <div className="ml-6 hidden items-center gap-6 md:flex lg:ml-8 lg:gap-8">
+          <div className="ml-8 hidden items-center gap-6 md:flex lg:ml-12 lg:gap-9">
             <Link to="/" onClick={scrollTopIfHome} className={navLinkCls}>{t('common.home')}</Link>
 
             <DropdownMenu>
@@ -315,6 +319,16 @@ export default function Navbar() {
                 <CartBadge />
               </Link>
             </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              onClick={() => setShowMobileMenu(true)}
+              aria-label={t('common.menu')}
+            >
+              <Menu className="size-5" />
+            </Button>
           </div>
         </nav>
 
@@ -324,7 +338,15 @@ export default function Navbar() {
             <div className="mx-auto max-w-3xl">{searchForm}</div>
           </div>
         )}
-      </header>
+    </header>
+  );
+
+  return (
+    <>
+      <ScrollToTopButton />
+
+      {announcementBar}
+      {header}
 
       {/* Mobile slide-in menu */}
       <Sheet open={showMobileMenu} onOpenChange={setShowMobileMenu}>
@@ -391,6 +413,8 @@ export default function Navbar() {
           )}
         </SheetContent>
       </Sheet>
+
+      <BottomNav />
     </>
   );
 }

@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import SEO from '../../components/SEO';
 
-const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Elegant Bayt';
+const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
 
 export default function StaticPage({ title, titleAr, description, descriptionAr, children }) {
   const { i18n } = useTranslation();
