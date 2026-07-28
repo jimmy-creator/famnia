@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.env
+# client/.env holds only public VITE_ build-time vars — track it so VPS builds
+# are reproducible. server/.env stays ignored (real secrets).
+!client/.env
+.DS_Store
+uploads/*
+!uploads/.gitkeep
+server/uploads/*
+!server/uploads/.gitkeep
+
+# Proposals
+PROPOSAL.md
+PROPOSAL-VPS.md
+PROPOSAL-1000AED.md
+
+# Internal docs
+ADMIN-MANUAL-ZAYARA.md
+
+
+# Local tooling
+.claude/
+*.log
+
+# Playwright MCP session artifacts
+.playwright-mcp/

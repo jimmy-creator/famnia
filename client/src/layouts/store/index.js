@@ -1,0 +1,13 @@
+export { default as Home } from './Home';
+export { default as Navbar } from './Navbar';
+export { default as Footer } from './Footer';
+export { default as Products } from './Products';
+export { default as ProductDetail } from './ProductDetail';
+export { default as ContactUs } from './ContactUs';
+export { default as AboutUs } from './AboutUs';
+export { default as PrivacyPolicy } from './PrivacyPolicy';
+export { default as RefundPolicy } from './RefundPolicy';
+export { default as ReturnPolicy } from './ReturnPolicy';
+export { default as ShippingPolicy } from './ShippingPolicy';
+export { default as TermsOfService } from './TermsOfService';
+export { default as FloatingWhatsApp } from './FloatingWhatsApp';

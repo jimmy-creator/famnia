@@ -1,0 +1,20 @@
+{
+  "name": "ecom",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "dev:client": "cd client && npm run dev",
+    "dev:server": "cd server && npm run dev",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "install:all": "cd client && npm install && cd ../server && npm install",
+    "build:client": "cd client && npm run build",
+    "build": "npm run install:all && npm run build:client",
+    "postinstall": "npm run install:all && npm run build:client",
+    "start": "cd server && node src/index.js",
+    "seed": "cd server && npm run seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

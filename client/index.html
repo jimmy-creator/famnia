@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="%VITE_FAVICON_URL%" />
+    <link rel="apple-touch-icon" href="%VITE_APPLE_TOUCH_ICON%" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="%VITE_THEME_COLOR%" />
+
+    <title>%VITE_SITE_TITLE%</title>
+    <meta name="description" content="%VITE_STORE_DESC%" />
+    <link rel="canonical" href="%VITE_SITE_URL%/" />
+
+    <!-- Open Graph (fallback — Helmet overrides per-page once JS runs) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="%VITE_SITE_TITLE%" />
+    <meta property="og:description" content="%VITE_STORE_DESC%" />
+    <meta property="og:url" content="%VITE_SITE_URL%/" />
+    <meta property="og:image" content="%VITE_SITE_URL%%VITE_OG_IMAGE%" />
+    <meta property="og:site_name" content="%VITE_STORE_NAME%" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="%VITE_SITE_TITLE%" />
+    <meta name="twitter:description" content="%VITE_STORE_DESC%" />
+    <meta name="twitter:image" content="%VITE_SITE_URL%%VITE_OG_IMAGE%" />
+
+    <!-- Organization schema (applies to every page; SEO.jsx may inject more on top) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "%VITE_STORE_NAME%",
+      "url": "%VITE_SITE_URL%",
+      "logo": "%VITE_SITE_URL%%VITE_FAVICON_URL%"
+    }
+    </script>
+
+    <!-- Store schema (local SEO — physical store in Ar-Rayyan, Qatar) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Store",
+      "name": "%VITE_STORE_NAME%",
+      "url": "%VITE_SITE_URL%",
+      "image": "%VITE_SITE_URL%%VITE_OG_IMAGE%",
+      "telephone": "+974 7033 8065",
+      "email": "info@elegantbayt.com",
+      "currenciesAccepted": "QAR",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "5C6J+JMG",
+        "addressLocality": "Ar-Rayyan",
+        "addressCountry": "QA"
+      }
+    }
+    </script>
+
+    <!-- WebSite schema with Sitelinks Search Box -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "%VITE_STORE_NAME%",
+      "url": "%VITE_SITE_URL%",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "%VITE_SITE_URL%/products?search={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet"></noscript>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
