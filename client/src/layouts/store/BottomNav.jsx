@@ -44,8 +44,8 @@ export default function BottomNav() {
               aria-label="Femnia"
               className="flex items-center justify-center"
             >
-              <span className="flex size-14 -translate-y-3 items-center justify-center rounded-full bg-foreground text-background shadow-lg">
-                <FemniaMonogram className="h-7 w-auto" />
+              <span className="flex size-14 -translate-y-3 items-center justify-center rounded-full bg-foreground shadow-lg">
+                <FemniaMonogram className="h-8 w-auto" />
               </span>
             </Link>
           ) : (

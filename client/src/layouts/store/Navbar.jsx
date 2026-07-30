@@ -259,7 +259,7 @@ export default function Navbar() {
       <nav className="mx-auto flex h-20 max-w-7xl items-center gap-3 px-4 sm:gap-4 lg:px-8">
           {/* Logo */}
           <Link to="/" onClick={scrollTopIfHome} aria-label={STORE_NAME} className="flex shrink-0 items-center">
-            <FemniaLogo className="h-14 w-auto text-foreground" title={STORE_NAME} />
+            <FemniaLogo className="h-16 w-auto" title={STORE_NAME} />
           </Link>
 
           {/* Desktop nav links */}

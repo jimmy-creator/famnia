@@ -42,7 +42,7 @@ export default function Footer() {
         <div className="grid grid-cols-2 gap-8 md:grid-cols-3 lg:grid-cols-5">
           <div className="col-span-2 md:col-span-3 lg:col-span-1">
             <Link to="/" aria-label={STORE_NAME} className="inline-flex items-center">
-              <FemniaLogo className="h-16 w-auto text-white" title={STORE_NAME} />
+              <FemniaLogo tone="light" className="h-20 w-auto" title={STORE_NAME} />
             </Link>
             <p className="mt-2 text-[9px] font-medium uppercase tracking-[0.28em] text-white/60">
               {t('brand.tagline')}
