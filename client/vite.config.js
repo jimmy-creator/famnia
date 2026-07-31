@@ -18,8 +18,11 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:5000',
-      '/uploads': 'http://localhost:5000',
+      // Port 3000, not 5000: macOS Control Center (AirPlay Receiver) binds
+      // 5000 by default, so the proxy would silently hit AirPlay instead of
+      // the API. 3000 also matches the port documented in CLAUDE.md.
+      '/api': 'http://localhost:3000',
+      '/uploads': 'http://localhost:3000',
     },
   },
 })
