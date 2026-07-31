@@ -201,4 +201,28 @@ router.put('/b2b-bank-details', protect, admin, async (req, res) => {
   }
 });
 
+// INR -> QAR conversion rate used by the product stock-sheet import to
+// turn "Cost Price (INR)" into the QAR figure stored on Product.costPrice
+// (and to recompute the INR columns on export). Admin only — it changes
+// how margin reporting reads.
+router.get('/inr-qar-rate', protect, admin, async (req, res) => {
+  try {
+    const setting = await Setting.findByPk('inrToQarRate');
+    res.json({ value: setting?.value ? parseFloat(setting.value) : null });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.put('/inr-qar-rate', protect, admin, async (req, res) => {
+  try {
+    const rate = parseFloat(req.body.value);
+    if (!(rate > 0)) return res.status(400).json({ message: 'Rate must be a positive number' });
+    await Setting.upsert({ key: 'inrToQarRate', value: String(rate) });
+    res.json({ value: rate });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 export default router;

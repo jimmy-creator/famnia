@@ -1646,6 +1646,7 @@ export default function Admin() {
                   }}
                 />
               </label>
+              <Button variant="outline" size="sm" onClick={() => window.open('/api/bulk-products/template', '_blank')} title="Stock sheet — SKU, colour breakdown, cost/selling price, reorder level">Template (stock sheet)</Button>
               <Button variant="outline" size="sm" onClick={() => window.open('/api/bulk-products/template?style=full', '_blank')} title="Full template with variants, Arabic and per-location stock">Template (full)</Button>
               <Button variant="outline" size="sm" onClick={() => window.open('/api/bulk-products/template?style=simple', '_blank')} title="Single-row legacy template — no variants, no Arabic">Template (simple)</Button>
             </div>
