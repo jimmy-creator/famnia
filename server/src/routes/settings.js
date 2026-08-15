@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Setting } from '../models/index.js';
+import { Setting, Counter } from '../models/index.js';
 import { protect, admin, requirePermission } from '../middleware/auth.js';
 
 const router = Router();
@@ -220,6 +220,51 @@ router.put('/inr-qar-rate', protect, admin, async (req, res) => {
     if (!(rate > 0)) return res.status(400).json({ message: 'Rate must be a positive number' });
     await Setting.upsert({ key: 'inrToQarRate', value: String(rate) });
     res.json({ value: rate });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// ─── POS invoice numbering ─────────────────────────────────────────
+// The prefix and the starting number for the sequential POS invoice
+// series. `start` lets a store continue from whatever its previous
+// system last issued, so the numbering never restarts at 1.
+router.get('/pos-invoice', protect, admin, async (req, res) => {
+  try {
+    const [prefix, start, counter] = await Promise.all([
+      Setting.findByPk('pos_invoice_prefix'),
+      Setting.findByPk('pos_invoice_start'),
+      Counter.findByPk('pos_invoice'),
+    ]);
+    res.json({
+      prefix: prefix?.value ?? 'INV-',
+      start: parseInt(start?.value ?? '1', 10) || 1,
+      // Read-only: what the sequence has actually reached.
+      current: counter ? Number(counter.value) : null,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.put('/pos-invoice', protect, admin, async (req, res) => {
+  try {
+    const { prefix, start } = req.body || {};
+    if (prefix != null) await Setting.upsert({ key: 'pos_invoice_prefix', value: String(prefix) });
+    if (start != null) {
+      const n = parseInt(start, 10);
+      if (!(n > 0)) return res.status(400).json({ message: 'Start must be a positive whole number' });
+      const counter = await Counter.findByPk('pos_invoice');
+      // Once the series is running, moving the start backwards would
+      // re-issue numbers already printed on customers' receipts.
+      if (counter && n <= Number(counter.value)) {
+        return res.status(400).json({
+          message: `Sequence has already reached ${counter.value} — start must be above it`,
+        });
+      }
+      await Setting.upsert({ key: 'pos_invoice_start', value: String(n) });
+    }
+    res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

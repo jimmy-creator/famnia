@@ -16,6 +16,7 @@ import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
   Product, ProductStock, Order, CashierSession, Location, CashAccount, User, Coupon, SalesReturn,
+  Category,
   recomputeProductStock, writeCashTxn, logActivity, verifyManagerPin,
 } from '../models/index.js';
 
@@ -25,6 +26,7 @@ const DISCOUNT_PCT_THRESHOLD = 15;     // percent
 const REFUND_AMOUNT_THRESHOLD = 50;    // currency units (KWD)
 import { protectCashier } from '../middleware/auth.js';
 import { refundValuer } from '../utils/refund.js';
+import { nextInvoiceNumber } from '../services/invoiceSequence.js';
 
 const router = Router();
 
@@ -32,12 +34,148 @@ function genOrderNumber() {
   return `POS-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 }
 
+// ── Shared product shaping for the terminal (search, quick-pick, browse) ──
+const posStockKey = (pid, vIdx) => `${pid}:${vIdx ?? 'b'}`;
+
+// Build a {productId:variantIndex -> qty} map of per-location stock.
+async function posStockMap(productIds, locationId) {
+  if (!productIds.length) return new Map();
+  const stocks = await ProductStock.findAll({
+    where: { productId: { [Op.in]: productIds }, locationId },
+  });
+  return new Map(stocks.map((s) => [posStockKey(s.productId, s.variantIndex), s.quantity]));
+}
+
+// Shape a product (no specific variant chosen) into the uniform result the
+// terminal's add-to-cart flow expects, with per-location stock attached.
+// Browse and quick-pick return the SAME shape as search so the variant
+// picker and add-to-cart work identically from every entry point.
+function shapeProduct(product, stockMap) {
+  const obj = product.toJSON ? product.toJSON() : product;
+  const hasVariants = Array.isArray(obj.variants) && obj.variants.length > 0;
+  return {
+    productId: obj.id,
+    name: obj.name,
+    code: obj.code || null,
+    price: parseFloat(obj.price) || 0,
+    variantIndex: null,
+    variantOptions: null,
+    category: obj.category || null,
+    image: obj.images?.[0] || null,
+    stockAtLocation: stockMap.get(posStockKey(obj.id, null)) || 0,
+    hasVariants,
+    variants: hasVariants
+      ? obj.variants.map((vr, idx) => ({ ...vr, stockAtLocation: stockMap.get(posStockKey(obj.id, idx)) || 0 }))
+      : undefined,
+  };
+}
+
+// ─── Categories for the browse tiles ───────────────────────────────
+// Each row carries a productCount so the tile can show "N items". Counted
+// in JS off one lean query rather than a COUNT per category, because a
+// product matches on its primary `category` OR anywhere in `categories`.
+router.get('/categories', protectCashier, async (req, res) => {
+  try {
+    const rows = await Category.findAll({
+      where: { active: true },
+      attributes: ['id', 'name', 'nameAr', 'image'],
+      order: [['sortOrder', 'ASC'], ['name', 'ASC']],
+    });
+    const products = await Product.findAll({
+      where: { active: true },
+      attributes: ['category', 'categories'],
+      raw: true,
+    });
+    const countByName = new Map();
+    for (const p of products) {
+      const names = Array.isArray(p.categories) && p.categories.length
+        ? p.categories
+        : (p.category ? [p.category] : []);
+      for (const n of new Set(names)) countByName.set(n, (countByName.get(n) || 0) + 1);
+    }
+    res.json(rows.map((c) => ({
+      ...c.toJSON(),
+      productCount: countByName.get(c.name) || 0,
+    })));
+  } catch (err) {
+    console.error('[pos/categories]', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── Quick-pick tiles ──────────────────────────────────────────────
+// Featured products plus best sellers, for selling without scanning.
+router.get('/quick-products', protectCashier, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 30, 30);
+    const PROD_ATTRS = ['id', 'name', 'code', 'price', 'images', 'variants', 'category'];
+
+    const featuredRows = await Product.findAll({
+      where: { active: true, featured: true },
+      attributes: PROD_ATTRS,
+      order: [['name', 'ASC']],
+      limit,
+    });
+
+    // Best sellers — units sold across paid orders in the last 90 days.
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const paidOrders = await Order.findAll({
+      where: { paymentStatus: 'paid', createdAt: { [Op.gte]: since } },
+      attributes: ['items'],
+      raw: true,
+    });
+    const qtyByProduct = new Map();
+    for (const o of paidOrders) {
+      const items = typeof o.items === 'string' ? JSON.parse(o.items || '[]') : (o.items || []);
+      for (const it of items) {
+        if (!it.productId) continue;
+        qtyByProduct.set(it.productId, (qtyByProduct.get(it.productId) || 0) + (parseInt(it.quantity, 10) || 0));
+      }
+    }
+    const topIds = [...qtyByProduct.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([id]) => id);
+    const topRows = topIds.length
+      ? await Product.findAll({ where: { id: { [Op.in]: topIds }, active: true }, attributes: PROD_ATTRS })
+      : [];
+    const topById = new Map(topRows.map((p) => [p.id, p]));
+    const topSorted = topIds.map((id) => topById.get(id)).filter(Boolean);   // keep sold-rank order
+
+    const allIds = [...new Set([...featuredRows, ...topSorted].map((p) => p.id))];
+    const stockMap = await posStockMap(allIds, req.cashierLocationId);
+    res.json({
+      featured: featuredRows.map((p) => shapeProduct(p, stockMap)),
+      topSellers: topSorted.map((p) => shapeProduct(p, stockMap)),
+    });
+  } catch (err) {
+    console.error('[pos/quick-products]', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // ─── Search products for the cart panel ────────────────────────────
 // Optimised for a barcode-scanner workflow: tries an exact code/SKU
 // match first, then a "starts with" name match, capped at 15 results.
 router.get('/products', protectCashier, async (req, res) => {
   try {
     const q = (req.query.q || '').toString().trim();
+    const category = (req.query.category || '').toString().trim();
+
+    // Browse by category (image grid) — matches the primary `category` OR
+    // any entry in the `categories` array. No search query in this mode.
+    if (category && !q) {
+      const catJson = sequelize.escape(JSON.stringify(category));
+      const rows = await Product.findAll({
+        where: {
+          active: true,
+          [Op.or]: [{ category }, sequelize.literal(`JSON_CONTAINS(categories, ${catJson})`)],
+        },
+        attributes: ['id', 'name', 'code', 'price', 'images', 'variants', 'category'],
+        order: [['name', 'ASC']],
+        limit: 60,
+      });
+      const stockMap = await posStockMap(rows.map((p) => p.id), req.cashierLocationId);
+      return res.json(rows.map((p) => shapeProduct(p, stockMap)));
+    }
+
     if (!q) return res.json([]);
 
     // 1. Exact code match (barcode scanned)
@@ -712,7 +850,13 @@ router.post('/customers', protectCashier, async (req, res) => {
 router.post('/sale', protectCashier, async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const { items, customer, payment, userId, couponCode, manualDiscount, managerOverride } = req.body || {};
+    const {
+      items, customer, payment, userId, couponCode, manualDiscount, managerOverride,
+      deliveryCharge: deliveryChargeRaw,
+    } = req.body || {};
+    // Optional delivery charge. Adds to the total as its own income line;
+    // deliberately NOT taxed, and the receipt hides the line when zero.
+    const deliveryCharge = Math.max(0, parseFloat(deliveryChargeRaw) || 0);
     if (!Array.isArray(items) || items.length === 0) {
       await t.rollback();
       return res.status(400).json({ message: 'No items in sale' });
@@ -856,9 +1000,14 @@ router.post('/sale', protectCashier, async (req, res) => {
       appliedCoupon = result.coupon;
     }
     const totalDiscount = +(manualOff + couponOff).toFixed(3);
-    const totalAmount = +(Math.max(0, subTotal - totalDiscount)).toFixed(3);
+    // Delivery is charged on top of the discounted goods and is not
+    // discountable — a coupon shouldn't erode the courier fee. Folding it
+    // into totalAmount here means every tender check below, the ledger
+    // posting and the P&L all pick it up without further changes.
+    const goodsTotal = +(Math.max(0, subTotal - totalDiscount)).toFixed(3);
+    const totalAmount = +(goodsTotal + deliveryCharge).toFixed(3);
 
-    const orderNumber = genOrderNumber();
+    const orderNumber = await nextInvoiceNumber(t);
 
     // Resolve tenders. Single-tender back-compat: amount comes from the
     // legacy `amountTendered` field (any overage is the cash change).
@@ -914,10 +1063,10 @@ router.post('/sale', protectCashier, async (req, res) => {
       orderStatus: 'delivered',
       locationId: req.cashierLocationId,
       cashierSessionId: req.cashierSessionId,
-      shippingCharge: 0,
+      shippingCharge: deliveryCharge,
       discount: totalDiscount,
       couponCode: appliedCoupon?.code || null,
-      taxAmount: 0,
+      taxAmount: 0,   // delivery is zero-rated and goods tax is not charged at POS
       paymentBreakdown: isSplit ? tenders : null,
     }, { transaction: t });
 

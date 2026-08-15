@@ -61,6 +61,24 @@ router.get('/cashiers', async (req, res) => {
   }
 });
 
+// Public branch list for the POS login page. /api/locations is admin-only,
+// so an unauthenticated terminal used to derive its branch list from
+// whichever cashiers happened to have a home location — meaning a newly
+// added branch was unselectable until someone was assigned to it.
+// Only non-sensitive display fields are exposed.
+router.get('/locations', async (req, res) => {
+  try {
+    const rows = await Location.findAll({
+      where: { active: true },
+      attributes: ['id', 'name', 'code'],
+      order: [['name', 'ASC']],
+    });
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // ─── Login (POS terminal) ──────────────────────────────────────────
 router.post('/login', async (req, res) => {
   try {

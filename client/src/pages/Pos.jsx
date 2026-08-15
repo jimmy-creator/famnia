@@ -18,7 +18,7 @@ import toast from 'react-hot-toast';
 import {
   HiShoppingCart, HiClock, HiReply, HiChartBar,
   HiLogout, HiOutlineLogout, HiUserCircle, HiCash, HiCreditCard,
-  HiSearch, HiX, HiPrinter,
+  HiSearch, HiX, HiPrinter, HiArrowLeft,
 } from 'react-icons/hi';
 import api from '../api/axios';
 import { CurrencySymbol } from '../utils/currency';
@@ -50,6 +50,32 @@ function PosClock() {
   );
 }
 
+// Initials placeholder for products with no image — a lot of the catalogue
+// has none, and an empty grey box gives the cashier nothing to aim at.
+function monogram(name = '') {
+  return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase();
+}
+
+function ProductTile({ p, onPick, fmt }) {
+  const out = !p.hasVariants && p.stockAtLocation < 1;
+  return (
+    <button className="prod-tile" onClick={() => onPick(p)} disabled={out}>
+      <div className="prod-thumb">
+        {p.image
+          ? <img src={p.image} alt="" loading="lazy" />
+          : <span className="prod-monogram">{monogram(p.name)}</span>}
+      </div>
+      <div className="prod-name">{p.name}</div>
+      <div className="prod-foot">
+        <span className="prod-price">{fmt(p.price)}</span>
+        {p.hasVariants
+          ? <span className="badge">{p.variants.length}</span>
+          : <span className={out ? 'stock-out' : 'stock-ok'}>{p.stockAtLocation}</span>}
+      </div>
+    </button>
+  );
+}
+
 export default function Pos() {
   const navigate = useNavigate();
   const [me, setMe] = useState(null);
@@ -63,6 +89,14 @@ export default function Pos() {
   const [variantPicker, setVariantPicker] = useState(null);  // product-search-result with hasVariants
   const [linkedCustomer, setLinkedCustomer] = useState(null);   // null = walk-in
   const [discount, setDiscount] = useState(null);                // { manual?, coupon? } | null
+  const [deliveryInput, setDeliveryInput] = useState('');        // optional delivery charge
+  // Browse-without-scanning: category tiles → product grid, plus a
+  // quick-pick rail of featured/best-selling items.
+  const [categories, setCategories] = useState([]);
+  const [quickPicks, setQuickPicks] = useState(null);
+  const [browseCat, setBrowseCat] = useState(null);
+  const [browseProducts, setBrowseProducts] = useState([]);
+  const [browseLoading, setBrowseLoading] = useState(false);
   const [discountOpen, setDiscountOpen] = useState(false);
   const [pendingOverride, setPendingOverride] = useState(null);  // { reason, retry } | null
   const [recentOpen, setRecentOpen] = useState(false);
@@ -122,6 +156,23 @@ export default function Pos() {
 
   // Reset highlight when results change.
   useEffect(() => { setHighlightIdx(0); }, [results]);
+
+  // Browse data — loaded once. Not everything on a rail is labelled, so
+  // the till needs a way to sell without a barcode.
+  useEffect(() => {
+    api.get('/pos/categories').then((r) => setCategories(r.data)).catch(() => {});
+    api.get('/pos/quick-products').then((r) => setQuickPicks(r.data)).catch(() => {});
+  }, []);
+
+  // Load a category's products when one is picked.
+  useEffect(() => {
+    if (!browseCat) { setBrowseProducts([]); return; }
+    setBrowseLoading(true);
+    api.get('/pos/products', { params: { category: browseCat.name } })
+      .then((r) => setBrowseProducts(r.data))
+      .catch(() => setBrowseProducts([]))
+      .finally(() => setBrowseLoading(false));
+  }, [browseCat]);
 
   if (loading) return <div style={{ minHeight: '100vh', background: '#0f172a', color: '#94a3b8', display: 'grid', placeItems: 'center' }}>Loading…</div>;
   if (!me) return null;
@@ -201,7 +252,10 @@ export default function Pos() {
   })();
   const couponOff = discount?.coupon ? +(parseFloat(discount.coupon.discount) || 0).toFixed(3) : 0;
   const discountTotal = +Math.min(manualOff + couponOff, subTotal).toFixed(3);
-  const total = +Math.max(0, subTotal - discountTotal).toFixed(3);
+  // Delivery rides on top of the discounted goods and is never discounted,
+  // matching the server's calculation in routes/pos.js.
+  const deliveryCharge = Math.max(0, parseFloat(deliveryInput) || 0);
+  const total = +(Math.max(0, subTotal - discountTotal) + deliveryCharge).toFixed(3);
 
   // ─── Search keyboard handling ───────────────────────────────────
   // Enter on a single result -> add. Enter with multiple -> add the
@@ -237,6 +291,7 @@ export default function Pos() {
       couponCode: discount?.coupon?.code || undefined,
       manualDiscount: discount?.manual || undefined,
       managerOverride: managerOverride || undefined,
+      deliveryCharge: deliveryCharge || undefined,
       payment: paymentPayload,
     };
     const { data } = await api.post('/pos/sale', body);
@@ -244,6 +299,7 @@ export default function Pos() {
     setCart([]);
     setLinkedCustomer(null);
     setDiscount(null);
+    setDeliveryInput('');
     setTendered('');
     setPayOpen(null);
     setSplitOpen(false);
@@ -421,12 +477,61 @@ export default function Pos() {
 
           <div className="results-list">
             {results.length === 0 && !query.trim() && (
-              <div className="results-empty">
-                <HiSearch size={32} style={{ opacity: 0.3, marginBottom: 12 }} />
-                <div>Scan a barcode or type a product name</div>
-                <div style={{ fontSize: 12, marginTop: 8, color: 'var(--pos-text-3)' }}>
-                  Press <kbd className="kbd-inline">↵</kbd> to add · <kbd className="kbd-inline">Esc</kbd> to clear
-                </div>
+              <div className="browse">
+                {browseCat ? (
+                  <>
+                    <div className="browse-head">
+                      <button className="browse-back" onClick={() => setBrowseCat(null)}>
+                        <HiArrowLeft size={16} /> All categories
+                      </button>
+                      <span className="browse-title">{browseCat.name}</span>
+                    </div>
+                    {browseLoading && <div className="browse-hint">Loading…</div>}
+                    {!browseLoading && browseProducts.length === 0 && (
+                      <div className="browse-hint">Nothing in this category</div>
+                    )}
+                    <div className="tile-grid">
+                      {browseProducts.map((p) => (
+                        <ProductTile key={p.productId} p={p} onPick={addToCart} fmt={fmt} />
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {quickPicks?.topSellers?.length > 0 && (
+                      <>
+                        <div className="browse-title">Best sellers</div>
+                        <div className="tile-grid">
+                          {quickPicks.topSellers.slice(0, 8).map((p) => (
+                            <ProductTile key={'t' + p.productId} p={p} onPick={addToCart} fmt={fmt} />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {categories.length > 0 && (
+                      <>
+                        <div className="browse-title">Browse</div>
+                        <div className="cat-grid">
+                          {categories.map((c) => (
+                            <button key={c.id} className="cat-tile" onClick={() => setBrowseCat(c)}>
+                              <span className="cat-name">{c.name}</span>
+                              <span className="cat-count">{c.productCount} item{c.productCount === 1 ? '' : 's'}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {categories.length === 0 && !quickPicks && (
+                      <div className="results-empty">
+                        <HiSearch size={32} style={{ opacity: 0.3, marginBottom: 12 }} />
+                        <div>Scan a barcode or type a product name</div>
+                        <div style={{ fontSize: 12, marginTop: 8, color: 'var(--pos-text-3)' }}>
+                          Press <kbd className="kbd-inline">↵</kbd> to add · <kbd className="kbd-inline">Esc</kbd> to clear
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
             {results.map((r, i) => (
@@ -499,12 +604,26 @@ export default function Pos() {
                 ? `Discount applied · −${fmt(discountTotal)}`
                 : '+ Add discount'}
             </button>
-            {discountTotal > 0 && (
+            {(discountTotal > 0 || deliveryCharge > 0) && (
               <>
                 <div className="sub-row"><span>Subtotal</span><span>{fmt(subTotal)}</span></div>
-                <div className="sub-row discount-row"><span>Discount</span><span>−{fmt(discountTotal)}</span></div>
+                {discountTotal > 0 && (
+                  <div className="sub-row discount-row"><span>Discount</span><span>−{fmt(discountTotal)}</span></div>
+                )}
+                {deliveryCharge > 0 && (
+                  <div className="sub-row"><span>Delivery</span><span>{fmt(deliveryCharge)}</span></div>
+                )}
               </>
             )}
+            <div className="sub-row delivery-input-row">
+              <span>Delivery charge</span>
+              <input
+                type="number" step="0.001" min="0" placeholder="0"
+                value={deliveryInput}
+                disabled={cart.length === 0}
+                onChange={(e) => setDeliveryInput(e.target.value)}
+              />
+            </div>
             <div className="total-row">
               <span>Total</span>
               <strong>{fmt(total)}</strong>
@@ -895,6 +1014,63 @@ export default function Pos() {
           padding: 3rem 1rem; text-align: center; color: var(--pos-text-2);
           font-size: 0.9rem; display: flex; flex-direction: column; align-items: center;
         }
+
+        /* ── Browse without scanning ─────────────── */
+        .browse { padding: 0.25rem 0 1rem; }
+        .browse-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+        .browse-back {
+          display: inline-flex; align-items: center; gap: 0.35rem;
+          background: var(--pos-surface); color: var(--pos-text-2);
+          border: 1px solid var(--pos-border); border-radius: 8px;
+          padding: 0.35rem 0.6rem; font-size: 0.8rem; cursor: pointer;
+        }
+        .browse-back:hover { color: var(--pos-text); border-color: var(--pos-border-strong); }
+        .browse-title {
+          font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em;
+          text-transform: uppercase; color: var(--pos-text-3);
+          margin: 0.85rem 0 0.5rem;
+        }
+        .browse-hint { padding: 1.5rem; text-align: center; color: var(--pos-text-3); font-size: 0.85rem; }
+
+        .cat-grid {
+          display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.6rem;
+        }
+        .cat-tile {
+          display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start;
+          background: var(--pos-surface); border: 1px solid var(--pos-border);
+          border-radius: 10px; padding: 0.85rem 0.75rem; cursor: pointer; text-align: left;
+        }
+        .cat-tile:hover { border-color: var(--pos-accent); background: var(--pos-elevated); }
+        .cat-name { font-size: 0.92rem; font-weight: 600; color: var(--pos-text); }
+        .cat-count { font-size: 0.75rem; color: var(--pos-text-3); }
+
+        .tile-grid {
+          display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 0.6rem;
+        }
+        .prod-tile {
+          display: flex; flex-direction: column; gap: 0.4rem;
+          background: var(--pos-surface); border: 1px solid var(--pos-border);
+          border-radius: 10px; padding: 0.5rem; cursor: pointer; text-align: left;
+        }
+        .prod-tile:hover:not(:disabled) { border-color: var(--pos-accent); background: var(--pos-elevated); }
+        .prod-tile:disabled { opacity: 0.4; cursor: not-allowed; }
+        .prod-thumb {
+          aspect-ratio: 1; border-radius: 8px; overflow: hidden;
+          background: var(--pos-elevated); display: grid; place-items: center;
+        }
+        .prod-thumb img { width: 100%; height: 100%; object-fit: cover; }
+        .prod-monogram { font-size: 1.3rem; font-weight: 700; color: var(--pos-text-3); letter-spacing: 0.04em; }
+        .prod-name {
+          font-size: 0.8rem; font-weight: 500; color: var(--pos-text); line-height: 1.25;
+          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .prod-foot {
+          display: flex; justify-content: space-between; align-items: center;
+          font-size: 0.78rem; font-variant-numeric: tabular-nums;
+        }
+        .prod-price { font-weight: 600; color: var(--pos-accent); }
+        .prod-foot .stock-ok { color: var(--pos-success); }
+        .prod-foot .stock-out { color: var(--pos-text-3); }
         .result-item {
           display: flex; justify-content: space-between; align-items: center;
           background: var(--pos-surface);
@@ -988,6 +1164,14 @@ export default function Pos() {
           padding: 0.2rem 0; font-variant-numeric: tabular-nums;
         }
         .sub-row.discount-row { color: var(--pos-warn); }
+        .delivery-input-row { align-items: center; padding: 0.35rem 0; }
+        .delivery-input-row input {
+          width: 90px; text-align: right; padding: 0.3rem 0.45rem;
+          background: var(--pos-elevated); color: var(--pos-text);
+          border: 1px solid var(--pos-border); border-radius: 6px;
+          font-size: 0.85rem; font-variant-numeric: tabular-nums;
+        }
+        .delivery-input-row input:disabled { opacity: 0.4; cursor: not-allowed; }
 
         /* ── Payment buttons ────────────────────── */
         .pay-buttons {

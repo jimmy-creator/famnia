@@ -151,15 +151,22 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
         <hr />
         <table>
           <tbody>
-            {parseFloat(order.discount || 0) > 0 && (() => {
+            {/* Show the subtotal whenever anything sits between it and the
+                total — a discount, a delivery charge, or both. */}
+            {(parseFloat(order.discount || 0) > 0 || parseFloat(order.shippingCharge || 0) > 0) && (() => {
               const subtotal = (order.items || []).reduce((s, it) => s + (parseFloat(it.price) || 0) * (parseInt(it.quantity, 10) || 0), 0);
               return (
                 <>
                   <tr><td>Subtotal</td><td className="right">{fmt(subtotal)}</td></tr>
-                  <tr><td>Discount{order.couponCode ? ` (${order.couponCode})` : ''}</td><td className="right">−{fmt(order.discount)}</td></tr>
+                  {parseFloat(order.discount || 0) > 0 && (
+                    <tr><td>Discount{order.couponCode ? ` (${order.couponCode})` : ''}</td><td className="right">−{fmt(order.discount)}</td></tr>
+                  )}
                 </>
               );
             })()}
+            {parseFloat(order.shippingCharge || 0) > 0 && (
+              <tr><td>Delivery</td><td className="right">{fmt(order.shippingCharge)}</td></tr>
+            )}
             <tr className="total-row">
               <td>TOTAL</td>
               <td className="right">{fmt(order.totalAmount)}</td>

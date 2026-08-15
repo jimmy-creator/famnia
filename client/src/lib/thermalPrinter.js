@@ -219,16 +219,21 @@ function buildSale(payload, currency = 'KWD') {
   }
   enc.rule();
 
-  if (parseFloat(order.discount || 0) > 0) {
+  // Show the subtotal whenever anything sits between it and the total —
+  // a discount, a delivery charge, or both. Must mirror PosReceipt.jsx.
+  const delivery = parseFloat(order.shippingCharge || 0);
+  if (parseFloat(order.discount || 0) > 0 || delivery > 0) {
     const subtotal = (order.items || []).reduce(
       (s, it) => s + (parseFloat(it.price) || 0) * (parseInt(it.quantity, 10) || 0), 0
     );
+    const rows = [['Subtotal', fmt(currency, subtotal)]];
+    if (parseFloat(order.discount || 0) > 0) {
+      rows.push([`Discount${order.couponCode ? ` (${order.couponCode})` : ''}`, `-${fmt(currency, order.discount)}`]);
+    }
+    if (delivery > 0) rows.push(['Delivery', fmt(currency, delivery)]);
     enc.table(
       [{ width: colW, marginRight: 1 }, { width: cols - colW - 1, align: 'right' }],
-      [
-        ['Subtotal', fmt(currency, subtotal)],
-        [`Discount${order.couponCode ? ` (${order.couponCode})` : ''}`, `-${fmt(currency, order.discount)}`],
-      ]
+      rows
     );
   }
   enc.bold(true).table(
