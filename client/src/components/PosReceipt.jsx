@@ -94,6 +94,8 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
           box-shadow: 0 4px 24px rgba(0,0,0,0.3);
         }
         #pos-receipt h2 { font-size: 16px; margin: 0; text-align: center; }
+        #pos-receipt .logo { display: block; width: 26mm; margin: 0 auto 6px; }
+        @media print { #pos-receipt .logo { width: 26mm; } }
         #pos-receipt .meta { font-size: 11px; text-align: center; margin: 4px 0 8px; }
         #pos-receipt hr { border: none; border-top: 1px dashed #444; margin: 8px 0; }
         #pos-receipt table { width: 100%; border-collapse: collapse; }
@@ -108,6 +110,13 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
       `}</style>
 
       <div id="pos-receipt">
+        {/* Mirrors the thermal path, which prints the same mark via the
+            encoder's raster image support. onError hides it rather than
+            leaving a broken-image icon on a customer's receipt. */}
+        <img
+          className="logo" src="/images/femnia-logo.webp" alt=""
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+        />
         <h2>{location?.name || STORE_NAME}</h2>
         <div className="meta">
           {location?.address && <div>{location.address}</div>}

@@ -38,6 +38,60 @@ const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
 
 const key = (kind, suffix) => `pos_${kind}_${suffix}`;
 
+// The encoder rasterises images through a canvas it creates itself, so in a
+// browser it needs to be told how to make one. Without this, .image() throws
+// "Canvas is not supported in this environment".
+function newEncoder(cols) {
+  return new ReceiptPrinterEncoder({
+    language: 'esc-pos',
+    columns: cols,
+    createCanvas: (w, h) => {
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      return c;
+    },
+  });
+}
+
+// ── Receipt logo ───────────────────────────────────────────────────
+// Printed at the top of sale/return receipts. Thermal output is 1-bit, so
+// this uses the DARK logo (the "-light" variants are cream-on-transparent
+// and would burn to almost nothing). Atkinson dithering keeps the gold ring
+// legible; the FN mark and wordmark are solid enough to come out clean.
+//
+// ESC/POS raster requires both dimensions to be a multiple of 8.
+const LOGO_URL = '/images/femnia-logo.webp';
+// Both multiples of 8, as ESC/POS raster requires. 128px was tried for the
+// narrow roll and the FEMNIA wordmark dithered to mush; 160 keeps it legible.
+const logoSize = (cols) => (cols >= 48 ? 192 : 160);   // 24×8 / 20×8
+
+let logoPromise;
+// Resolves to an HTMLImageElement, or null if the asset can't be loaded —
+// a missing logo must never stop a sale from printing.
+function loadLogo() {
+  if (logoPromise) return logoPromise;
+  logoPromise = new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => { console.warn('[thermal] receipt logo failed to load'); resolve(null); };
+    img.src = LOGO_URL;
+  });
+  return logoPromise;
+}
+
+// Draw the logo, centred, if we have one. Must not be called inside a
+// table or box — the encoder rejects images there.
+function addLogo(enc, logo, cols) {
+  if (!logo) return enc;
+  const px = logoSize(cols);
+  try {
+    return enc.align('center').image(logo, px, px, 'atkinson').newline();
+  } catch (err) {
+    console.warn('[thermal] logo skipped:', err.message);
+    return enc;
+  }
+}
+
 export function isSupported() {
   return typeof navigator !== 'undefined' && !!navigator.usb;
 }
@@ -178,7 +232,7 @@ async function send(kind, bytes) {
 // ── Receipt templates ──────────────────────────────────────────────
 const fmt = (currency, n) => `${currency} ${(parseFloat(n) || 0).toFixed(3)}`;
 
-function buildSale(payload, currency = 'KWD') {
+function buildSale(payload, currency = 'KWD', logo = null) {
   const { order, change, amountTendered, location, cashier } = payload;
   const breakdown = Array.isArray(order.paymentBreakdown) ? order.paymentBreakdown : null;
   const cols = getColumns('receipt');
@@ -186,10 +240,11 @@ function buildSale(payload, currency = 'KWD') {
   // Override the param so every fmt(currency, …) call below renders the
   // locale-correct symbol without touching each line.
   currency = pickCurrency(currency, loc);
-  const enc = new ReceiptPrinterEncoder({ language: 'esc-pos', columns: cols });
+  const enc = newEncoder(cols);
 
-  enc.initialize()
-    .align('center').bold(true).size('normal').line(location?.name || STORE_NAME).bold(false);
+  enc.initialize();
+  addLogo(enc, logo, cols);
+  enc.align('center').bold(true).size('normal').line(location?.name || STORE_NAME).bold(false);
   if (location?.address) enc.align('center').line(location.address);
   if (location?.phone) enc.align('center').line(`Tel: ${location.phone}`);
   enc.rule();
@@ -269,14 +324,15 @@ function buildSale(payload, currency = 'KWD') {
   return enc.encode();
 }
 
-function buildReturn(payload, currency = 'KWD') {
+function buildReturn(payload, currency = 'KWD', logo = null) {
   const sr = payload.salesReturn;
   const cols = getColumns('receipt');
   const loc = getReceiptLocale();
   currency = pickCurrency(currency, loc);
-  const enc = new ReceiptPrinterEncoder({ language: 'esc-pos', columns: cols });
-  enc.initialize()
-    .align('center').bold(true).line('RETURN RECEIPT').bold(false);
+  const enc = newEncoder(cols);
+  enc.initialize();
+  addLogo(enc, logo, cols);
+  enc.align('center').bold(true).line('RETURN RECEIPT').bold(false);
   if (sr.Location?.name) enc.line(sr.Location.name);
   if (sr.Location?.phone) enc.line(`Tel: ${sr.Location.phone}`);
   enc.rule()
@@ -324,7 +380,7 @@ function buildReport(report, currency = 'KWD') {
   const cols = getColumns('receipt');
   const loc = getReceiptLocale();
   currency = pickCurrency(currency, loc);
-  const enc = new ReceiptPrinterEncoder({ language: 'esc-pos', columns: cols });
+  const enc = newEncoder(cols);
   const t = report.type === 'Z' ? 'Z-REPORT' : 'X-REPORT';
   const session = report.session || {};
   const opened = session.openedAt ? new Date(session.openedAt).toLocaleString() : '—';
@@ -375,7 +431,7 @@ function buildReport(report, currency = 'KWD') {
 // ── Public print entrypoints ───────────────────────────────────────
 export async function testPrint(kind) {
   const cols = getColumns(kind);
-  const enc = new ReceiptPrinterEncoder({ language: 'esc-pos', columns: cols });
+  const enc = newEncoder(cols);
   enc.initialize()
     .align('center').bold(true).line('TEST PRINT').bold(false)
     .line(kind === 'barcode' ? 'Label printer' : 'Receipt printer')
@@ -392,12 +448,14 @@ export async function testPrint(kind) {
 }
 
 export async function printSale(payload, currency, openDrawer = false) {
-  await send('receipt', buildSale(payload, currency));
+  const logo = await loadLogo();
+  await send('receipt', buildSale(payload, currency, logo));
   if (openDrawer) await kickDrawer();
 }
 
 export async function printReturn(payload, currency) {
-  await send('receipt', buildReturn(payload, currency));
+  const logo = await loadLogo();
+  await send('receipt', buildReturn(payload, currency, logo));
 }
 
 export async function printReport(report, currency) {
@@ -407,7 +465,7 @@ export async function printReport(report, currency) {
 // Cash drawer pulse via the receipt printer.
 export async function kickDrawer() {
   const cols = getColumns('receipt');
-  const enc = new ReceiptPrinterEncoder({ language: 'esc-pos', columns: cols });
+  const enc = newEncoder(cols);
   const bytes = enc.initialize().pulse(0, 60, 120).encode();
   await send('receipt', bytes);
 }
@@ -415,7 +473,7 @@ export async function kickDrawer() {
 // Barcode-label printer entrypoint.
 export async function printLabels(labels, { currency = 'KWD' } = {}) {
   const cols = getColumns('barcode');
-  const enc = new ReceiptPrinterEncoder({ language: 'esc-pos', columns: cols });
+  const enc = newEncoder(cols);
   enc.initialize();
   for (const label of labels) {
     const show = label.show || { name: true, barcode: true, sku: true, price: true };
