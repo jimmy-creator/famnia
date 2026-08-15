@@ -53,6 +53,13 @@ export default function PosLogin() {
       if (locationId && locs.find((l) => l.id === locationId)) {
         setStep('cashier');
       } else {
+        // Remembered a location that no longer exists (renamed store, or a
+        // terminal carried over from another deployment). Forget it, or the
+        // header advertises a branch that can't be selected.
+        if (locationId) {
+          localStorage.removeItem('pos.locationId');
+          setLocationId(null);
+        }
         setStep('location');
       }
     }).catch(() => {

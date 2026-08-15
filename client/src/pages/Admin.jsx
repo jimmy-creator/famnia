@@ -12,6 +12,7 @@ import PurchaseReturnModals from '../components/admin/PurchaseReturnModals';
 import FinanceTabs from '../components/admin/FinanceTabs';
 import BarcodeLabels from '../components/admin/BarcodeLabels';
 import StockCounts from '../components/admin/StockCounts';
+import AssetsTabs from '../components/admin/AssetsTabs';
 import { Menu, LogOut, Plus, Pencil, Trash2, X, Eye, EyeOff, Search, Image as ImageIcon, Star, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -1198,6 +1199,9 @@ export default function Admin() {
       api.get('/locations').then((res) => setLocations(res.data)).catch(() => {});
       api.get('/finance/cash-accounts?active=true').then((res) => setCashAccounts(res.data)).catch(() => {});
       api.get('/finance/expense-categories').then((res) => setExpenseCategories(res.data)).catch(() => {});
+    } else if (['fixed-assets', 'capital', 'balance-sheet'].includes(tab)) {
+      api.get('/locations').then((res) => setLocations(res.data)).catch(() => {});
+      api.get('/finance/cash-accounts?active=true').then((res) => setCashAccounts(res.data)).catch(() => {});
     } else if (tab === 'cash-accounts') {
       api.get('/locations').then((res) => setLocations(res.data)).catch(() => {});
       api.get('/finance/cash-accounts').then((res) => setCashAccounts(res.data)).catch(() => {});
@@ -1287,7 +1291,10 @@ export default function Admin() {
         { tab: 'cash-transfers', label: 'Cash Transfers', show: MULTILOC_ENABLED && hasAccess('analytics') },
         { tab: 'daily-cash',     label: 'Daily Cash',     show: MULTILOC_ENABLED && hasAccess('analytics') },
         { tab: 'daybook',        label: 'Daybook',        show: MULTILOC_ENABLED && hasAccess('analytics') },
+        { tab: 'fixed-assets',   label: 'Fixed Assets',   show: MULTILOC_ENABLED && hasAccess('analytics') },
+        { tab: 'capital',        label: 'Capital',        show: MULTILOC_ENABLED && hasAccess('analytics') },
         { tab: 'pnl',            label: 'Profit & Loss',  show: MULTILOC_ENABLED && hasAccess('analytics') },
+        { tab: 'balance-sheet',  label: 'Balance Sheet',  show: MULTILOC_ENABLED && hasAccess('analytics') },
         { tab: 'stock-value',    label: 'Stock Value',    show: MULTILOC_ENABLED && hasAccess('analytics') },
     ]},
     { id: 'sales', label: 'Sales', items: [
@@ -3755,6 +3762,13 @@ export default function Admin() {
             setTab={setTab}
             activeStockCountId={activeStockCountId} setActiveStockCountId={setActiveStockCountId}
             expenseCategories={expenseCategories} cashAccounts={cashAccounts}
+          />
+        )}
+
+        {(['fixed-assets','capital','balance-sheet'].includes(tab)) && (
+          <AssetsTabs
+            tab={tab} currency={CURRENCY} isAdmin={isAdmin}
+            locations={locations} cashAccounts={cashAccounts}
           />
         )}
 
