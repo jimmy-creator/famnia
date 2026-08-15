@@ -141,7 +141,7 @@ export default function PosReturnReceipt({ payload, currency = 'KWD', onClose })
         <div style={{ textAlign: 'center', fontSize: 11 }}>
           {sr.refundMethod === 'cash' && 'Cash returned to customer'}
           {sr.refundMethod === 'card' && 'Refund to original card'}
-          {sr.refundMethod === 'store_credit' && 'Store credit issued'}
+          {sr.refundMethod === 'knet' && 'Refund to original KNET card'}
         </div>
 
         <div className="actions no-print">

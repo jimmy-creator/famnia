@@ -52,7 +52,7 @@ function rollup(orders, returns = []) {
     else if (isCard(o.paymentMethod)) cardSales += amt;
     else if (isKnet(o.paymentMethod)) knetSales += amt;
   }
-  let cashRefunds = 0, cardRefunds = 0, knetRefunds = 0, creditRefunds = 0, returnCount = 0;
+  let cashRefunds = 0, cardRefunds = 0, knetRefunds = 0, returnCount = 0;
   for (const r of returns) {
     if (r.status === 'cancelled') continue;
     const amt = parseFloat(r.refundAmount || 0);
@@ -60,7 +60,6 @@ function rollup(orders, returns = []) {
     if (r.refundMethod === 'cash') cashRefunds += amt;
     else if (r.refundMethod === 'card') cardRefunds += amt;
     else if (r.refundMethod === 'knet') knetRefunds += amt;
-    else if (r.refundMethod === 'store_credit') creditRefunds += amt;
   }
   const round = (n) => +n.toFixed(3);
   return {
@@ -73,8 +72,7 @@ function rollup(orders, returns = []) {
     cashRefunds: round(cashRefunds),
     cardRefunds: round(cardRefunds),
     knetRefunds: round(knetRefunds),
-    creditRefunds: round(creditRefunds),
-    netSales: round(totalSales - cashRefunds - cardRefunds - knetRefunds - creditRefunds),
+    netSales: round(totalSales - cashRefunds - cardRefunds - knetRefunds),
   };
 }
 

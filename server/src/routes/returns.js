@@ -118,9 +118,12 @@ router.post('/', authEither, async (req, res) => {
       await t.rollback();
       return res.status(400).json({ message: 'orderId and items[] required' });
     }
-    if (!['cash', 'card', 'knet', 'store_credit'].includes(refundMethod)) {
+    // No customer credit: every refund goes back out a real money rail.
+    // store_credit was removed — it wrote no ledger entry and nothing
+    // anywhere could redeem it, so issuing it created a hidden liability.
+    if (!['cash', 'card', 'knet'].includes(refundMethod)) {
       await t.rollback();
-      return res.status(400).json({ message: 'refundMethod must be cash, card, knet or store_credit' });
+      return res.status(400).json({ message: 'refundMethod must be cash, card or knet' });
     }
 
     const order = await Order.findByPk(orderId, { transaction: t });
