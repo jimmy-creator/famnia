@@ -179,10 +179,21 @@ router.get('/products', protectCashier, async (req, res) => {
     if (!q) return res.json([]);
 
     // 1. Exact code match (barcode scanned)
-    const exact = await Product.findAll({
+    let exact = await Product.findAll({
       where: { active: true, code: q },
       limit: 5,
     });
+
+    // 1b. Products with no code get a "P<id>" label barcode (see
+    //     BarcodeLabelSheet.barcodeForProduct). Resolve that form back to
+    //     the product so a label printed from admin or the till scans.
+    if (exact.length === 0) {
+      const m = /^P(\d+)$/i.exec(q);
+      if (m) {
+        const byId = await Product.findOne({ where: { id: parseInt(m[1], 10), active: true } });
+        if (byId) exact = [byId];
+      }
+    }
 
     // 2. Variant-SKU match — Product.variants is JSON, can't index easily,
     //    so we fetch a small slice and filter in JS. For larger catalogues
@@ -597,6 +608,7 @@ router.post('/sales/:id/append', protectCashier, async (req, res) => {
         nameAr: product.nameAr ? product.nameAr + appendSuffix : null,
         sku: variant?.sku || product.code || null,
         category: product.category,
+        variantIndex: vIdx,
         price: unitPrice,
         costPrice: unitCost,
         quantity: qty,
@@ -899,6 +911,9 @@ router.post('/sale', protectCashier, async (req, res) => {
     const orderItems = [];
     const stockDecrements = [];   // [{stockRow, qty}]
     let subTotal = 0;
+    let lineOffTotal = 0;         // sum of per-line discounts
+    let repricedLines = 0;        // audit: how many lines were price-overridden
+    let repriceDelta = 0;         // audit: net effect of those overrides
 
     for (const it of items) {
       const productId = parseInt(it.productId, 10);
@@ -920,9 +935,40 @@ router.post('/sale', protectCashier, async (req, res) => {
       }
       stockDecrements.push({ stockRow: stock, qty });
 
-      const unitPrice = parseFloat(variant?.price ?? product.price) || 0;
+      const listPrice = parseFloat(variant?.price ?? product.price) || 0;
       const unitCost = parseFloat(variant?.costPrice ?? product.costPrice ?? 0) || 0;
-      subTotal += unitPrice * qty;
+
+      // Per-sale price override — the cashier charges a different price for
+      // this sale only; the catalogue price is untouched. Stored as the
+      // line's `price` so every downstream reader (receipt, returns,
+      // reports) sees what was actually charged, with `listPrice` kept for
+      // the audit trail.
+      let unitPrice = listPrice;
+      if (it.priceOverride != null && it.priceOverride !== '') {
+        const po = parseFloat(it.priceOverride);
+        if (!Number.isFinite(po) || po < 0) throw new Error(`Invalid price for ${product.name}`);
+        unitPrice = +po.toFixed(3);
+      }
+      const repriced = unitPrice !== listPrice;
+      if (repriced) {
+        repricedLines += 1;
+        repriceDelta += (unitPrice - listPrice) * qty;
+      }
+
+      const lineGross = unitPrice * qty;
+      subTotal += lineGross;
+
+      // Per-line discount — recomputed here from the server-side price so a
+      // tampered client can't inflate it. A fixed amount is per item, so it
+      // applies once per unit. Capped at the line's gross.
+      let lineOff = 0;
+      const ld = it.lineDiscount;
+      if (ld && parseFloat(ld.value) > 0) {
+        const v = parseFloat(ld.value);
+        lineOff = ld.kind === 'percentage' ? (lineGross * v) / 100 : v * qty;
+        lineOff = +Math.min(lineOff, lineGross).toFixed(3);
+        lineOffTotal += lineOff;
+      }
       const variantSuffix = variant ? ` (${Object.values(variant.options || {}).join('/')})` : '';
       orderItems.push({
         productId,
@@ -930,9 +976,16 @@ router.post('/sale', protectCashier, async (req, res) => {
         nameAr: product.nameAr ? product.nameAr + variantSuffix : null,
         sku: variant?.sku || product.code || null,   // snapshot SKU for receipt
         category: product.category,
+        // Persist the variant index on the line. Without it the returns
+        // matcher falls through to "first line with this productId" and a
+        // multi-variant order refunds the wrong line's price.
+        variantIndex: vIdx,
         price: unitPrice,
+        listPrice,                           // catalogue price at time of sale
+        priceOverridden: repriced,
         costPrice: unitCost,                 // snapshot for COGS
         quantity: qty,
+        lineDiscount: lineOff > 0 ? { kind: ld.kind, value: parseFloat(ld.value), amount: lineOff } : null,
         image: product.images?.[0] || null,
         variant: variant ? { ...variant.options, sku: variant.sku } : null,
         taxable: product.taxable || false,
@@ -954,15 +1007,21 @@ router.post('/sale', protectCashier, async (req, res) => {
     // Apply discounts. Manual discount applies to the cart subtotal,
     // then the coupon applies to (subtotal − manual). Final total is
     // capped at 0 in case both stack heavily.
+    // Discount waterfall: per-line discounts first, then the manual bill
+    // discount on what's left, then any coupon on top of that.
+    lineOffTotal = +lineOffTotal.toFixed(3);
+    const afterLines = +Math.max(0, subTotal - lineOffTotal).toFixed(3);
     let manualOff = 0;
     let manualPct = 0;
     if (manualDiscount && parseFloat(manualDiscount.value) > 0) {
       const v = parseFloat(manualDiscount.value);
       manualOff = manualDiscount.kind === 'percentage'
-        ? (subTotal * v) / 100
+        ? (afterLines * v) / 100
         : v;
-      manualOff = Math.min(manualOff, subTotal);
-      manualPct = subTotal > 0 ? (manualOff / subTotal) * 100 : 0;
+      manualOff = Math.min(manualOff, afterLines);
+      // Gauge the override threshold against the gross, so stacking a line
+      // discount under a bill discount can't slip past the manager gate.
+      manualPct = subTotal > 0 ? ((manualOff + lineOffTotal) / subTotal) * 100 : 0;
     }
 
     // Manager override gate: any manual discount whose effective
@@ -991,7 +1050,7 @@ router.post('/sale', protectCashier, async (req, res) => {
     if (couponCode) {
       const result = await validateCoupon({
         code: couponCode,
-        subtotal: +Math.max(0, subTotal - manualOff).toFixed(3),
+        subtotal: +Math.max(0, afterLines - manualOff).toFixed(3),
         items: orderItems,
         userId: linkedUser?.id,
         transaction: t,
@@ -999,7 +1058,10 @@ router.post('/sale', protectCashier, async (req, res) => {
       couponOff = result.discount;
       appliedCoupon = result.coupon;
     }
-    const totalDiscount = +(manualOff + couponOff).toFixed(3);
+    // order.discount is the FULL discount including per-line ones — the
+    // refund valuer subtracts the line discounts back out to work out the
+    // order-level slice, so this must not exclude them.
+    const totalDiscount = +(lineOffTotal + manualOff + couponOff).toFixed(3);
     // Delivery is charged on top of the discounted goods and is not
     // discountable — a coupon shouldn't erode the courier fee. Folding it
     // into totalAmount here means every tender check below, the ledger
@@ -1085,9 +1147,15 @@ router.post('/sale', protectCashier, async (req, res) => {
         paymentMethod,
         itemCount: orderItems.reduce((s, i) => s + i.quantity, 0),
         discount: totalDiscount,
+        lineDiscount: lineOffTotal,
         manualPct: +manualPct.toFixed(2),
         couponCode: appliedCoupon?.code || null,
         customerId: linkedUser?.id || null,
+        deliveryCharge: deliveryCharge || undefined,
+        // Price overrides are worth auditing on their own — they change
+        // what was charged without leaving a discount trail.
+        repricedLines: repricedLines || undefined,
+        repriceDelta: repricedLines ? +repriceDelta.toFixed(3) : undefined,
       },
       managerOverrideBy: managerUser?.id || null,
       reason: managerUser ? (managerOverride?.reason || `Discount ${manualPct.toFixed(1)}%`) : null,
