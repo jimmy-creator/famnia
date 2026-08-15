@@ -170,7 +170,7 @@ function renderHtml({ title, description, image, url, type = 'website', jsonLd =
 }
 
 async function renderProduct(slug, requestUrl, locale, alternates) {
-  const product = await Product.findOne({ where: { slug, active: true } });
+  const product = await Product.findOne({ where: { slug, active: true, hideOnline: false } });
   if (!product) return null;
 
   // Use Arabic name/description when serving the Arabic URL and the

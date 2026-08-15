@@ -59,6 +59,7 @@ router.get('/search-suggestions', async (req, res) => {
     const products = await Product.findAll({
       where: {
         active: true,
+        hideOnline: false,
         [Op.or]: [
           { name: { [Op.like]: `%${q}%` } },
           { category: { [Op.like]: `%${q}%` } },
@@ -82,13 +83,14 @@ router.get('/:slug/related', async (req, res) => {
     const { Op } = await import('sequelize');
 
     const product = await Product.findOne({
-      where: { slug: req.params.slug, active: true },
+      where: { slug: req.params.slug, active: true, hideOnline: false },
     });
     if (!product) return res.json([]);
 
     const related = await Product.findAll({
       where: {
         active: true,
+        hideOnline: false,
         id: { [Op.ne]: product.id },
         [Op.or]: [
           { category: product.category },

@@ -1,4 +1,4 @@
-import { Order, Product, User, Coupon } from '../models/index.js';
+import { Order, Product, User, Coupon, decrementOnlineStock } from '../models/index.js';
 const currencySymbol = process.env.CURRENCY_SYMBOL || '${currencySymbol}';
 import { Op } from 'sequelize';
 import { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderNotification } from '../services/emailService.js';
@@ -173,7 +173,7 @@ export const createOrder = async (req, res) => {
       taxBreakdown: breakdown,
     });
 
-    await reduceStock(items, products);
+    if (!(await decrementOnlineStock(order))) await reduceStock(items, products);
     sendOrderConfirmation(order.toJSON(), req.user.email).catch(() => {});
     sendNewOrderNotification(order.toJSON()).catch(() => {});
     // COD orders don't go through /payment/verify so we kick off the
@@ -231,7 +231,7 @@ export const createGuestOrder = async (req, res) => {
       taxBreakdown: breakdown,
     });
 
-    await reduceStock(items, products);
+    if (!(await decrementOnlineStock(order))) await reduceStock(items, products);
     sendOrderConfirmation(order.toJSON(), guestEmail.toLowerCase().trim()).catch(() => {});
     sendNewOrderNotification(order.toJSON()).catch(() => {});
     if ((paymentMethod || '').toLowerCase() === 'cod') {

@@ -34,6 +34,7 @@ import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 
 const KINDS = ['receipt', 'barcode'];
 const DEFAULTS = { receipt: 48, barcode: 32 };
+const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
 
 const key = (kind, suffix) => `pos_${kind}_${suffix}`;
 
@@ -188,7 +189,7 @@ function buildSale(payload, currency = 'KWD') {
   const enc = new ReceiptPrinterEncoder({ language: 'esc-pos', columns: cols });
 
   enc.initialize()
-    .align('center').bold(true).size('normal').line(location?.name || 'Anfal Sports').bold(false);
+    .align('center').bold(true).size('normal').line(location?.name || STORE_NAME).bold(false);
   if (location?.address) enc.align('center').line(location.address);
   if (location?.phone) enc.align('center').line(`Tel: ${location.phone}`);
   enc.rule();

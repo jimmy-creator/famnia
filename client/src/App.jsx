@@ -85,7 +85,7 @@ function PageWrapper({ children }) {
 // Non-obvious staff-only base path. Used in place of the old /pos so the
 // POS surface doesn't show up to customers/bots scanning common routes.
 // The auth gate is still the real protection — this is just hygiene.
-export const STAFF_BASE = '/anfal-staff-x7k2';
+export const STAFF_BASE = '/femnia-staff-q9m4';
 function PosAware({ children }) {
   const { pathname } = useLocation();
   if (pathname === STAFF_BASE || pathname === `${STAFF_BASE}/login`) return null;

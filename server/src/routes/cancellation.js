@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Order, Product, User } from '../models/index.js';
+import { Order, Product, User, restoreOnlineStock } from '../models/index.js';
 import { protect, admin, optionalAuth } from '../middleware/auth.js';
 import { sendOrderStatusUpdate } from '../services/emailService.js';
 import { getPaymentGateway } from '../services/paymentGateway.js';
@@ -38,12 +38,15 @@ router.post('/:id/cancel', optionalAuth, async (req, res) => {
       cancelledAt: new Date(),
     });
 
-    // Restore stock
-    for (const item of order.items) {
-      await Product.increment(
-        { stock: item.quantity },
-        { where: { id: item.productId } }
-      );
+    // Restore stock — the online inventory pool when configured, else
+    // the legacy aggregate.
+    if (!(await restoreOnlineStock(order))) {
+      for (const item of order.items) {
+        await Product.increment(
+          { stock: item.quantity },
+          { where: { id: item.productId } }
+        );
+      }
     }
 
     // If payment was made, initiate refund
@@ -103,7 +106,7 @@ router.post('/:id/refund', protect, admin, async (req, res) => {
     });
 
     // Restore stock if not already cancelled
-    if (order.orderStatus !== 'cancelled') {
+    if (order.orderStatus !== 'cancelled' && !(await restoreOnlineStock(order))) {
       for (const item of order.items) {
         await Product.increment(
           { stock: item.quantity },

@@ -213,6 +213,92 @@ export async function recomputeProductStock(productId) {
   }
 }
 
+// The Location whose ProductStock is the online store's inventory pool.
+// Exactly one active location should have isOnlineDefault. Returns its
+// id, or null if none is configured.
+export async function getOnlineLocationId() {
+  try {
+    const loc = await Location.findOne({
+      where: { isOnlineDefault: true, active: true },
+      attributes: ['id'],
+    });
+    return loc ? loc.id : null;
+  } catch (err) {
+    console.error('[getOnlineLocationId]', err.message);
+    return null;
+  }
+}
+
+// Map an order item back to its index in product.variants[] by matching
+// the stored selected-options against each variant's options (the same
+// matching the legacy reduceStock does). Returns null for a base product.
+function variantIndexForItem(product, item) {
+  const selected = item.variant || item.selectedVariant;
+  if (!selected || !Array.isArray(product?.variants) || !product.variants.length) {
+    return null;
+  }
+  const idx = product.variants.findIndex(
+    (v) => v.options && Object.entries(v.options).every(([k, val]) => selected[k] === val)
+  );
+  return idx >= 0 ? idx : null;
+}
+
+// Decrement the online store's inventory pool for a confirmed online sale.
+// Returns true when it handled the decrement (multi-location on and an
+// online location configured), false so the caller falls back to legacy
+// Product.stock behaviour.
+//
+// Without this, an online sale decrements Product.stock while every ERP
+// action calls recomputeProductStock() and overwrites it from
+// SUM(ProductStock) — silently reverting the sale and causing oversell.
+export async function decrementOnlineStock(order) {
+  if (process.env.FEATURE_MULTILOC !== 'true') return false;
+  const onlineLocId = await getOnlineLocationId();
+  if (!onlineLocId) return false;
+
+  const items = Array.isArray(order.items) ? order.items : [];
+  const touched = new Set();
+  for (const item of items) {
+    if (!item.productId || !item.quantity) continue;
+    const product = await Product.findByPk(item.productId, { attributes: ['id', 'variants'] });
+    const vIdx = variantIndexForItem(product, item);
+    const row = await ProductStock.findOne({
+      where: { productId: item.productId, variantIndex: vIdx, locationId: onlineLocId },
+    });
+    if (row) await row.update({ quantity: Math.max(0, row.quantity - item.quantity) });
+    touched.add(item.productId);
+  }
+  for (const pid of touched) await recomputeProductStock(pid);
+  if (!order.locationId) {
+    try { await order.update({ locationId: onlineLocId }); } catch { /* non-fatal */ }
+  }
+  return true;
+}
+
+// Return stock to the online pool when an order is cancelled/refunded.
+// Mirror of decrementOnlineStock; same true/false fallback contract.
+export async function restoreOnlineStock(order) {
+  if (process.env.FEATURE_MULTILOC !== 'true') return false;
+  const onlineLocId = await getOnlineLocationId();
+  if (!onlineLocId) return false;
+
+  const items = Array.isArray(order.items) ? order.items : [];
+  const touched = new Set();
+  for (const item of items) {
+    if (!item.productId || !item.quantity) continue;
+    const product = await Product.findByPk(item.productId, { attributes: ['id', 'variants'] });
+    const vIdx = variantIndexForItem(product, item);
+    const [row] = await ProductStock.findOrCreate({
+      where: { productId: item.productId, variantIndex: vIdx, locationId: onlineLocId },
+      defaults: { quantity: 0 },
+    });
+    await row.update({ quantity: row.quantity + item.quantity });
+    touched.add(item.productId);
+  }
+  for (const pid of touched) await recomputeProductStock(pid);
+  return true;
+}
+
 export {
   User, Product, Order, Coupon, Review, Setting, Category,
   Pincode, AbandonedCart, PriceRequest,

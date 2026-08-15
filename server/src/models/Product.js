@@ -88,6 +88,13 @@ const Product = sequelize.define('Product', {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
   },
+  hideOnline: {
+    // "POS only" — the product stays sellable at the till but is hidden
+    // from the storefront, the public API and the sitemap. Distinct from
+    // `active`, which unlists it everywhere.
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
   ratings: {
     type: DataTypes.DECIMAL(3, 2),
     defaultValue: 0,

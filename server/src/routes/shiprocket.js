@@ -28,7 +28,7 @@ export function decodeVariantId(variantId) {
 }
 import { Router } from 'express';
 import { Op } from 'sequelize';
-import { Product, Category, Order, User } from '../models/index.js';
+import { Product, Category, Order, User, decrementOnlineStock } from '../models/index.js';
 import { signedHeaders, SHIPROCKET_BASE } from '../utils/shiprocketAuth.js';
 import { parseWeightFromOptions } from '../utils/productWeight.js';
 import { sendOrderConfirmation, sendNewOrderNotification } from '../services/emailService.js';
@@ -406,9 +406,12 @@ router.post('/webhook/order', async (req, res) => {
       trackingNumber: payload.order_id, // Shiprocket's order id; useful to reconcile later
     });
 
-    // Decrement stock for each item (Shiprocket orders are real sales).
-    for (const it of orderItems) {
-      await Product.increment({ stock: -it.quantity }, { where: { id: it.productId } });
+    // Decrement stock for each item (Shiprocket orders are real sales) —
+    // the online inventory pool when configured, else legacy aggregate.
+    if (!(await decrementOnlineStock(order))) {
+      for (const it of orderItems) {
+        await Product.increment({ stock: -it.quantity }, { where: { id: it.productId } });
+      }
     }
 
     // Fire emails async — don't block the webhook ack.

@@ -7,6 +7,8 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { isEnabled, printReport } from '../lib/thermalPrinter';
 
+const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
+
 export default function PosReportReceipt({ report, currency = 'KWD', onClose }) {
   const printedRef = useRef(false);
 
@@ -87,7 +89,7 @@ export default function PosReportReceipt({ report, currency = 'KWD', onClose }) 
       <div id="pos-report">
         <h2>{t}</h2>
         <div className="meta">
-          <div>{report.location?.name || 'Anfal Sports'}</div>
+          <div>{report.location?.name || STORE_NAME}</div>
           {report.location?.phone && <div>Tel: {report.location.phone}</div>}
         </div>
         <hr />
