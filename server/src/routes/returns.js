@@ -222,6 +222,11 @@ router.post('/', authEither, async (req, res) => {
         sku: original.sku || original.variant?.sku || null,
         price: +(lineRefund / qty).toFixed(3),   // net unit price, so the receipt's qty × price adds up
         listPrice: parseFloat(original.price) || 0,
+        // Carry the original line's COGS snapshot so the P&L can credit it
+        // back. Without it refundCogs stays 0: the goods return to stock
+        // (inventory up) while COGS is never reduced (profit unchanged),
+        // which shows up as a permanent balance-sheet drift.
+        costPrice: parseFloat(original.costPrice) || 0,
         quantity: qty,
         refundAmount: lineRefund,
         returnToStock,

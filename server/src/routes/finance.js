@@ -37,14 +37,23 @@ import sequelize from '../config/database.js';
 import {
   CashAccount, CashTransaction, ExpenseCategory, Expense, CashTransfer,
   Location, User, Order, SalesReturn, Product, ProductStock,
+  FixedAsset, DepreciationEntry,
   writeCashTxn, getCashAccountBalance,
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
+import { ensureDepreciation } from '../services/depreciationJob.js';
 
 const router = Router();
 
 const gen = (prefix) =>
   `${prefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+// Local-time date formatters. NEVER use toISOString() for a DATEONLY
+// bound: parseRange builds its dates in local time, so on a UTC+3 server
+// toISOString() shifts the window a day and leaks rows between periods.
+const pad2 = (n) => String(n).padStart(2, '0');
+export const dateOnly = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+export const monthKeyLocal = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 
 const hasFinanceAccess = (req) =>
   req.user.role === 'admin' || (req.user.permissions || []).includes('analytics');
@@ -562,11 +571,11 @@ router.get('/daybook', protect, async (req, res) => {
 // COGS uses the snapshot costPrice on each Order line. Lines without
 // costPrice contribute 0 (older orders, products without cost set).
 // Returns subtract proportionally — refundAmount/totalAmount.
-router.get('/pnl', protect, async (req, res) => {
-  try {
-    if (!hasFinanceAccess(req)) return res.status(403).json({ message: 'Forbidden' });
-    const { from, to } = parseRange(req.query);
-    const locationFilter = req.query.locationId ? { locationId: parseInt(req.query.locationId, 10) } : {};
+// Exported so the balance sheet can reuse the exact same formula for
+// retained earnings. Two divergent COGS calculations is a guaranteed bug.
+export async function computePnl({ from, to, locationId = null }) {
+  {
+    const locationFilter = locationId ? { locationId: parseInt(locationId, 10) } : {};
 
     const orderWhere = {
       paymentStatus: 'paid',
@@ -575,13 +584,16 @@ router.get('/pnl', protect, async (req, res) => {
     };
     const orders = await Order.findAll({
       where: orderWhere,
-      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'items', 'locationId', 'createdAt'],
+      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'items', 'shippingCharge', 'locationId', 'createdAt'],
     });
 
-    let revenue = 0, cogs = 0;
+    let revenue = 0, cogs = 0, deliveryIncome = 0;
     const linesByCategory = new Map();   // category → { revenue, cogs }
     for (const o of orders) {
       revenue += parseFloat(o.totalAmount || 0);
+      // totalAmount is inclusive of delivery, so break it out to report
+      // it as its own income line rather than buried in product sales.
+      deliveryIncome += parseFloat(o.shippingCharge || 0);
       for (const it of (o.items || [])) {
         const qty = parseInt(it.quantity, 10) || 0;
         const cost = parseFloat(it.costPrice || 0);
@@ -612,19 +624,22 @@ router.get('/pnl', protect, async (req, res) => {
       refunds += parseFloat(r.refundAmount || 0);
       for (const it of (r.items || [])) {
         const qty = parseInt(it.quantity, 10) || 0;
-        // Look up the original line's costPrice — items in SalesReturn
-        // don't carry it. We could also re-look-up Product.costPrice,
-        // but the snapshot would be more accurate. For now, fall back
-        // to Product current cost.
-        // Skip refundCogs for v1 — under-counts COGS slightly when items
-        // are returned (we keep their COGS as if still sold).
+        // Return lines now snapshot the original line's costPrice, so a
+        // return credits COGS back. Returns written before that change
+        // have no costPrice and contribute 0 — which leaves their goods
+        // back in stock with COGS never reversed, and shows up as a
+        // balance-sheet difference rather than being silently absorbed.
         if (it.costPrice != null) refundCogs += parseFloat(it.costPrice) * qty;
       }
     }
 
+    // parseRange builds `from`/`to` in LOCAL time, so formatting them with
+    // toISOString() (as this used to) shifted the window by the UTC offset:
+    // on UTC+3 the local 1st of a month became the previous month's last
+    // day, leaking those expenses into the wrong period. Format locally.
     const expenseWhere = {
       status: 'paid',
-      expenseDate: { [Op.between]: [from.toISOString().slice(0, 10), to.toISOString().slice(0, 10)] },
+      expenseDate: { [Op.between]: [dateOnly(from), dateOnly(to)] },
       ...locationFilter,
     };
     const exps = await Expense.findAll({
@@ -641,23 +656,62 @@ router.get('/pnl', protect, async (req, res) => {
       expensesByCategory.set(cat, (expensesByCategory.get(cat) || 0) + amt);
     }
 
+    // ── Depreciation (NON-CASH) ──────────────────────────────────
+    // Filtered on the 'YYYY-MM' string range, which is the whole point of
+    // storing `period` as a string — no timezone reasoning needed.
+    const fromMonth = monthKeyLocal(from);
+    const toMonth = monthKeyLocal(to);
+    const depEntries = await DepreciationEntry.findAll({
+      where: { period: { [Op.between]: [fromMonth, toMonth] } },
+      include: [{
+        model: FixedAsset,
+        attributes: ['id', 'name', 'assetNumber', 'locationId', 'category'],
+        ...(locationFilter.locationId ? { where: { locationId: locationFilter.locationId } } : {}),
+      }],
+    });
+    let depreciation = 0;
+    const depByAsset = new Map();
+    for (const d of depEntries) {
+      const amt = parseFloat(d.amount || 0);
+      depreciation += amt;
+      const k = d.FixedAsset?.name || `#${d.fixedAssetId}`;
+      depByAsset.set(k, (depByAsset.get(k) || 0) + amt);
+    }
+
+    // ── Disposal gain / loss ─────────────────────────────────────
+    const disposals = await FixedAsset.findAll({
+      where: {
+        status: 'disposed',
+        disposalDate: { [Op.between]: [dateOnly(from), dateOnly(to)] },
+        ...locationFilter,
+      },
+      attributes: ['id', 'assetNumber', 'name', 'disposalDate', 'disposalProceeds', 'disposalGainLoss'],
+    });
+    const disposalGainLoss = disposals.reduce((s, a) => s + (parseFloat(a.disposalGainLoss) || 0), 0);
+
     const round = (n) => +n.toFixed(3);
     const netRevenue = revenue - refunds;
     const netCogs = cogs - refundCogs;
     const grossProfit = netRevenue - netCogs;
-    const netProfit = grossProfit - totalExpenses;
+    const operatingProfit = grossProfit - totalExpenses;
+    const netProfit = operatingProfit - depreciation + disposalGainLoss;
     const grossMargin = netRevenue > 0 ? +((grossProfit / netRevenue) * 100).toFixed(2) : 0;
 
-    res.json({
+    return {
       range: { from, to },
-      locationId: req.query.locationId || null,
+      locationId: locationId || null,
       revenue: round(revenue),
+      deliveryIncome: round(deliveryIncome),
+      productRevenue: round(revenue - deliveryIncome),
       refunds: round(refunds),
       netRevenue: round(netRevenue),
       cogs: round(netCogs),
       grossProfit: round(grossProfit),
       grossMargin,
       expenses: round(totalExpenses),
+      operatingProfit: round(operatingProfit),
+      depreciation: round(depreciation),
+      disposalGainLoss: round(disposalGainLoss),
       netProfit: round(netProfit),
       byCategory: [...linesByCategory.entries()].map(([category, v]) => ({
         category, qty: v.qty, revenue: round(v.revenue), cogs: round(v.cogs), grossProfit: round(v.revenue - v.cogs),
@@ -665,7 +719,26 @@ router.get('/pnl', protect, async (req, res) => {
       expensesByCategory: [...expensesByCategory.entries()].map(([name, amount]) => ({
         category: name, amount: round(amount),
       })).sort((a, b) => b.amount - a.amount),
-    });
+      depreciationByAsset: [...depByAsset.entries()].map(([asset, amount]) => ({
+        asset, amount: round(amount),
+      })).sort((a, b) => b.amount - a.amount),
+      disposals: disposals.map((a) => ({
+        assetNumber: a.assetNumber, name: a.name, disposalDate: a.disposalDate,
+        proceeds: round(parseFloat(a.disposalProceeds) || 0),
+        gainLoss: round(parseFloat(a.disposalGainLoss) || 0),
+      })),
+    };
+  }
+}
+
+// Route wrapper. Runs any missing depreciation first so the figures on
+// screen are never stale.
+router.get('/pnl', protect, async (req, res) => {
+  try {
+    if (!hasFinanceAccess(req)) return res.status(403).json({ message: 'Forbidden' });
+    const { from, to } = parseRange(req.query);
+    if (to <= new Date()) await ensureDepreciation(monthKeyLocal(to));
+    res.json(await computePnl({ from, to, locationId: req.query.locationId }));
   } catch (err) {
     console.error('[finance/pnl]', err);
     res.status(500).json({ message: err.message });
@@ -685,11 +758,11 @@ function parseRange(q) {
 // Inventory valuation per product per location:
 //   value = ProductStock.quantity × Product.costPrice
 // Totals roll up per location and overall.
-router.get('/stock-value', protect, async (req, res) => {
-  try {
-    if (!hasFinanceAccess(req)) return res.status(403).json({ message: 'Forbidden' });
+// Exported so the balance sheet values inventory with the same formula.
+export async function computeStockValue({ locationId = null } = {}) {
+  {
     const where = {};
-    if (req.query.locationId) where.locationId = parseInt(req.query.locationId, 10);
+    if (locationId) where.locationId = parseInt(locationId, 10);
 
     const stocks = await ProductStock.findAll({
       where,
@@ -744,19 +817,26 @@ router.get('/stock-value', protect, async (req, res) => {
     }
 
     const round = (n) => +n.toFixed(3);
-    res.json({
+    return {
       totals: {
         quantity: totalQty,
         value: round(totalValue),
         retailValue: round(totalRetail),
         marginPct: totalRetail > 0 ? +((totalRetail - totalValue) / totalRetail * 100).toFixed(2) : 0,
       },
-      byLocation: [...byLocation.entries()].map(([locationId, v]) => ({
-        locationId, locationName: v.locationName,
+      byLocation: [...byLocation.entries()].map(([locId, v]) => ({
+        locationId: locId, locationName: v.locationName,
         quantity: v.qty, value: round(v.value), retailValue: round(v.retailValue),
       })).sort((a, b) => b.value - a.value),
       rows: rows.sort((a, b) => b.value - a.value),
-    });
+    };
+  }
+}
+
+router.get('/stock-value', protect, async (req, res) => {
+  try {
+    if (!hasFinanceAccess(req)) return res.status(403).json({ message: 'Forbidden' });
+    res.json(await computeStockValue({ locationId: req.query.locationId }));
   } catch (err) {
     console.error('[finance/stock-value]', err);
     res.status(500).json({ message: err.message });

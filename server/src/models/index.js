@@ -27,6 +27,9 @@ import ActivityLog from './ActivityLog.js';
 import StockCount from './StockCount.js';
 import StockCountLine from './StockCountLine.js';
 import Counter from './Counter.js';
+import FixedAsset from './FixedAsset.js';
+import DepreciationEntry from './DepreciationEntry.js';
+import CapitalEntry from './CapitalEntry.js';
 import sequelize from '../config/database.js';
 
 // ── MariaDB JSON-column fix ──────────────────────────────────────
@@ -147,6 +150,21 @@ CashAccount.hasMany(CashTransfer, { as: 'transfersIn',  foreignKey: 'toAccountId
 CashTransfer.belongsTo(CashAccount, { as: 'fromAccount', foreignKey: 'fromAccountId' });
 CashTransfer.belongsTo(CashAccount, { as: 'toAccount',   foreignKey: 'toAccountId' });
 CashTransfer.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
+
+// ── Fixed assets & owner capital ────────────────────────────────
+Location.hasMany(FixedAsset, { foreignKey: 'locationId' });
+FixedAsset.belongsTo(Location, { foreignKey: 'locationId' });
+FixedAsset.belongsTo(Supplier, { foreignKey: 'supplierId' });
+FixedAsset.belongsTo(CashAccount, { foreignKey: 'cashAccountId' });
+FixedAsset.belongsTo(CashAccount, { as: 'disposalAccount', foreignKey: 'disposalCashAccountId' });
+FixedAsset.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
+
+FixedAsset.hasMany(DepreciationEntry, { as: 'depreciation', foreignKey: 'fixedAssetId', onDelete: 'CASCADE' });
+DepreciationEntry.belongsTo(FixedAsset, { foreignKey: 'fixedAssetId' });
+
+CashAccount.hasMany(CapitalEntry, { foreignKey: 'cashAccountId' });
+CapitalEntry.belongsTo(CashAccount, { foreignKey: 'cashAccountId' });
+CapitalEntry.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
 
 // ── Activity Log ────────────────────────────────────────────────
 ActivityLog.belongsTo(User, { as: 'actor', foreignKey: 'userId' });
@@ -316,6 +334,7 @@ export {
   ActivityLog,
   StockCount, StockCountLine,
   Counter,
+  FixedAsset, DepreciationEntry, CapitalEntry,
 };
 
 // ── Activity log + manager-override helpers ─────────────────────

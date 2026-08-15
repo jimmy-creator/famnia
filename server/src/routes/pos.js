@@ -423,6 +423,7 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
         sku: it.sku || it.variant?.sku || null,
         price: +(lineRefund / remainingQty).toFixed(3),   // net unit price, so qty × price adds up
         listPrice: parseFloat(it.price) || 0,
+        costPrice: parseFloat(it.costPrice) || 0,   // COGS snapshot, so the P&L can credit it back
         quantity: remainingQty,
         refundAmount: lineRefund,
         returnToStock: true,

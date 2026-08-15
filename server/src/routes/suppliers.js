@@ -26,7 +26,9 @@ import { protect, admin } from '../middleware/auth.js';
 
 const router = Router();
 
-async function computeBalance(supplierId) {
+// Exported so the balance sheet reports the same payable figure the
+// supplier screen shows.
+export async function computeBalance(supplierId) {
   const supplier = await Supplier.findByPk(supplierId, { attributes: ['openingBalance'] });
   if (!supplier) return 0;
   const [poSum, paySum, returnSum] = await Promise.all([
