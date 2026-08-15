@@ -121,9 +121,9 @@ router.post('/', authEither, async (req, res) => {
     // No customer credit: every refund goes back out a real money rail.
     // store_credit was removed — it wrote no ledger entry and nothing
     // anywhere could redeem it, so issuing it created a hidden liability.
-    if (!['cash', 'card', 'knet'].includes(refundMethod)) {
+    if (!['cash', 'card'].includes(refundMethod)) {
       await t.rollback();
-      return res.status(400).json({ message: 'refundMethod must be cash, card or knet' });
+      return res.status(400).json({ message: 'refundMethod must be cash or card' });
     }
 
     const order = await Order.findByPk(orderId, { transaction: t });
@@ -296,12 +296,10 @@ router.post('/', authEither, async (req, res) => {
     const newRefundAmount = +((parseFloat(order.refundAmount) || 0) + refundTotal).toFixed(3);
     await order.update({ refundAmount: newRefundAmount }, { transaction: t });
 
-    // Cash/card/KNET refunds are money OUT of the corresponding location
+    // Cash/card refunds are money OUT of the corresponding location
     // account. Store credit doesn't move cash, so no ledger entry.
-    if (['cash', 'card', 'knet'].includes(refundMethod)) {
-      const acctType = refundMethod === 'cash' ? 'drawer'
-        : refundMethod === 'knet' ? 'knet_terminal'
-        : 'card_terminal';
+    if (['cash', 'card'].includes(refundMethod)) {
+      const acctType = refundMethod === 'cash' ? 'drawer' : 'card_terminal';
       const acct = await CashAccount.findOne({
         where: { locationId, type: acctType, active: true },
         transaction: t,

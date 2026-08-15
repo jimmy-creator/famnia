@@ -47,11 +47,9 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
   const pickName = (it) => (receiptLoc === 'ar' && it.nameAr) ? it.nameAr : it.name;
   const when = order.createdAt ? new Date(order.createdAt).toLocaleString() : '';
   const breakdown = Array.isArray(order.paymentBreakdown) ? order.paymentBreakdown : null;
-  const methodLabel = (pm) => pm === 'pos_cash' ? 'Cash'
-    : pm === 'pos_knet' ? 'KNET'
-    : pm === 'pos_card' ? 'Card' : 'Card';
+  const methodLabel = (pm) => (pm === 'pos_cash' ? 'Cash' : 'Card');
   const method = breakdown ? 'Split' : methodLabel(order.paymentMethod);
-  const tenderLabel = (m) => m === 'cash' ? 'Cash' : m === 'knet' ? 'KNET' : 'Card';
+  const tenderLabel = (m) => (m === 'cash' ? 'Cash' : 'Card');
 
   // Rendered through a portal to <body> so the print stylesheet can hide the
   // whole app (#root) and leave ONLY the receipt. The previous approach kept

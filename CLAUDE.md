@@ -89,6 +89,8 @@ The balance sheet is an **aggregation, not a trial balance**: this is a single-e
 
 House rules enforced in code: no supplier credit (a PO cannot be received until `amountPaid >= totalAmount`) and no customer credit (POS tenders must sum exactly to the total; `store_credit` refunds were removed).
 
+POS tenders are **cash and card only**. KNET was inherited from the Kuwait upstream and removed — it is Kuwait's national debit network and doesn't operate in Qatar, so it offered a rail customers couldn't pay on and a drawer line that always read zero.
+
 ### Database
 
 Sequelize ORM with MySQL. Models in `server/src/models/`. Key models: User, Product, Order, Review, Category, Coupon, Setting, Pincode, AbandonedCart, plus the ERP set (Location, ProductStock, Supplier, PurchaseOrder, CashAccount, CashTransaction, Expense, FixedAsset, DepreciationEntry, CapitalEntry, Counter). Sync behavior: `DB_SYNC_ALTER=true` enables `sync({ alter: true })` — only use in development, never in production (causes duplicate index buildup).

@@ -29,13 +29,12 @@ function parseRange(q) {
 
 const isCash = (pm) => pm === 'pos_cash' || pm === 'cash';
 const isCard = (pm) => pm === 'pos_card' || pm === 'card';
-const isKnet = (pm) => pm === 'pos_knet' || pm === 'knet';
 
 // Refunds are attributed to the refundMethod (= the actual money-out path
 // from today's drawer), NOT to the original order's paymentMethod, since a
 // customer can pay cash today and refund onto a card tomorrow.
 function rollup(orders, returns = []) {
-  let totalSales = 0, cashSales = 0, cardSales = 0, knetSales = 0;
+  let totalSales = 0, cashSales = 0, cardSales = 0;
   for (const o of orders) {
     const amt = parseFloat(o.totalAmount || 0);
     totalSales += amt;
@@ -46,20 +45,17 @@ function rollup(orders, returns = []) {
         const tAmt = parseFloat(tn.amount || 0);
         if (tn.method === 'cash') cashSales += tAmt;
         else if (tn.method === 'card') cardSales += tAmt;
-        else if (tn.method === 'knet') knetSales += tAmt;
       }
     } else if (isCash(o.paymentMethod)) cashSales += amt;
     else if (isCard(o.paymentMethod)) cardSales += amt;
-    else if (isKnet(o.paymentMethod)) knetSales += amt;
   }
-  let cashRefunds = 0, cardRefunds = 0, knetRefunds = 0, returnCount = 0;
+  let cashRefunds = 0, cardRefunds = 0, returnCount = 0;
   for (const r of returns) {
     if (r.status === 'cancelled') continue;
     const amt = parseFloat(r.refundAmount || 0);
     returnCount += 1;
     if (r.refundMethod === 'cash') cashRefunds += amt;
     else if (r.refundMethod === 'card') cardRefunds += amt;
-    else if (r.refundMethod === 'knet') knetRefunds += amt;
   }
   const round = (n) => +n.toFixed(3);
   return {
@@ -67,12 +63,10 @@ function rollup(orders, returns = []) {
     totalSales: round(totalSales),
     cashSales: round(cashSales),
     cardSales: round(cardSales),
-    knetSales: round(knetSales),
     returnCount,
     cashRefunds: round(cashRefunds),
     cardRefunds: round(cardRefunds),
-    knetRefunds: round(knetRefunds),
-    netSales: round(totalSales - cashRefunds - cardRefunds - knetRefunds),
+    netSales: round(totalSales - cashRefunds - cardRefunds),
   };
 }
 

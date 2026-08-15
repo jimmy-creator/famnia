@@ -26,7 +26,7 @@ export default function FinanceTabs(props) {
 
 const ACCT_TYPE_LABEL = {
   drawer: 'Cash drawer', petty_cash: 'Petty cash', bank: 'Bank',
-  card_terminal: 'Card terminal', knet_terminal: 'KNET terminal', other: 'Other',
+  card_terminal: 'Card terminal', other: 'Other',
 };
 
 // ─── Cash Accounts ─────────────────────────────────────────────────
@@ -49,7 +49,7 @@ function CashAccountsTab({ currency, locations, cashAccounts, setCashAccounts, c
       </div>
 
       <div className="dash-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
-        {['drawer', 'card_terminal', 'knet_terminal', 'petty_cash', 'bank'].map((t) => (
+        {['drawer', 'card_terminal', 'petty_cash', 'bank'].map((t) => (
           <div key={t} className="dash-card">
             <div className="dash-card-label">{ACCT_TYPE_LABEL[t]} total</div>
             <div className="dash-card-value">{currency}{(totalsByType[t] || 0).toFixed(3)}</div>
@@ -119,7 +119,6 @@ function CashAccountsTab({ currency, locations, cashAccounts, setCashAccounts, c
                   <option value="petty_cash">Petty cash</option>
                   <option value="bank">Bank</option>
                   <option value="card_terminal">Card terminal</option>
-                  <option value="knet_terminal">KNET terminal</option>
                   <option value="other">Other</option>
                 </select>
               </div>

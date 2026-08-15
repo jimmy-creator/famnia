@@ -71,7 +71,6 @@ export async function seedDefaultAccountsIfEmpty() {
   for (const loc of locations) {
     if (!have.has(`drawer:${loc.id}`)) rows.push({ name: `${loc.name} Drawer`, type: 'drawer', locationId: loc.id });
     if (!have.has(`card_terminal:${loc.id}`)) rows.push({ name: `${loc.name} Card Terminal`, type: 'card_terminal', locationId: loc.id });
-    if (!have.has(`knet_terminal:${loc.id}`)) rows.push({ name: `${loc.name} KNET Terminal`, type: 'knet_terminal', locationId: loc.id });
   }
   if (!existing.some((a) => a.type === 'petty_cash')) rows.push({ name: 'Petty Cash', type: 'petty_cash' });
   if (!existing.some((a) => a.type === 'bank')) rows.push({ name: 'Bank Account', type: 'bank' });

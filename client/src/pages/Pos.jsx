@@ -684,12 +684,6 @@ export default function Pos() {
             </button>
             <button
               disabled={cart.length === 0}
-              onClick={() => setPayOpen('knet')}
-              className="pay-btn pay-btn-knet">
-              KNET
-            </button>
-            <button
-              disabled={cart.length === 0}
               onClick={() => setPayOpen('card')}
               className="pay-btn pay-btn-card">
               <HiCreditCard size={22} /> Card
@@ -739,7 +733,7 @@ export default function Pos() {
       {payOpen && (
         <div className="modal-backdrop" onClick={() => !submitting && setPayOpen(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{payOpen === 'cash' ? 'Cash payment' : payOpen === 'knet' ? 'KNET payment' : 'Card payment'}</h3>
+            <h3>{payOpen === 'cash' ? 'Cash payment' : 'Card payment'}</h3>
             <div className="pay-total">{fmt(total)}</div>
             {payOpen === 'cash' && (
               <>
@@ -761,9 +755,9 @@ export default function Pos() {
                 </div>
               </>
             )}
-            {(payOpen === 'card' || payOpen === 'knet') && (
+            {payOpen === 'card' && (
               <p style={{ color: '#94a3b8', fontSize: 14 }}>
-                Charge the customer on the {payOpen === 'knet' ? 'KNET' : 'card'} terminal, then confirm below.
+                Charge the customer on the card terminal, then confirm below.
               </p>
             )}
             <div className="modal-actions">
@@ -1256,7 +1250,7 @@ export default function Pos() {
 
         /* ── Payment buttons ────────────────────── */
         .pay-buttons {
-          display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem;
+          display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem;
           margin-top: 1rem;
         }
         .pay-btn {
@@ -1270,7 +1264,6 @@ export default function Pos() {
         .pay-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); }
         .pay-btn-cash { background: var(--pos-success); color: #052e23; }
         .pay-btn-card { background: var(--pos-card); }
-        .pay-btn-knet { background: #7c3aed; }    /* purple — distinct from card blue */
         .split-link {
           display: block; width: 100%; margin-top: 0.6rem;
           padding: 0.5rem;

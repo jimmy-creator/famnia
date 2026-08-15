@@ -27,7 +27,7 @@
  *     impossible.
  *
  * CashAccount rows are NOT created here — finance.js seeds a drawer, card
- * terminal, KNET terminal, petty cash and bank account automatically on
+ * terminal, petty cash and bank account automatically on
  * the next boot, once a Location exists.
  */
 import sequelize from '../config/database.js';   // also runs dotenv.config()

@@ -437,10 +437,7 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
     }
 
     // Refund via the same rail the customer paid through.
-    const refundMethod = order.paymentMethod === 'pos_cash' ? 'cash'
-      : order.paymentMethod === 'pos_card' ? 'card'
-      : order.paymentMethod === 'pos_knet' ? 'knet'
-      : 'cash';
+    const refundMethod = order.paymentMethod === 'pos_card' ? 'card' : 'cash';
 
     // Decrement stock back to this location.
     for (const v of voidItems) {
@@ -477,9 +474,7 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
       refundAmount: +(alreadyRefunded + refundTotal).toFixed(3),
     }, { transaction: t });
 
-    const acctType = refundMethod === 'cash' ? 'drawer'
-      : refundMethod === 'knet' ? 'knet_terminal'
-      : 'card_terminal';
+    const acctType = refundMethod === 'cash' ? 'drawer' : 'card_terminal';
     const acct = await CashAccount.findOne({
       where: { locationId: req.cashierLocationId, type: acctType, active: true },
       transaction: t,
@@ -676,11 +671,8 @@ router.post('/sales/:id/append', protectCashier, async (req, res) => {
     // Write CashTransaction(s) for the new tender(s).
     for (const tn of newTenders) {
       if (!tn.amount || tn.amount <= 0) continue;
-      // Same mapping as the sale path — without the KNET branch, KNET
-      // appends were landing on the card terminal and neither reconciled.
-      const acctType = tn.method === 'cash' ? 'drawer'
-        : tn.method === 'knet' ? 'knet_terminal'
-        : 'card_terminal';
+      // Same mapping as the sale path.
+      const acctType = tn.method === 'cash' ? 'drawer' : 'card_terminal';
       const acct = await CashAccount.findOne({
         where: { locationId: req.cashierLocationId, type: acctType, active: true },
         transaction: t,
@@ -883,15 +875,15 @@ router.post('/sale', protectCashier, async (req, res) => {
         method: t.method,
         amount: parseFloat(t.amount),
       }));
-    } else if (payment?.method && ['cash', 'card', 'knet'].includes(payment.method)) {
+    } else if (payment?.method && ['cash', 'card'].includes(payment.method)) {
       tenders = [{ method: payment.method, amount: null }];   // amount filled after total
     } else {
       await t.rollback();
       return res.status(400).json({ message: 'payment.method or payment.tenders required' });
     }
-    if (tenders.some((t) => !['cash', 'card', 'knet'].includes(t.method))) {
+    if (tenders.some((t) => !['cash', 'card'].includes(t.method))) {
       await t.rollback();
-      return res.status(400).json({ message: 'Each tender must be cash, card or knet' });
+      return res.status(400).json({ message: 'Each tender must be cash or card' });
     }
 
     // Validate shift is still open.
@@ -1089,7 +1081,7 @@ router.post('/sale', protectCashier, async (req, res) => {
         if (amountTendered < totalAmount) throw new Error('Amount tendered is less than total');
         single.amount = totalAmount;       // retained, not tendered
       } else {
-        // Card and KNET terminals charge exactly the bill amount.
+        // Card terminals charge exactly the bill amount.
         if (change > 0) throw new Error(`${single.method.toUpperCase()} payment cannot exceed total`);
         single.amount = totalAmount;
       }
@@ -1170,7 +1162,7 @@ router.post('/sale', protectCashier, async (req, res) => {
     // drawer; card hits its card-terminal account. Missing account is
     // non-fatal — POS keeps working, the sale just doesn't hit the
     // ledger for that tender until the account is created.
-    const methodToAcct = { cash: 'drawer', card: 'card_terminal', knet: 'knet_terminal' };
+    const methodToAcct = { cash: 'drawer', card: 'card_terminal' };
     const acctCache = {};   // type -> CashAccount
     for (const tn of tenders) {
       if (!tn.amount || tn.amount <= 0) continue;
@@ -1244,13 +1236,11 @@ router.get('/shift-summary', protectCashier, async (req, res) => {
           const tAmt = parseFloat(tn.amount || 0);
           if (tn.method === 'cash') s.cashSales += tAmt;
           else if (tn.method === 'card') s.cardSales += tAmt;
-          else if (tn.method === 'knet') s.knetSales += tAmt;
         }
       } else if (o.paymentMethod === 'pos_cash') s.cashSales += amt;
       else if (o.paymentMethod === 'pos_card') s.cardSales += amt;
-      else if (o.paymentMethod === 'pos_knet') s.knetSales += amt;
       return s;
-    }, { totalSales: 0, cashSales: 0, cardSales: 0, knetSales: 0, orderCount: 0 });
+    }, { totalSales: 0, cashSales: 0, cardSales: 0, orderCount: 0 });
 
     summary.openingCash = parseFloat(session.openingCash) || 0;
     summary.expectedCash = summary.openingCash + summary.cashSales;

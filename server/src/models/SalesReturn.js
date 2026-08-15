@@ -52,7 +52,7 @@ const SalesReturn = sequelize.define('SalesReturn', {
   refundMethod: {
     // No store_credit: the store extends no customer credit, and the
     // value had no redemption path anywhere in the system.
-    type: DataTypes.ENUM('cash', 'card', 'knet'),
+    type: DataTypes.ENUM('cash', 'card'),
     allowNull: false,
   },
   reason: {

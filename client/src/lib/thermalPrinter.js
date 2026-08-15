@@ -241,7 +241,7 @@ function buildSale(payload, currency = 'KWD') {
     [['TOTAL', fmt(currency, order.totalAmount)]]
   ).bold(false);
 
-  const tenderLabel = (m) => m === 'cash' ? 'Cash' : m === 'knet' ? 'KNET' : 'Card';
+  const tenderLabel = (m) => (m === 'cash' ? 'Cash' : 'Card');
   if (breakdown) {
     for (const tn of breakdown) {
       enc.table(
@@ -251,7 +251,7 @@ function buildSale(payload, currency = 'KWD') {
     }
   } else {
     const method = order.paymentMethod === 'pos_cash' ? 'Cash'
-      : order.paymentMethod === 'pos_knet' ? 'KNET' : 'Card';
+      : 'Card';
     enc.table(
       [{ width: colW, marginRight: 1 }, { width: cols - colW - 1, align: 'right' }],
       [[`Paid (${method})`, fmt(currency, amountTendered ?? order.totalAmount)]]

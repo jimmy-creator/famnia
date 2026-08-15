@@ -15,7 +15,7 @@ const CashAccount = sequelize.define('CashAccount', {
   name: { type: DataTypes.STRING, allowNull: false },
   code: { type: DataTypes.STRING, allowNull: true, unique: true },
   type: {
-    type: DataTypes.ENUM('drawer', 'petty_cash', 'bank', 'card_terminal', 'knet_terminal', 'other'),
+    type: DataTypes.ENUM('drawer', 'petty_cash', 'bank', 'card_terminal', 'other'),
     allowNull: false,
     defaultValue: 'drawer',
   },
