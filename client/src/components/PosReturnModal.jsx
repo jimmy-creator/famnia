@@ -238,8 +238,8 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
             </div>
 
             <label className="modal-label">Refund method</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: '0.75rem' }}>
-              {['cash', 'knet', 'card', 'store_credit'].map((m) => (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: '0.75rem' }}>
+              {['cash', 'card'].map((m) => (
                 <button
                   key={m}
                   onClick={() => setRefundMethod(m)}
@@ -252,9 +252,9 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
                     cursor: 'pointer',
                     fontFamily: 'inherit',
                     fontWeight: 600,
-                    textTransform: m === 'knet' ? 'uppercase' : 'capitalize',
+                    textTransform: 'capitalize',
                   }}>
-                  {m === 'knet' ? 'KNET' : m.replace('_', ' ')}
+                  {m.replace('_', ' ')}
                 </button>
               ))}
             </div>

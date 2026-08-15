@@ -21,7 +21,7 @@ import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
   PurchaseReturn, PurchaseOrder, Supplier, Location, User,
-  ProductStock, recomputeProductStock,
+  ProductStock, recomputeProductStock, CashAccount, writeCashTxn,
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
 
@@ -153,6 +153,32 @@ router.post('/', protect, async (req, res) => {
       createdBy: req.user.id,
     }, { transaction: t });
 
+    // A cash or bank refund from the supplier is money IN — without this
+    // the daybook and every cash balance miss it entirely. A credit_note
+    // moves no cash, so it correctly writes nothing.
+    if (refundMethod === 'cash' || refundMethod === 'bank') {
+      const acctType = refundMethod === 'cash' ? 'drawer' : 'bank';
+      const acct = await CashAccount.findOne({
+        where: {
+          type: acctType, active: true,
+          ...(acctType === 'drawer' ? { locationId } : {}),
+        },
+        transaction: t,
+      });
+      await writeCashTxn({
+        cashAccountId: acct?.id,
+        amount: total,
+        source: 'supplier_payment',
+        sourceType: 'PurchaseReturn',
+        sourceId: pr.id,
+        reference: pr.returnNumber,
+        description: `Supplier refund (${refundMethod})`,
+        date: new Date(),
+        createdBy: req.user.id,
+        transaction: t,
+      });
+    }
+
     await t.commit();
     for (const pid of productIds) await recomputeProductStock(pid);
     res.status(201).json(pr);
@@ -187,6 +213,31 @@ router.post('/:id/cancel', protect, admin, async (req, res) => {
           quantity: it.quantity,
         }, { transaction: t });
       }
+    }
+
+    // Mirror-reversal of the refund, dated today — never delete the
+    // original ledger row. Same pattern as the expense-cancel path.
+    if (pr.refundMethod === 'cash' || pr.refundMethod === 'bank') {
+      const acctType = pr.refundMethod === 'cash' ? 'drawer' : 'bank';
+      const acct = await CashAccount.findOne({
+        where: {
+          type: acctType, active: true,
+          ...(acctType === 'drawer' ? { locationId: pr.locationId } : {}),
+        },
+        transaction: t,
+      });
+      await writeCashTxn({
+        cashAccountId: acct?.id,
+        amount: -(parseFloat(pr.totalAmount) || 0),
+        source: 'supplier_payment',
+        sourceType: 'PurchaseReturn',
+        sourceId: pr.id,
+        reference: `${pr.returnNumber}-REVERSAL`,
+        description: 'Supplier refund cancelled',
+        date: new Date(),
+        createdBy: req.user.id,
+        transaction: t,
+      });
     }
 
     await pr.update({ status: 'cancelled' }, { transaction: t });

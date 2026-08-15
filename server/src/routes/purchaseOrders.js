@@ -210,11 +210,20 @@ router.put('/:id', protect, async (req, res) => {
       const totals = computeTotals(normalized, shippingCost, discount);
       applyLandedCost(normalized, shippingCost);
       Object.assign(updates, { items: normalized, ...totals });
-    } else if (shippingCost !== undefined && shippingCost !== po.shippingCost) {
-      // Shipping changed but items didn't — re-distribute existing lines.
+    } else if (
+      // Compare as numbers: Sequelize hands DECIMAL back as a string, so
+      // `shippingCost !== po.shippingCost` was comparing 25 to "25.000"
+      // and firing on virtually every edit.
+      (parseFloat(shippingCost) || 0) !== (parseFloat(po.shippingCost) || 0)
+      || (parseFloat(discount) || 0) !== (parseFloat(po.discount) || 0)
+    ) {
+      // Shipping/discount changed but items didn't — re-distribute the
+      // existing lines AND recompute the header. Previously only the
+      // lines were re-landed, so totalAmount kept the old shipping.
       const existing = [...(po.items || [])];
+      const totals = computeTotals(existing, shippingCost, discount);
       applyLandedCost(existing, shippingCost);
-      updates.items = existing;
+      Object.assign(updates, { items: existing, ...totals });
     }
     if (supplierId) updates.supplierId = parseInt(supplierId, 10);
     if (locationId) updates.locationId = parseInt(locationId, 10);
@@ -268,6 +277,19 @@ router.post('/:id/receive', protect, async (req, res) => {
     if (po.status === 'cancelled' || po.status === 'received') {
       await t.rollback();
       return res.status(400).json({ message: `Cannot receive a ${po.status} PO` });
+    }
+
+    // House rule: we take no supplier credit. Goods only enter stock once
+    // the invoice is settled in full, so no payable can ever accrue.
+    // Settle with POST /purchase-orders/:id/pay first.
+    const owed = +((parseFloat(po.totalAmount) || 0) - (parseFloat(po.amountPaid) || 0)).toFixed(3);
+    if (owed > 0.0005) {
+      await t.rollback();
+      return res.status(400).json({
+        message: `Pay this PO in full before receiving — ${owed} outstanding of ${po.totalAmount}`,
+        requires: 'payment',
+        outstanding: owed,
+      });
     }
 
     const { items, notes } = req.body || {};
@@ -331,11 +353,26 @@ router.post('/:id/receive', protect, async (req, res) => {
         }, { transaction: t });
       }
       // Use landed unit cost (unit cost + per-line tax + proportional
-      // share of PO shipping) so Product.costPrice reflects the true
-      // landed price per unit.
+      // share of PO shipping) so costPrice reflects the true landed
+      // price per unit.
       const cost = parseFloat(g.landedUnitCost ?? g.unitCost) || 0;
       if (cost > 0) {
-        await Product.update({ costPrice: cost }, { where: { id: g.productId }, transaction: t });
+        if (g.variantIndex == null) {
+          await Product.update({ costPrice: cost }, { where: { id: g.productId }, transaction: t });
+        } else {
+          // Write to the variant, not the whole product. Receiving one
+          // variant used to overwrite costPrice for every variant, and
+          // POS reads variant?.costPrice ?? product.costPrice — so
+          // variant COGS silently drifted after any mixed receipt.
+          const prod = await Product.findByPk(g.productId, {
+            attributes: ['id', 'variants'], transaction: t,
+          });
+          const variants = Array.isArray(prod?.variants) ? [...prod.variants] : [];
+          if (variants[g.variantIndex]) {
+            variants[g.variantIndex] = { ...variants[g.variantIndex], costPrice: cost };
+            await Product.update({ variants }, { where: { id: g.productId }, transaction: t });
+          }
+        }
       }
     }
 

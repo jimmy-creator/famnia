@@ -2,6 +2,10 @@ import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import { Product } from '../models/index.js';
 
+// Storefront visibility: active AND not flagged POS-only. Applied to every
+// public-facing product query so a `hideOnline` product never leaks out.
+export const STOREFRONT_WHERE = { active: true, hideOnline: false };
+
 export const getProducts = async (req, res) => {
   try {
     const {
@@ -16,7 +20,7 @@ export const getProducts = async (req, res) => {
       featured,
     } = req.query;
 
-    const where = { active: true };
+    const where = { ...STOREFRONT_WHERE };
     const and = [];
 
     if (category) {
@@ -68,7 +72,7 @@ export const getProducts = async (req, res) => {
 export const getProduct = async (req, res) => {
   try {
     const product = await Product.findOne({
-      where: { slug: req.params.slug, active: true },
+      where: { slug: req.params.slug, ...STOREFRONT_WHERE },
     });
 
     if (!product) {
@@ -87,7 +91,7 @@ export const getCategories = async (req, res) => {
     // `categories` array — so secondary memberships still show up as filters.
     const rows = await Product.findAll({
       attributes: ['category', 'categories'],
-      where: { active: true },
+      where: { ...STOREFRONT_WHERE },
       raw: true,
     });
     const set = new Set();

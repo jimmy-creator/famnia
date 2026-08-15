@@ -26,7 +26,7 @@ export default function FinanceTabs(props) {
 
 const ACCT_TYPE_LABEL = {
   drawer: 'Cash drawer', petty_cash: 'Petty cash', bank: 'Bank',
-  card_terminal: 'Card terminal', knet_terminal: 'KNET terminal', other: 'Other',
+  card_terminal: 'Card terminal', other: 'Other',
 };
 
 // ─── Cash Accounts ─────────────────────────────────────────────────
@@ -49,7 +49,7 @@ function CashAccountsTab({ currency, locations, cashAccounts, setCashAccounts, c
       </div>
 
       <div className="dash-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
-        {['drawer', 'card_terminal', 'knet_terminal', 'petty_cash', 'bank'].map((t) => (
+        {['drawer', 'card_terminal', 'petty_cash', 'bank'].map((t) => (
           <div key={t} className="dash-card">
             <div className="dash-card-label">{ACCT_TYPE_LABEL[t]} total</div>
             <div className="dash-card-value">{currency}{(totalsByType[t] || 0).toFixed(3)}</div>
@@ -119,7 +119,6 @@ function CashAccountsTab({ currency, locations, cashAccounts, setCashAccounts, c
                   <option value="petty_cash">Petty cash</option>
                   <option value="bank">Bank</option>
                   <option value="card_terminal">Card terminal</option>
-                  <option value="knet_terminal">KNET terminal</option>
                   <option value="other">Other</option>
                 </select>
               </div>
@@ -520,6 +519,7 @@ function DaybookTab({ currency, cashAccounts, daybook, daybookFilter, setDaybook
     sale: 'Sale', return: 'Refund', expense: 'Expense',
     supplier_payment: 'Supplier payment', transfer: 'Transfer',
     opening: 'Opening', adjust: 'Adjustment', other: 'Other',
+    capital: 'Owner capital', asset: 'Fixed asset',
   };
   return (
     <div className="admin-section">
@@ -621,6 +621,27 @@ function PnlTab({ currency, locations, pnl, pnlFilter, setPnlFilter }) {
             <div className="dash-card"><div className="dash-card-label">COGS</div><div className="dash-card-value">{currency}{pnl.cogs.toFixed(3)}</div></div>
             <div className="dash-card"><div className="dash-card-label">Gross profit</div><div className="dash-card-value" style={{ color: pnl.grossProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{currency}{pnl.grossProfit.toFixed(3)}</div><div className="dash-card-change" style={{ color: 'var(--text-light)' }}>{pnl.grossMargin}% margin</div></div>
             <div className="dash-card"><div className="dash-card-label">Expenses</div><div className="dash-card-value">{currency}{pnl.expenses.toFixed(3)}</div></div>
+            {/* `?? 0` throughout: a cached response from before these fields
+                existed must not crash the render. */}
+            <div className="dash-card">
+              <div className="dash-card-label">Depreciation</div>
+              <div className="dash-card-value">{currency}{(pnl.depreciation ?? 0).toFixed(3)}</div>
+              <div className="dash-card-change" style={{ color: 'var(--text-light)' }}>non-cash</div>
+            </div>
+            {(pnl.disposalGainLoss ?? 0) !== 0 && (
+              <div className="dash-card">
+                <div className="dash-card-label">Disposal gain / (loss)</div>
+                <div className="dash-card-value" style={{ color: (pnl.disposalGainLoss ?? 0) >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                  {currency}{(pnl.disposalGainLoss ?? 0).toFixed(3)}
+                </div>
+              </div>
+            )}
+            {(pnl.deliveryIncome ?? 0) > 0 && (
+              <div className="dash-card">
+                <div className="dash-card-label">Delivery income</div>
+                <div className="dash-card-value">{currency}{(pnl.deliveryIncome ?? 0).toFixed(3)}</div>
+              </div>
+            )}
             <div className="dash-card"><div className="dash-card-label">Net profit</div><div className="dash-card-value" style={{ color: pnl.netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{currency}{pnl.netProfit.toFixed(3)}</div></div>
           </div>
 
@@ -662,6 +683,25 @@ function PnlTab({ currency, locations, pnl, pnlFilter, setPnlFilter }) {
                   </tbody>
                 </table>
               </div>
+
+              {(pnl.depreciationByAsset?.length ?? 0) > 0 && (
+                <>
+                  <h3 style={{ marginBottom: '0.5rem', marginTop: '1rem' }}>Depreciation by asset</h3>
+                  <div className="admin-table-wrap">
+                    <table className="admin-table">
+                      <thead><tr><th>Asset</th><th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
+                      <tbody>
+                        {pnl.depreciationByAsset.map((r, i) => (
+                          <tr key={i}>
+                            <td>{r.asset}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{r.amount.toFixed(3)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

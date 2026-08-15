@@ -34,6 +34,7 @@ import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 
 const KINDS = ['receipt', 'barcode'];
 const DEFAULTS = { receipt: 48, barcode: 32 };
+const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
 
 const key = (kind, suffix) => `pos_${kind}_${suffix}`;
 
@@ -188,7 +189,7 @@ function buildSale(payload, currency = 'KWD') {
   const enc = new ReceiptPrinterEncoder({ language: 'esc-pos', columns: cols });
 
   enc.initialize()
-    .align('center').bold(true).size('normal').line(location?.name || 'Anfal Sports').bold(false);
+    .align('center').bold(true).size('normal').line(location?.name || STORE_NAME).bold(false);
   if (location?.address) enc.align('center').line(location.address);
   if (location?.phone) enc.align('center').line(`Tel: ${location.phone}`);
   enc.rule();
@@ -218,16 +219,21 @@ function buildSale(payload, currency = 'KWD') {
   }
   enc.rule();
 
-  if (parseFloat(order.discount || 0) > 0) {
+  // Show the subtotal whenever anything sits between it and the total —
+  // a discount, a delivery charge, or both. Must mirror PosReceipt.jsx.
+  const delivery = parseFloat(order.shippingCharge || 0);
+  if (parseFloat(order.discount || 0) > 0 || delivery > 0) {
     const subtotal = (order.items || []).reduce(
       (s, it) => s + (parseFloat(it.price) || 0) * (parseInt(it.quantity, 10) || 0), 0
     );
+    const rows = [['Subtotal', fmt(currency, subtotal)]];
+    if (parseFloat(order.discount || 0) > 0) {
+      rows.push([`Discount${order.couponCode ? ` (${order.couponCode})` : ''}`, `-${fmt(currency, order.discount)}`]);
+    }
+    if (delivery > 0) rows.push(['Delivery', fmt(currency, delivery)]);
     enc.table(
       [{ width: colW, marginRight: 1 }, { width: cols - colW - 1, align: 'right' }],
-      [
-        ['Subtotal', fmt(currency, subtotal)],
-        [`Discount${order.couponCode ? ` (${order.couponCode})` : ''}`, `-${fmt(currency, order.discount)}`],
-      ]
+      rows
     );
   }
   enc.bold(true).table(
@@ -235,7 +241,7 @@ function buildSale(payload, currency = 'KWD') {
     [['TOTAL', fmt(currency, order.totalAmount)]]
   ).bold(false);
 
-  const tenderLabel = (m) => m === 'cash' ? 'Cash' : m === 'knet' ? 'KNET' : 'Card';
+  const tenderLabel = (m) => (m === 'cash' ? 'Cash' : 'Card');
   if (breakdown) {
     for (const tn of breakdown) {
       enc.table(
@@ -245,7 +251,7 @@ function buildSale(payload, currency = 'KWD') {
     }
   } else {
     const method = order.paymentMethod === 'pos_cash' ? 'Cash'
-      : order.paymentMethod === 'pos_knet' ? 'KNET' : 'Card';
+      : 'Card';
     enc.table(
       [{ width: colW, marginRight: 1 }, { width: cols - colW - 1, align: 'right' }],
       [[`Paid (${method})`, fmt(currency, amountTendered ?? order.totalAmount)]]

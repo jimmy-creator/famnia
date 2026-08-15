@@ -47,10 +47,12 @@ import purchaseOrdersRoutes from './routes/purchaseOrders.js';
 import purchaseReturnsRoutes from './routes/purchaseReturns.js';
 import financeRoutes, { seedDefaultAccountsIfEmpty } from './routes/finance.js';
 import activityLogRoutes from './routes/activityLog.js';
+import accountingRoutes from './routes/accounting.js';
 import stockCountsRoutes from './routes/stockCounts.js';
 import { registerShiprocketHooks } from './services/shiprocketSync.js';
 import { startAbandonedCartJob } from './services/abandonedCartJob.js';
 import { startLowStockJob } from './services/lowStockJob.js';
+import { startDepreciationJob } from './services/depreciationJob.js';
 import sitemapRoutes from './routes/sitemap.js';
 import { sanitizeInput, preventInjection, forceHttps } from './middleware/security.js';
 import htmlInject from './middleware/htmlInject.js';
@@ -144,6 +146,7 @@ app.use('/api/purchase-orders', purchaseOrdersRoutes);
 app.use('/api/purchase-returns', purchaseReturnsRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/activity-log', activityLogRoutes);
+app.use('/api/accounting', accountingRoutes);
 app.use('/api/stock-counts', stockCountsRoutes);
 app.use('/', sitemapRoutes);
 
@@ -201,6 +204,7 @@ const start = async () => {
       verifyEmailTransport().catch(() => {}); // logs whether SMTP email works
       startAbandonedCartJob();
       startLowStockJob();
+      startDepreciationJob();
       registerShiprocketHooks();
       seedDefaultAccountsIfEmpty().catch((err) =>
         console.error('[finance/seed]', err.message)

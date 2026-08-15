@@ -29,13 +29,12 @@ function parseRange(q) {
 
 const isCash = (pm) => pm === 'pos_cash' || pm === 'cash';
 const isCard = (pm) => pm === 'pos_card' || pm === 'card';
-const isKnet = (pm) => pm === 'pos_knet' || pm === 'knet';
 
 // Refunds are attributed to the refundMethod (= the actual money-out path
 // from today's drawer), NOT to the original order's paymentMethod, since a
 // customer can pay cash today and refund onto a card tomorrow.
 function rollup(orders, returns = []) {
-  let totalSales = 0, cashSales = 0, cardSales = 0, knetSales = 0;
+  let totalSales = 0, cashSales = 0, cardSales = 0;
   for (const o of orders) {
     const amt = parseFloat(o.totalAmount || 0);
     totalSales += amt;
@@ -46,21 +45,17 @@ function rollup(orders, returns = []) {
         const tAmt = parseFloat(tn.amount || 0);
         if (tn.method === 'cash') cashSales += tAmt;
         else if (tn.method === 'card') cardSales += tAmt;
-        else if (tn.method === 'knet') knetSales += tAmt;
       }
     } else if (isCash(o.paymentMethod)) cashSales += amt;
     else if (isCard(o.paymentMethod)) cardSales += amt;
-    else if (isKnet(o.paymentMethod)) knetSales += amt;
   }
-  let cashRefunds = 0, cardRefunds = 0, knetRefunds = 0, creditRefunds = 0, returnCount = 0;
+  let cashRefunds = 0, cardRefunds = 0, returnCount = 0;
   for (const r of returns) {
     if (r.status === 'cancelled') continue;
     const amt = parseFloat(r.refundAmount || 0);
     returnCount += 1;
     if (r.refundMethod === 'cash') cashRefunds += amt;
     else if (r.refundMethod === 'card') cardRefunds += amt;
-    else if (r.refundMethod === 'knet') knetRefunds += amt;
-    else if (r.refundMethod === 'store_credit') creditRefunds += amt;
   }
   const round = (n) => +n.toFixed(3);
   return {
@@ -68,13 +63,10 @@ function rollup(orders, returns = []) {
     totalSales: round(totalSales),
     cashSales: round(cashSales),
     cardSales: round(cardSales),
-    knetSales: round(knetSales),
     returnCount,
     cashRefunds: round(cashRefunds),
     cardRefunds: round(cardRefunds),
-    knetRefunds: round(knetRefunds),
-    creditRefunds: round(creditRefunds),
-    netSales: round(totalSales - cashRefunds - cardRefunds - knetRefunds - creditRefunds),
+    netSales: round(totalSales - cashRefunds - cardRefunds),
   };
 }
 
@@ -108,7 +100,7 @@ router.get('/cashier-sales', protect, admin, async (req, res) => {
 
     const orders = await Order.findAll({
       where,
-      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'items',
+      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items',
                    'cashierSessionId', 'locationId', 'createdAt'],
       include: [{
         model: CashierSession,
@@ -196,7 +188,7 @@ router.get('/location-sales', protect, admin, async (req, res) => {
 
     const orders = await Order.findAll({
       where,
-      attributes: ['id', 'totalAmount', 'refundAmount', 'paymentMethod', 'items', 'locationId', 'createdAt'],
+      attributes: ['id', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items', 'locationId', 'createdAt'],
     });
 
     const returns = await SalesReturn.findAll({ where });
@@ -253,7 +245,7 @@ router.get('/x', protectCashier, async (req, res) => {
 
     const orders = await Order.findAll({
       where: { cashierSessionId: session.id },
-      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'items', 'createdAt'],
+      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items', 'createdAt'],
       order: [['createdAt', 'DESC']],
     });
     const returns = await SalesReturn.findAll({
@@ -300,7 +292,7 @@ router.get('/z/:sessionId', protect, async (req, res) => {
 
     const orders = await Order.findAll({
       where: { cashierSessionId: session.id },
-      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'items', 'createdAt'],
+      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items', 'createdAt'],
       order: [['createdAt', 'DESC']],
     });
     const returns = await SalesReturn.findAll({

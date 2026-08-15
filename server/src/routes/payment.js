@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { protect, optionalAuth } from '../middleware/auth.js';
-import { Order, Product, User, Coupon } from '../models/index.js';
+import { Order, Product, User, Coupon, decrementOnlineStock } from '../models/index.js';
 import { getPaymentGateway, getAvailableGateways } from '../services/paymentGateway.js';
 import { sendOrderConfirmation, sendPaymentConfirmation, sendNewOrderNotification } from '../services/emailService.js';
 import { autoCreateShipment } from '../services/shipping.js';
@@ -319,8 +319,9 @@ router.post('/verify', optionalAuth, async (req, res) => {
         orderStatus: 'confirmed',
       });
 
-      // Reduce stock (per-variant for variant products)
-      await reduceOrderStock(order.items);
+      // Reduce stock — the online inventory pool when multi-location is
+      // configured, else the legacy per-variant aggregate.
+      if (!(await decrementOnlineStock(order))) await reduceOrderStock(order.items);
 
       // Send payment + order confirmation emails
       let email = order.guestEmail;
@@ -399,7 +400,7 @@ router.post('/paytm-callback', async (req, res) => {
 
         if (result.verified) {
           await order.update({ paymentStatus: 'paid', orderStatus: 'confirmed' });
-          await reduceOrderStock(order.items);
+          if (!(await decrementOnlineStock(order))) await reduceOrderStock(order.items);
 
           // Send emails
           let email = order.guestEmail;
@@ -457,7 +458,7 @@ router.post('/nomod-verify', optionalAuth, async (req, res) => {
     if (result.verified) {
       await order.update({ paymentStatus: 'paid', orderStatus: 'confirmed' });
 
-      await reduceOrderStock(order.items);
+      if (!(await decrementOnlineStock(order))) await reduceOrderStock(order.items);
 
       let email = order.guestEmail;
       if (!email && req.user) email = req.user.email;
@@ -528,7 +529,7 @@ router.post('/tamara-verify', optionalAuth, async (req, res) => {
     if (result.verified) {
       await order.update({ paymentStatus: 'paid', orderStatus: 'confirmed' });
 
-      await reduceOrderStock(order.items);
+      if (!(await decrementOnlineStock(order))) await reduceOrderStock(order.items);
 
       let email = order.guestEmail;
       if (!email && req.user) email = req.user.email;

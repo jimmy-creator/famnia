@@ -335,10 +335,6 @@ export default function PosBillEditor({ orderNumber, currency = 'KWD', onClose, 
                 style={payMethodBtn(payMethod === 'cash')}>
                 <HiCash size={18} /> Cash
               </button>
-              <button onClick={() => setPayMethod('knet')}
-                style={payMethodBtn(payMethod === 'knet')}>
-                KNET
-              </button>
               <button onClick={() => setPayMethod('card')}
                 style={payMethodBtn(payMethod === 'card')}>
                 <HiCreditCard size={18} /> Card

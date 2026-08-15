@@ -14,34 +14,29 @@ import { HiCash, HiCreditCard } from 'react-icons/hi';
 
 export default function PosSplitPayment({ total, currency = 'KWD', onClose, onConfirm, submitting }) {
   const [cash, setCash] = useState('');
-  const [knet, setKnet] = useState('');
   const [card, setCard] = useState('');
 
   const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(3)}`;
   const cashNum = parseFloat(cash) || 0;
-  const knetNum = parseFloat(knet) || 0;
   const cardNum = parseFloat(card) || 0;
 
-  // Cards / KNET terminals charge exactly the tender. Cash absorbs change.
+  // The card terminal charges exactly the tender. Cash absorbs the change.
   const cardApplied = Math.min(cardNum, total);
-  const knetApplied = Math.min(knetNum, Math.max(0, total - cardApplied));
-  const cashApplied = Math.max(0, total - cardApplied - knetApplied);   // what cash actually needs to cover
+  const cashApplied = Math.max(0, total - cardApplied);   // what cash actually needs to cover
   const cashTendered = cashNum;
   const cashChange = Math.max(0, cashTendered - cashApplied);
-  const remaining = +(total - cardApplied - knetApplied - Math.min(cashTendered, cashApplied)).toFixed(3);
+  const remaining = +(total - cardApplied - Math.min(cashTendered, cashApplied)).toFixed(3);
   const fullyPaid = remaining <= 0.0001;
 
-  // "X for rest" fills field X with whatever's left after the other two.
-  const setCashForRest = () => setCash(Math.max(0, total - cardNum - knetNum).toFixed(3));
-  const setKnetForRest = () => setKnet(Math.max(0, total - cardNum - cashNum).toFixed(3));
-  const setCardForRest = () => setCard(Math.max(0, total - cashNum - knetNum).toFixed(3));
+  // "X for rest" fills field X with whatever's left after the other.
+  const setCashForRest = () => setCash(Math.max(0, total - cardNum).toFixed(3));
+  const setCardForRest = () => setCard(Math.max(0, total - cashNum).toFixed(3));
 
   const submit = (e) => {
     e.preventDefault();
     if (!fullyPaid) return;
     const tenders = [];
     if (cardApplied > 0) tenders.push({ method: 'card', amount: +cardApplied.toFixed(3) });
-    if (knetApplied > 0) tenders.push({ method: 'knet', amount: +knetApplied.toFixed(3) });
     if (cashApplied > 0) tenders.push({ method: 'cash', amount: +cashApplied.toFixed(3) });
     onConfirm(tenders);
   };
@@ -55,7 +50,7 @@ export default function PosSplitPayment({ total, currency = 'KWD', onClose, onCo
         </div>
         <div className="pay-total">{fmt(total)}</div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: '0.5rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: '0.5rem' }}>
           <div>
             <label className="modal-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <HiCash size={16} /> Cash
@@ -66,16 +61,6 @@ export default function PosSplitPayment({ total, currency = 'KWD', onClose, onCo
               onChange={(e) => setCash(e.target.value)}
               className="modal-input"
               autoFocus
-              placeholder="0.000"
-            />
-          </div>
-          <div>
-            <label className="modal-label">KNET</label>
-            <input
-              type="number" step="0.001" min={0} max={total}
-              value={knet}
-              onChange={(e) => setKnet(e.target.value)}
-              className="modal-input"
               placeholder="0.000"
             />
           </div>
@@ -95,16 +80,12 @@ export default function PosSplitPayment({ total, currency = 'KWD', onClose, onCo
 
         <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
           <button type="button" onClick={setCashForRest} className="quick-chip">Cash for rest</button>
-          <button type="button" onClick={setKnetForRest} className="quick-chip">KNET for rest</button>
           <button type="button" onClick={setCardForRest} className="quick-chip">Card for rest</button>
         </div>
 
         <div style={{ marginTop: '1rem', padding: '0.75rem 1rem', background: '#0f172a', borderRadius: 10, fontSize: 14, color: '#cbd5e1' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>Card applied</span><strong>{fmt(cardApplied)}</strong>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>KNET applied</span><strong>{fmt(knetApplied)}</strong>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>Cash applied</span><strong>{fmt(Math.min(cashTendered, cashApplied))}</strong>

@@ -9,7 +9,7 @@ router.get('/sitemap.xml', async (req, res) => {
     const I18N_ON = process.env.FEATURE_I18N === 'true';   // stores that mirror /ar/*
 
     const products = await Product.findAll({
-      where: { active: true },
+      where: { active: true, hideOnline: false },
       attributes: ['slug', 'updatedAt'],
       order: [['updatedAt', 'DESC']],
     });

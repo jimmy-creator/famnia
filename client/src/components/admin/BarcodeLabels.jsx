@@ -10,8 +10,7 @@
  * continuous flex-wrap grid so the same template works for both
  * single-column roll printers and Avery-style A4 sheets.
  */
-import { useState, useMemo, useEffect, useRef } from 'react';
-import JsBarcode from 'jsbarcode';
+import { useState, useMemo, useEffect } from 'react';
 import { HiPlus, HiX, HiPrinter } from 'react-icons/hi';
 import toast from 'react-hot-toast';
 import api from '../../api/axios';
@@ -21,64 +20,8 @@ import {
   requestDevice as requestPrinter,
   printLabels as thermalPrintLabels,
 } from '../../lib/thermalPrinter';
-
-const LABEL_SIZES = [
-  { id: 'small', label: '40 × 25 mm', width: 40, height: 25, barcodeH: 26, fontPt: 8 },
-  { id: 'medium', label: '50 × 30 mm', width: 50, height: 30, barcodeH: 30, fontPt: 9 },
-  { id: 'large', label: '80 × 50 mm', width: 80, height: 50, barcodeH: 44, fontPt: 11 },
-];
-
-function BarcodeSvg({ value, height = 30 }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!ref.current || !value) return;
-    try {
-      JsBarcode(ref.current, String(value), {
-        format: 'CODE128',
-        displayValue: false,
-        height,
-        margin: 0,
-        background: '#ffffff',
-        lineColor: '#000000',
-      });
-    } catch {
-      /* invalid value — render empty */
-    }
-  }, [value, height]);
-  return <svg ref={ref} style={{ width: '100%', height: 'auto', display: 'block' }} />;
-}
-
-function Label({ product, size, show, currency }) {
-  const codeForBarcode = product.code || `P${product.productId}`;
-  return (
-    <div className="bc-label" style={{
-      width: `${size.width}mm`,
-      minHeight: `${size.height}mm`,
-      padding: '1mm 1.2mm',
-    }}>
-      {show.name && (
-        <div className="bc-name" style={{ fontSize: `${size.fontPt}pt`, lineHeight: 1.1, fontWeight: 600 }}>
-          {product.name}
-        </div>
-      )}
-      {show.barcode && (
-        <div style={{ marginTop: '0.5mm' }}>
-          <BarcodeSvg value={codeForBarcode} height={size.barcodeH} />
-        </div>
-      )}
-      {show.sku && product.code && (
-        <div className="bc-sku" style={{ fontSize: `${size.fontPt - 2}pt`, textAlign: 'center', letterSpacing: '0.5px' }}>
-          {product.code}
-        </div>
-      )}
-      {show.price && (
-        <div className="bc-price" style={{ fontSize: `${size.fontPt + 1}pt`, fontWeight: 700, textAlign: 'right', marginTop: '0.5mm' }}>
-          {currency} {(parseFloat(product.price) || 0).toFixed(3)}
-        </div>
-      )}
-    </div>
-  );
-}
+// Labels come from the shared sheet so admin and POS print identically.
+import { LABEL_SIZES, Label } from '../BarcodeLabelSheet';
 
 export default function BarcodeLabels({ currency = 'KWD' }) {
   const [allProducts, setAllProducts] = useState([]);

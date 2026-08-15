@@ -33,11 +33,13 @@ export default function PosLogin() {
 
   useEffect(() => {
     Promise.all([
-      api.get('/locations').catch(() => api.get('/cashier/cashiers').then(() => ({ data: [] }))),
+      // Public branch list — lists every active location, so a newly added
+      // branch is immediately selectable at the terminal.
+      api.get('/cashier/locations').catch(() => ({ data: [] })),
       api.get('/cashier/cashiers'),
     ]).then(([locRes, cashRes]) => {
-      // /api/locations is admin-protected so an unauth'd POS terminal can't list them.
-      // Fallback: derive locations from the cashiers' homeLocation field.
+      // Fallback for older servers without /cashier/locations: derive the
+      // list from the cashiers' homeLocation field.
       let locs = Array.isArray(locRes?.data) ? locRes.data : [];
       if (locs.length === 0) {
         const seen = new Map();
@@ -51,6 +53,13 @@ export default function PosLogin() {
       if (locationId && locs.find((l) => l.id === locationId)) {
         setStep('cashier');
       } else {
+        // Remembered a location that no longer exists (renamed store, or a
+        // terminal carried over from another deployment). Forget it, or the
+        // header advertises a branch that can't be selected.
+        if (locationId) {
+          localStorage.removeItem('pos.locationId');
+          setLocationId(null);
+        }
         setStep('location');
       }
     }).catch(() => {

@@ -21,8 +21,12 @@ const CashTransaction = sequelize.define('CashTransaction', {
   cashAccountId: { type: DataTypes.INTEGER, allowNull: false },
   amount: { type: DataTypes.DECIMAL(12, 3), allowNull: false },
   source: {
+    // 'capital' = owner contribution/drawing, 'asset' = fixed-asset
+    // purchase or disposal proceeds. Both are labelled in the daybook;
+    // queries should still filter on the indexed sourceType.
     type: DataTypes.ENUM('sale', 'return', 'expense', 'supplier_payment',
-                         'transfer', 'opening', 'adjust', 'other'),
+                         'transfer', 'opening', 'adjust', 'other',
+                         'capital', 'asset'),
     allowNull: false,
   },
   sourceType: { type: DataTypes.STRING, allowNull: true },  // 'Order', 'Expense' …

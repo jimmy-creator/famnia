@@ -12,6 +12,7 @@ import PurchaseReturnModals from '../components/admin/PurchaseReturnModals';
 import FinanceTabs from '../components/admin/FinanceTabs';
 import BarcodeLabels from '../components/admin/BarcodeLabels';
 import StockCounts from '../components/admin/StockCounts';
+import AssetsTabs from '../components/admin/AssetsTabs';
 import { Menu, LogOut, Plus, Pencil, Trash2, X, Eye, EyeOff, Search, Image as ImageIcon, Star, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -1198,6 +1199,9 @@ export default function Admin() {
       api.get('/locations').then((res) => setLocations(res.data)).catch(() => {});
       api.get('/finance/cash-accounts?active=true').then((res) => setCashAccounts(res.data)).catch(() => {});
       api.get('/finance/expense-categories').then((res) => setExpenseCategories(res.data)).catch(() => {});
+    } else if (['fixed-assets', 'capital', 'balance-sheet'].includes(tab)) {
+      api.get('/locations').then((res) => setLocations(res.data)).catch(() => {});
+      api.get('/finance/cash-accounts?active=true').then((res) => setCashAccounts(res.data)).catch(() => {});
     } else if (tab === 'cash-accounts') {
       api.get('/locations').then((res) => setLocations(res.data)).catch(() => {});
       api.get('/finance/cash-accounts').then((res) => setCashAccounts(res.data)).catch(() => {});
@@ -1287,7 +1291,10 @@ export default function Admin() {
         { tab: 'cash-transfers', label: 'Cash Transfers', show: MULTILOC_ENABLED && hasAccess('analytics') },
         { tab: 'daily-cash',     label: 'Daily Cash',     show: MULTILOC_ENABLED && hasAccess('analytics') },
         { tab: 'daybook',        label: 'Daybook',        show: MULTILOC_ENABLED && hasAccess('analytics') },
+        { tab: 'fixed-assets',   label: 'Fixed Assets',   show: MULTILOC_ENABLED && hasAccess('analytics') },
+        { tab: 'capital',        label: 'Capital',        show: MULTILOC_ENABLED && hasAccess('analytics') },
         { tab: 'pnl',            label: 'Profit & Loss',  show: MULTILOC_ENABLED && hasAccess('analytics') },
+        { tab: 'balance-sheet',  label: 'Balance Sheet',  show: MULTILOC_ENABLED && hasAccess('analytics') },
         { tab: 'stock-value',    label: 'Stock Value',    show: MULTILOC_ENABLED && hasAccess('analytics') },
     ]},
     { id: 'sales', label: 'Sales', items: [
@@ -3190,13 +3197,13 @@ export default function Admin() {
                   onClick={() => {
                     const rows = reportData.rows || [];
                     const headers = reportType === 'cashier'
-                      ? ['Cashier', 'Orders', 'Cash', 'KNET', 'Card', 'Refunds', 'Net sales']
-                      : ['Location', 'Orders', 'Cash', 'KNET', 'Card', 'Refunds', 'Net sales'];
+                      ? ['Cashier', 'Orders', 'Cash', 'Card', 'Refunds', 'Net sales']
+                      : ['Location', 'Orders', 'Cash', 'Card', 'Refunds', 'Net sales'];
                     const lines = [headers.join(',')];
                     for (const r of rows) {
                       const label = reportType === 'cashier' ? r.cashierName : r.locationName;
-                      const refunds = ((r.cashRefunds || 0) + (r.cardRefunds || 0) + (r.knetRefunds || 0)).toFixed(3);
-                      lines.push([`"${label}"`, r.orderCount, r.cashSales, r.knetSales || 0, r.cardSales, refunds, r.netSales].join(','));
+                      const refunds = ((r.cashRefunds || 0) + (r.cardRefunds || 0)).toFixed(3);
+                      lines.push([`"${label}"`, r.orderCount, r.cashSales, r.cardSales, refunds, r.netSales].join(','));
                     }
                     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
                     const a = document.createElement('a');
@@ -3225,10 +3232,6 @@ export default function Admin() {
                     <div className="dash-card-value">{CURRENCY}{reportData.totals.cashSales.toFixed(3)}</div>
                   </div>
                   <div className="dash-card">
-                    <div className="dash-card-label">KNET sales</div>
-                    <div className="dash-card-value">{CURRENCY}{(reportData.totals.knetSales || 0).toFixed(3)}</div>
-                  </div>
-                  <div className="dash-card">
                     <div className="dash-card-label">Card sales</div>
                     <div className="dash-card-value">{CURRENCY}{reportData.totals.cardSales.toFixed(3)}</div>
                   </div>
@@ -3245,7 +3248,6 @@ export default function Admin() {
                         <th>{reportType === 'cashier' ? 'Cashier' : 'Location'}</th>
                         <th style={{ textAlign: 'right' }}>Orders</th>
                         <th style={{ textAlign: 'right' }}>Cash</th>
-                        <th style={{ textAlign: 'right' }}>KNET</th>
                         <th style={{ textAlign: 'right' }}>Card</th>
                         <th style={{ textAlign: 'right' }}>Refunds</th>
                         <th style={{ textAlign: 'right' }}>Net</th>
@@ -3260,9 +3262,8 @@ export default function Admin() {
                           <td>{reportType === 'cashier' ? r.cashierName : r.locationName}</td>
                           <td style={{ textAlign: 'right' }}>{r.orderCount}</td>
                           <td style={{ textAlign: 'right' }}>{CURRENCY}{r.cashSales.toFixed(3)}</td>
-                          <td style={{ textAlign: 'right' }}>{CURRENCY}{(r.knetSales || 0).toFixed(3)}</td>
                           <td style={{ textAlign: 'right' }}>{CURRENCY}{r.cardSales.toFixed(3)}</td>
-                          <td style={{ textAlign: 'right' }}>{CURRENCY}{((r.cashRefunds || 0) + (r.cardRefunds || 0) + (r.knetRefunds || 0)).toFixed(3)}</td>
+                          <td style={{ textAlign: 'right' }}>{CURRENCY}{((r.cashRefunds || 0) + (r.cardRefunds || 0)).toFixed(3)}</td>
                           <td style={{ textAlign: 'right', fontWeight: 600 }}>{CURRENCY}{r.netSales.toFixed(3)}</td>
                         </tr>
                       ))}
@@ -3330,9 +3331,7 @@ export default function Admin() {
                 <select value={returnsFilter.refundMethod} onChange={(e) => setReturnsFilter({ ...returnsFilter, refundMethod: e.target.value })}>
                   <option value="">All</option>
                   <option value="cash">Cash</option>
-                  <option value="knet">KNET</option>
                   <option value="card">Card</option>
-                  <option value="store_credit">Store credit</option>
                 </select>
               </div>
               <button className="btn btn-secondary" onClick={() => setReturnsFilter({ from: '', to: '', locationId: '', refundMethod: '' })}>
@@ -3347,17 +3346,13 @@ export default function Admin() {
                 s.total += amt;
                 if (r.refundMethod === 'cash') s.cash += amt;
                 if (r.refundMethod === 'card') s.card += amt;
-                if (r.refundMethod === 'knet') s.knet += amt;
-                if (r.refundMethod === 'store_credit') s.credit += amt;
                 return s;
-              }, { total: 0, cash: 0, card: 0, knet: 0, credit: 0 });
+              }, { total: 0, cash: 0, card: 0 });
               return (
                 <div className="dash-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
                   <div className="dash-card"><div className="dash-card-label">Total refunded</div><div className="dash-card-value">{CURRENCY}{totals.total.toFixed(3)}</div></div>
                   <div className="dash-card"><div className="dash-card-label">Cash refunds</div><div className="dash-card-value">{CURRENCY}{totals.cash.toFixed(3)}</div></div>
-                  <div className="dash-card"><div className="dash-card-label">KNET refunds</div><div className="dash-card-value">{CURRENCY}{totals.knet.toFixed(3)}</div></div>
                   <div className="dash-card"><div className="dash-card-label">Card refunds</div><div className="dash-card-value">{CURRENCY}{totals.card.toFixed(3)}</div></div>
-                  <div className="dash-card"><div className="dash-card-label">Store credit</div><div className="dash-card-value">{CURRENCY}{totals.credit.toFixed(3)}</div></div>
                 </div>
               );
             })()}
@@ -3469,7 +3464,7 @@ export default function Admin() {
           <div className="admin-section">
             <div className="admin-section-header">
               <h2>Suppliers</h2>
-              <button className="btn btn-primary" onClick={() => setSupplierForm({ name: '', code: '', contactPerson: '', email: '', phone: '', address: '', city: '', country: '', taxId: '', paymentTerms: 'cash', openingBalance: 0, creditLimit: '', notes: '', active: true, _editing: false })}>
+              <button className="btn btn-primary" onClick={() => setSupplierForm({ name: '', code: '', contactPerson: '', email: '', phone: '', address: '', city: '', country: '', taxId: '', openingBalance: 0, notes: '', active: true, _editing: false })}>
                 <HiPlus /> Add Supplier
               </button>
             </div>
@@ -3477,7 +3472,7 @@ export default function Admin() {
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
-                  <tr><th>Name</th><th>Code</th><th>Contact</th><th>Phone</th><th>Terms</th><th>Status</th><th></th></tr>
+                  <tr><th>Name</th><th>Code</th><th>Contact</th><th>Phone</th><th>City</th><th>Status</th><th></th></tr>
                 </thead>
                 <tbody>
                   {suppliers.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-light)' }}>No suppliers yet</td></tr>}
@@ -3487,7 +3482,7 @@ export default function Admin() {
                       <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{s.code || '—'}</td>
                       <td>{s.contactPerson || '—'}</td>
                       <td>{s.phone || '—'}</td>
-                      <td style={{ textTransform: 'uppercase', fontSize: '0.78rem' }}>{s.paymentTerms}</td>
+                      <td>{s.city || '—'}</td>
                       <td>
                         <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: '100px',
                           background: s.active ? 'rgba(90,138,106,0.15)' : 'rgba(100,116,139,0.15)',
@@ -3500,7 +3495,7 @@ export default function Admin() {
                           onClick={() => api.get(`/suppliers/${s.id}/statement`).then((res) => setSupplierDetail(res.data))}>
                           View
                         </button>
-                        <button className="icon-btn" onClick={() => setSupplierForm({ ...s, openingBalance: s.openingBalance || 0, creditLimit: s.creditLimit || '', _editing: true })}>
+                        <button className="icon-btn" onClick={() => setSupplierForm({ ...s, openingBalance: s.openingBalance || 0, _editing: true })}>
                           <HiPencil />
                         </button>
                         <button className="icon-btn" onClick={async () => {
@@ -3522,7 +3517,6 @@ export default function Admin() {
                   try {
                     const body = { ...supplierForm };
                     delete body._editing;
-                    if (body.creditLimit === '') body.creditLimit = null;
                     if (supplierForm._editing) await api.put(`/suppliers/${supplierForm.id}`, body);
                     else await api.post('/suppliers', body);
                     toast.success(supplierForm._editing ? 'Updated' : 'Created');
@@ -3550,17 +3544,12 @@ export default function Admin() {
                     <div className="form-group"><label>City</label><input value={supplierForm.city || ''} onChange={(e) => setSupplierForm({ ...supplierForm, city: e.target.value })} /></div>
                     <div className="form-group"><label>Country</label><input value={supplierForm.country || ''} onChange={(e) => setSupplierForm({ ...supplierForm, country: e.target.value })} /></div>
                   </div>
+                  {/* No payment terms or credit limit: purchase orders must be
+                      paid in full before goods can be received, so no payable
+                      ever accrues and there is nothing for terms to govern. */}
                   <div className="form-row">
-                    <div className="form-group"><label>Payment terms</label>
-                      <select value={supplierForm.paymentTerms} onChange={(e) => setSupplierForm({ ...supplierForm, paymentTerms: e.target.value })}>
-                        <option value="cash">Cash</option><option value="net15">Net 15</option><option value="net30">Net 30</option><option value="net45">Net 45</option><option value="net60">Net 60</option><option value="net90">Net 90</option>
-                      </select>
-                    </div>
                     <div className="form-group"><label>Opening balance ({CURRENCY})</label>
                       <input type="number" step="0.001" value={supplierForm.openingBalance} onChange={(e) => setSupplierForm({ ...supplierForm, openingBalance: e.target.value })} />
-                    </div>
-                    <div className="form-group"><label>Credit limit ({CURRENCY})</label>
-                      <input type="number" step="0.001" value={supplierForm.creditLimit} onChange={(e) => setSupplierForm({ ...supplierForm, creditLimit: e.target.value })} />
                     </div>
                   </div>
                   <div className="form-group"><label>Notes</label><textarea rows={2} value={supplierForm.notes || ''} onChange={(e) => setSupplierForm({ ...supplierForm, notes: e.target.value })} /></div>
@@ -3764,6 +3753,13 @@ export default function Admin() {
             setTab={setTab}
             activeStockCountId={activeStockCountId} setActiveStockCountId={setActiveStockCountId}
             expenseCategories={expenseCategories} cashAccounts={cashAccounts}
+          />
+        )}
+
+        {(['fixed-assets','capital','balance-sheet'].includes(tab)) && (
+          <AssetsTabs
+            tab={tab} currency={CURRENCY} isAdmin={isAdmin}
+            locations={locations} cashAccounts={cashAccounts}
           />
         )}
 

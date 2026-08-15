@@ -37,9 +37,7 @@ export default function PosReturnReceipt({ payload, currency = 'KWD', onClose })
   const fmt = (n) => `${displayCurrency} ${(parseFloat(n) || 0).toFixed(3)}`;
   const pickName = (it) => (receiptLoc === 'ar' && it.nameAr) ? it.nameAr : it.name;
   const when = sr.createdAt ? new Date(sr.createdAt).toLocaleString() : '';
-  const method = sr.refundMethod === 'cash' ? 'Cash'
-    : sr.refundMethod === 'card' ? 'Card'
-    : 'Store Credit';
+  const method = sr.refundMethod === 'cash' ? 'Cash' : 'Card';
 
   // Portal to <body> + hide #root in print so only the receipt prints on one
   // page (fixed-position over a tall app paginated → duplicate copies).
@@ -141,7 +139,6 @@ export default function PosReturnReceipt({ payload, currency = 'KWD', onClose })
         <div style={{ textAlign: 'center', fontSize: 11 }}>
           {sr.refundMethod === 'cash' && 'Cash returned to customer'}
           {sr.refundMethod === 'card' && 'Refund to original card'}
-          {sr.refundMethod === 'store_credit' && 'Store credit issued'}
         </div>
 
         <div className="actions no-print">

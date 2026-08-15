@@ -18,7 +18,7 @@ import toast from 'react-hot-toast';
 import {
   HiShoppingCart, HiClock, HiReply, HiChartBar,
   HiLogout, HiOutlineLogout, HiUserCircle, HiCash, HiCreditCard,
-  HiSearch, HiX, HiPrinter,
+  HiSearch, HiX, HiPrinter, HiArrowLeft, HiTag,
 } from 'react-icons/hi';
 import api from '../api/axios';
 import { CurrencySymbol } from '../utils/currency';
@@ -28,11 +28,14 @@ import PosReturnModal from '../components/PosReturnModal';
 import PosReturnReceipt from '../components/PosReturnReceipt';
 import PosCustomerPicker from '../components/PosCustomerPicker';
 import PosDiscountModal from '../components/PosDiscountModal';
+import PosLineDiscountModal from '../components/PosLineDiscountModal';
+import PosPriceOverrideModal from '../components/PosPriceOverrideModal';
 import PosManagerOverride from '../components/PosManagerOverride';
 import PosRecentSales from '../components/PosRecentSales';
 import PosSplitPayment from '../components/PosSplitPayment';
 import PosPrinterSettings from '../components/PosPrinterSettings';
 import PosBillEditor from '../components/PosBillEditor';
+import PosLabelPrint from '../components/PosLabelPrint';
 
 const CURRENCY = import.meta.env.VITE_CURRENCY_CODE || 'KWD';
 
@@ -50,6 +53,32 @@ function PosClock() {
   );
 }
 
+// Initials placeholder for products with no image — a lot of the catalogue
+// has none, and an empty grey box gives the cashier nothing to aim at.
+function monogram(name = '') {
+  return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase();
+}
+
+function ProductTile({ p, onPick, fmt }) {
+  const out = !p.hasVariants && p.stockAtLocation < 1;
+  return (
+    <button className="prod-tile" onClick={() => onPick(p)} disabled={out}>
+      <div className="prod-thumb">
+        {p.image
+          ? <img src={p.image} alt="" loading="lazy" />
+          : <span className="prod-monogram">{monogram(p.name)}</span>}
+      </div>
+      <div className="prod-name">{p.name}</div>
+      <div className="prod-foot">
+        <span className="prod-price">{fmt(p.price)}</span>
+        {p.hasVariants
+          ? <span className="badge">{p.variants.length}</span>
+          : <span className={out ? 'stock-out' : 'stock-ok'}>{p.stockAtLocation}</span>}
+      </div>
+    </button>
+  );
+}
+
 export default function Pos() {
   const navigate = useNavigate();
   const [me, setMe] = useState(null);
@@ -63,11 +92,23 @@ export default function Pos() {
   const [variantPicker, setVariantPicker] = useState(null);  // product-search-result with hasVariants
   const [linkedCustomer, setLinkedCustomer] = useState(null);   // null = walk-in
   const [discount, setDiscount] = useState(null);                // { manual?, coupon? } | null
+  const [deliveryInput, setDeliveryInput] = useState('');        // optional delivery charge
+  // Browse-without-scanning: category tiles → product grid, plus a
+  // quick-pick rail of featured/best-selling items.
+  const [categories, setCategories] = useState([]);
+  const [quickPicks, setQuickPicks] = useState(null);
+  const [browseCat, setBrowseCat] = useState(null);
+  const [browseProducts, setBrowseProducts] = useState([]);
+  const [browseLoading, setBrowseLoading] = useState(false);
+  // Per-line discount / per-sale price override — index into cart, or null.
+  const [lineDiscountFor, setLineDiscountFor] = useState(null);
+  const [priceOverrideFor, setPriceOverrideFor] = useState(null);
   const [discountOpen, setDiscountOpen] = useState(false);
   const [pendingOverride, setPendingOverride] = useState(null);  // { reason, retry } | null
   const [recentOpen, setRecentOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [printerOpen, setPrinterOpen] = useState(false);
+  const [labelPrintOpen, setLabelPrintOpen] = useState(false);
   const [editBill, setEditBill] = useState(null);   // orderNumber | null
   const [payOpen, setPayOpen] = useState(null);    // 'cash' | 'card' | null
   const [tendered, setTendered] = useState('');
@@ -91,14 +132,14 @@ export default function Pos() {
   // Keep the scanner-input focused — bounce focus back if the user clicks elsewhere
   // (unless a modal is open).
   useEffect(() => {
-    if (variantPicker || payOpen || receipt || closeForm || report || returnOpen || returnReceipt || discountOpen || pendingOverride || recentOpen || splitOpen || printerOpen || editBill) return;
+    if (variantPicker || payOpen || receipt || closeForm || report || returnOpen || returnReceipt || discountOpen || pendingOverride || recentOpen || splitOpen || printerOpen || editBill || lineDiscountFor != null || priceOverrideFor != null || labelPrintOpen) return;
     const interval = setInterval(() => {
       if (document.activeElement !== searchRef.current && !document.activeElement?.matches?.('input, textarea, button')) {
         searchRef.current?.focus();
       }
     }, 1500);
     return () => clearInterval(interval);
-  }, [variantPicker, payOpen, receipt, closeForm, report, returnOpen, returnReceipt, discountOpen, pendingOverride, recentOpen, splitOpen, printerOpen, editBill]);
+  }, [variantPicker, payOpen, receipt, closeForm, report, returnOpen, returnReceipt, discountOpen, pendingOverride, recentOpen, splitOpen, printerOpen, editBill, lineDiscountFor, priceOverrideFor, labelPrintOpen]);
 
   const runSearch = useCallback(async (q) => {
     if (!q.trim()) { setResults([]); return; }
@@ -122,6 +163,23 @@ export default function Pos() {
 
   // Reset highlight when results change.
   useEffect(() => { setHighlightIdx(0); }, [results]);
+
+  // Browse data — loaded once. Not everything on a rail is labelled, so
+  // the till needs a way to sell without a barcode.
+  useEffect(() => {
+    api.get('/pos/categories').then((r) => setCategories(r.data)).catch(() => {});
+    api.get('/pos/quick-products').then((r) => setQuickPicks(r.data)).catch(() => {});
+  }, []);
+
+  // Load a category's products when one is picked.
+  useEffect(() => {
+    if (!browseCat) { setBrowseProducts([]); return; }
+    setBrowseLoading(true);
+    api.get('/pos/products', { params: { category: browseCat.name } })
+      .then((r) => setBrowseProducts(r.data))
+      .catch(() => setBrowseProducts([]))
+      .finally(() => setBrowseLoading(false));
+  }, [browseCat]);
 
   if (loading) return <div style={{ minHeight: '100vh', background: '#0f172a', color: '#94a3b8', display: 'grid', placeItems: 'center' }}>Loading…</div>;
   if (!me) return null;
@@ -189,19 +247,34 @@ export default function Pos() {
   };
   const removeLine = (idx) => setCart((prev) => prev.filter((_, i) => i !== idx));
 
-  const subTotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
-  // Compute discount preview the same way the server does. Manual
-  // discount applies to subtotal; coupon already carries its computed
-  // amount from the preview call (server re-validates on commit).
+  // A per-sale price override wins over the catalogue price.
+  const unitOf = (c) => (c.priceOverride != null ? c.priceOverride : c.price);
+  const lineOffOf = (c) => {
+    if (!c.lineDiscount) return 0;
+    const gross = unitOf(c) * c.quantity;
+    const v = parseFloat(c.lineDiscount.value) || 0;
+    const calc = c.lineDiscount.kind === 'percentage' ? (gross * v) / 100 : v * c.quantity;
+    return +Math.min(calc, gross).toFixed(3);
+  };
+
+  const subTotal = cart.reduce((s, c) => s + unitOf(c) * c.quantity, 0);
+  const lineOffTotal = +cart.reduce((s, c) => s + lineOffOf(c), 0).toFixed(3);
+  const afterLines = +Math.max(0, subTotal - lineOffTotal).toFixed(3);
+  // Mirror the server's waterfall: lines → manual bill discount → coupon.
+  // The coupon amount comes from the preview call; the server re-validates
+  // and recomputes everything on commit.
   const manualOff = (() => {
     if (!discount?.manual) return 0;
     const v = parseFloat(discount.manual.value) || 0;
-    const calc = discount.manual.kind === 'percentage' ? (subTotal * v) / 100 : v;
-    return +Math.min(calc, subTotal).toFixed(3);
+    const calc = discount.manual.kind === 'percentage' ? (afterLines * v) / 100 : v;
+    return +Math.min(calc, afterLines).toFixed(3);
   })();
   const couponOff = discount?.coupon ? +(parseFloat(discount.coupon.discount) || 0).toFixed(3) : 0;
-  const discountTotal = +Math.min(manualOff + couponOff, subTotal).toFixed(3);
-  const total = +Math.max(0, subTotal - discountTotal).toFixed(3);
+  const discountTotal = +Math.min(lineOffTotal + manualOff + couponOff, subTotal).toFixed(3);
+  // Delivery rides on top of the discounted goods and is never discounted,
+  // matching the server's calculation in routes/pos.js.
+  const deliveryCharge = Math.max(0, parseFloat(deliveryInput) || 0);
+  const total = +(Math.max(0, subTotal - discountTotal) + deliveryCharge).toFixed(3);
 
   // ─── Search keyboard handling ───────────────────────────────────
   // Enter on a single result -> add. Enter with multiple -> add the
@@ -232,11 +305,18 @@ export default function Pos() {
 
   const postSale = async (paymentPayload, managerOverride) => {
     const body = {
-      items: cart.map((c) => ({ productId: c.productId, variantIndex: c.variantIndex, quantity: c.quantity })),
+      items: cart.map((c) => ({
+        productId: c.productId,
+        variantIndex: c.variantIndex,
+        quantity: c.quantity,
+        lineDiscount: c.lineDiscount || undefined,
+        priceOverride: c.priceOverride ?? undefined,
+      })),
       userId: linkedCustomer?.id || undefined,
       couponCode: discount?.coupon?.code || undefined,
       manualDiscount: discount?.manual || undefined,
       managerOverride: managerOverride || undefined,
+      deliveryCharge: deliveryCharge || undefined,
       payment: paymentPayload,
     };
     const { data } = await api.post('/pos/sale', body);
@@ -244,6 +324,7 @@ export default function Pos() {
     setCart([]);
     setLinkedCustomer(null);
     setDiscount(null);
+    setDeliveryInput('');
     setTendered('');
     setPayOpen(null);
     setSplitOpen(false);
@@ -357,6 +438,9 @@ export default function Pos() {
         <button className="rail-btn" onClick={openXReport} title="X-report">
           <HiChartBar size={22} /><span>X-report</span>
         </button>
+        <button className="rail-btn" onClick={() => setLabelPrintOpen(true)} title="Print barcode labels">
+          <HiTag size={22} /><span>Labels</span>
+        </button>
         <div className="rail-spacer" />
         <button className="rail-btn" onClick={() => setPrinterOpen(true)} title="Printer">
           <HiPrinter size={22} /><span>Printer</span>
@@ -421,12 +505,61 @@ export default function Pos() {
 
           <div className="results-list">
             {results.length === 0 && !query.trim() && (
-              <div className="results-empty">
-                <HiSearch size={32} style={{ opacity: 0.3, marginBottom: 12 }} />
-                <div>Scan a barcode or type a product name</div>
-                <div style={{ fontSize: 12, marginTop: 8, color: 'var(--pos-text-3)' }}>
-                  Press <kbd className="kbd-inline">↵</kbd> to add · <kbd className="kbd-inline">Esc</kbd> to clear
-                </div>
+              <div className="browse">
+                {browseCat ? (
+                  <>
+                    <div className="browse-head">
+                      <button className="browse-back" onClick={() => setBrowseCat(null)}>
+                        <HiArrowLeft size={16} /> All categories
+                      </button>
+                      <span className="browse-title">{browseCat.name}</span>
+                    </div>
+                    {browseLoading && <div className="browse-hint">Loading…</div>}
+                    {!browseLoading && browseProducts.length === 0 && (
+                      <div className="browse-hint">Nothing in this category</div>
+                    )}
+                    <div className="tile-grid">
+                      {browseProducts.map((p) => (
+                        <ProductTile key={p.productId} p={p} onPick={addToCart} fmt={fmt} />
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {quickPicks?.topSellers?.length > 0 && (
+                      <>
+                        <div className="browse-title">Best sellers</div>
+                        <div className="tile-grid">
+                          {quickPicks.topSellers.slice(0, 8).map((p) => (
+                            <ProductTile key={'t' + p.productId} p={p} onPick={addToCart} fmt={fmt} />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {categories.length > 0 && (
+                      <>
+                        <div className="browse-title">Browse</div>
+                        <div className="cat-grid">
+                          {categories.map((c) => (
+                            <button key={c.id} className="cat-tile" onClick={() => setBrowseCat(c)}>
+                              <span className="cat-name">{c.name}</span>
+                              <span className="cat-count">{c.productCount} item{c.productCount === 1 ? '' : 's'}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {categories.length === 0 && !quickPicks && (
+                      <div className="results-empty">
+                        <HiSearch size={32} style={{ opacity: 0.3, marginBottom: 12 }} />
+                        <div>Scan a barcode or type a product name</div>
+                        <div style={{ fontSize: 12, marginTop: 8, color: 'var(--pos-text-3)' }}>
+                          Press <kbd className="kbd-inline">↵</kbd> to add · <kbd className="kbd-inline">Esc</kbd> to clear
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
             {results.map((r, i) => (
@@ -469,7 +602,24 @@ export default function Pos() {
               <div key={i} className="cart-line">
                 <div className="cart-line-info">
                   <div className="cart-line-name">{c.name}</div>
-                  <div className="cart-line-price">{fmt(c.price)} ea</div>
+                  <div className="cart-line-price">
+                    {c.priceOverride != null ? (
+                      <>
+                        <s>{fmt(c.price)}</s> <strong>{fmt(c.priceOverride)}</strong> ea
+                      </>
+                    ) : `${fmt(c.price)} ea`}
+                    {c.lineDiscount && (
+                      <span className="line-off">
+                        {' '}−{c.lineDiscount.kind === 'percentage'
+                          ? `${c.lineDiscount.value}%`
+                          : fmt(c.lineDiscount.value)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="cart-line-actions">
+                    <button onClick={() => setLineDiscountFor(i)}>% off</button>
+                    <button onClick={() => setPriceOverrideFor(i)}>Price</button>
+                  </div>
                 </div>
                 <div className="cart-line-controls">
                   <button onClick={() => setQty(i, c.quantity - 1)}>−</button>
@@ -477,7 +627,7 @@ export default function Pos() {
                   <button onClick={() => setQty(i, c.quantity + 1)}>+</button>
                   <button onClick={() => removeLine(i)} className="cart-remove">✕</button>
                 </div>
-                <div className="cart-line-total">{fmt(c.price * c.quantity)}</div>
+                <div className="cart-line-total">{fmt(unitOf(c) * c.quantity - lineOffOf(c))}</div>
               </div>
             ))}
           </div>
@@ -499,12 +649,26 @@ export default function Pos() {
                 ? `Discount applied · −${fmt(discountTotal)}`
                 : '+ Add discount'}
             </button>
-            {discountTotal > 0 && (
+            {(discountTotal > 0 || deliveryCharge > 0) && (
               <>
                 <div className="sub-row"><span>Subtotal</span><span>{fmt(subTotal)}</span></div>
-                <div className="sub-row discount-row"><span>Discount</span><span>−{fmt(discountTotal)}</span></div>
+                {discountTotal > 0 && (
+                  <div className="sub-row discount-row"><span>Discount</span><span>−{fmt(discountTotal)}</span></div>
+                )}
+                {deliveryCharge > 0 && (
+                  <div className="sub-row"><span>Delivery</span><span>{fmt(deliveryCharge)}</span></div>
+                )}
               </>
             )}
+            <div className="sub-row delivery-input-row">
+              <span>Delivery charge</span>
+              <input
+                type="number" step="0.001" min="0" placeholder="0"
+                value={deliveryInput}
+                disabled={cart.length === 0}
+                onChange={(e) => setDeliveryInput(e.target.value)}
+              />
+            </div>
             <div className="total-row">
               <span>Total</span>
               <strong>{fmt(total)}</strong>
@@ -517,12 +681,6 @@ export default function Pos() {
               onClick={() => { setPayOpen('cash'); setTendered(total.toFixed(3)); }}
               className="pay-btn pay-btn-cash">
               <HiCash size={22} /> Cash
-            </button>
-            <button
-              disabled={cart.length === 0}
-              onClick={() => setPayOpen('knet')}
-              className="pay-btn pay-btn-knet">
-              KNET
             </button>
             <button
               disabled={cart.length === 0}
@@ -575,7 +733,7 @@ export default function Pos() {
       {payOpen && (
         <div className="modal-backdrop" onClick={() => !submitting && setPayOpen(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{payOpen === 'cash' ? 'Cash payment' : payOpen === 'knet' ? 'KNET payment' : 'Card payment'}</h3>
+            <h3>{payOpen === 'cash' ? 'Cash payment' : 'Card payment'}</h3>
             <div className="pay-total">{fmt(total)}</div>
             {payOpen === 'cash' && (
               <>
@@ -597,9 +755,9 @@ export default function Pos() {
                 </div>
               </>
             )}
-            {(payOpen === 'card' || payOpen === 'knet') && (
+            {payOpen === 'card' && (
               <p style={{ color: '#94a3b8', fontSize: 14 }}>
-                Charge the customer on the {payOpen === 'knet' ? 'KNET' : 'card'} terminal, then confirm below.
+                Charge the customer on the card terminal, then confirm below.
               </p>
             )}
             <div className="modal-actions">
@@ -721,6 +879,32 @@ export default function Pos() {
           current={discount}
           onApply={setDiscount}
           onClose={() => setDiscountOpen(false)}
+        />
+      )}
+
+      {lineDiscountFor != null && cart[lineDiscountFor] && (
+        <PosLineDiscountModal
+          line={cart[lineDiscountFor]}
+          currency={CURRENCY}
+          onApply={(ld) => setCart((prev) => prev.map((c, i) => (
+            i === lineDiscountFor ? { ...c, lineDiscount: ld } : c
+          )))}
+          onClose={() => setLineDiscountFor(null)}
+        />
+      )}
+
+      {labelPrintOpen && (
+        <PosLabelPrint currency={CURRENCY} onClose={() => setLabelPrintOpen(false)} />
+      )}
+
+      {priceOverrideFor != null && cart[priceOverrideFor] && (
+        <PosPriceOverrideModal
+          line={cart[priceOverrideFor]}
+          currency={CURRENCY}
+          onApply={(p) => setCart((prev) => prev.map((c, i) => (
+            i === priceOverrideFor ? { ...c, priceOverride: p } : c
+          )))}
+          onClose={() => setPriceOverrideFor(null)}
         />
       )}
 
@@ -895,6 +1079,63 @@ export default function Pos() {
           padding: 3rem 1rem; text-align: center; color: var(--pos-text-2);
           font-size: 0.9rem; display: flex; flex-direction: column; align-items: center;
         }
+
+        /* ── Browse without scanning ─────────────── */
+        .browse { padding: 0.25rem 0 1rem; }
+        .browse-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+        .browse-back {
+          display: inline-flex; align-items: center; gap: 0.35rem;
+          background: var(--pos-surface); color: var(--pos-text-2);
+          border: 1px solid var(--pos-border); border-radius: 8px;
+          padding: 0.35rem 0.6rem; font-size: 0.8rem; cursor: pointer;
+        }
+        .browse-back:hover { color: var(--pos-text); border-color: var(--pos-border-strong); }
+        .browse-title {
+          font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em;
+          text-transform: uppercase; color: var(--pos-text-3);
+          margin: 0.85rem 0 0.5rem;
+        }
+        .browse-hint { padding: 1.5rem; text-align: center; color: var(--pos-text-3); font-size: 0.85rem; }
+
+        .cat-grid {
+          display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.6rem;
+        }
+        .cat-tile {
+          display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start;
+          background: var(--pos-surface); border: 1px solid var(--pos-border);
+          border-radius: 10px; padding: 0.85rem 0.75rem; cursor: pointer; text-align: left;
+        }
+        .cat-tile:hover { border-color: var(--pos-accent); background: var(--pos-elevated); }
+        .cat-name { font-size: 0.92rem; font-weight: 600; color: var(--pos-text); }
+        .cat-count { font-size: 0.75rem; color: var(--pos-text-3); }
+
+        .tile-grid {
+          display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 0.6rem;
+        }
+        .prod-tile {
+          display: flex; flex-direction: column; gap: 0.4rem;
+          background: var(--pos-surface); border: 1px solid var(--pos-border);
+          border-radius: 10px; padding: 0.5rem; cursor: pointer; text-align: left;
+        }
+        .prod-tile:hover:not(:disabled) { border-color: var(--pos-accent); background: var(--pos-elevated); }
+        .prod-tile:disabled { opacity: 0.4; cursor: not-allowed; }
+        .prod-thumb {
+          aspect-ratio: 1; border-radius: 8px; overflow: hidden;
+          background: var(--pos-elevated); display: grid; place-items: center;
+        }
+        .prod-thumb img { width: 100%; height: 100%; object-fit: cover; }
+        .prod-monogram { font-size: 1.3rem; font-weight: 700; color: var(--pos-text-3); letter-spacing: 0.04em; }
+        .prod-name {
+          font-size: 0.8rem; font-weight: 500; color: var(--pos-text); line-height: 1.25;
+          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .prod-foot {
+          display: flex; justify-content: space-between; align-items: center;
+          font-size: 0.78rem; font-variant-numeric: tabular-nums;
+        }
+        .prod-price { font-weight: 600; color: var(--pos-accent); }
+        .prod-foot .stock-ok { color: var(--pos-success); }
+        .prod-foot .stock-out { color: var(--pos-text-3); }
         .result-item {
           display: flex; justify-content: space-between; align-items: center;
           background: var(--pos-surface);
@@ -944,6 +1185,16 @@ export default function Pos() {
         .cart-line:last-child { border-bottom: none; }
         .cart-line-name { font-size: 0.88rem; font-weight: 500; line-height: 1.25; }
         .cart-line-price { font-size: 0.72rem; color: var(--pos-text-2); margin-top: 2px; }
+        .cart-line-price s { opacity: 0.55; }
+        .cart-line-price strong { color: var(--pos-accent); }
+        .line-off { color: var(--pos-warn); }
+        .cart-line-actions { display: flex; gap: 0.3rem; margin-top: 4px; }
+        .cart-line-actions button {
+          background: transparent; color: var(--pos-text-3);
+          border: 1px solid var(--pos-border); border-radius: 5px;
+          padding: 0.1rem 0.35rem; font-size: 0.68rem; cursor: pointer;
+        }
+        .cart-line-actions button:hover { color: var(--pos-text); border-color: var(--pos-border-strong); }
         .cart-line-controls { display: flex; align-items: center; gap: 4px; }
         .cart-line-controls button {
           width: 28px; height: 28px;
@@ -988,10 +1239,18 @@ export default function Pos() {
           padding: 0.2rem 0; font-variant-numeric: tabular-nums;
         }
         .sub-row.discount-row { color: var(--pos-warn); }
+        .delivery-input-row { align-items: center; padding: 0.35rem 0; }
+        .delivery-input-row input {
+          width: 90px; text-align: right; padding: 0.3rem 0.45rem;
+          background: var(--pos-elevated); color: var(--pos-text);
+          border: 1px solid var(--pos-border); border-radius: 6px;
+          font-size: 0.85rem; font-variant-numeric: tabular-nums;
+        }
+        .delivery-input-row input:disabled { opacity: 0.4; cursor: not-allowed; }
 
         /* ── Payment buttons ────────────────────── */
         .pay-buttons {
-          display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem;
+          display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem;
           margin-top: 1rem;
         }
         .pay-btn {
@@ -1005,7 +1264,6 @@ export default function Pos() {
         .pay-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); }
         .pay-btn-cash { background: var(--pos-success); color: #052e23; }
         .pay-btn-card { background: var(--pos-card); }
-        .pay-btn-knet { background: #7c3aed; }    /* purple — distinct from card blue */
         .split-link {
           display: block; width: 100%; margin-top: 0.6rem;
           padding: 0.5rem;

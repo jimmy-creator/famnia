@@ -9,6 +9,8 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { isEnabled, printSale, getReceiptLocale } from '../lib/thermalPrinter';
 
+const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
+
 export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
   const { order, change, amountTendered, location, cashier } = payload;
   const printedRef = useRef(false);
@@ -45,11 +47,9 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
   const pickName = (it) => (receiptLoc === 'ar' && it.nameAr) ? it.nameAr : it.name;
   const when = order.createdAt ? new Date(order.createdAt).toLocaleString() : '';
   const breakdown = Array.isArray(order.paymentBreakdown) ? order.paymentBreakdown : null;
-  const methodLabel = (pm) => pm === 'pos_cash' ? 'Cash'
-    : pm === 'pos_knet' ? 'KNET'
-    : pm === 'pos_card' ? 'Card' : 'Card';
+  const methodLabel = (pm) => (pm === 'pos_cash' ? 'Cash' : 'Card');
   const method = breakdown ? 'Split' : methodLabel(order.paymentMethod);
-  const tenderLabel = (m) => m === 'cash' ? 'Cash' : m === 'knet' ? 'KNET' : 'Card';
+  const tenderLabel = (m) => (m === 'cash' ? 'Cash' : 'Card');
 
   // Rendered through a portal to <body> so the print stylesheet can hide the
   // whole app (#root) and leave ONLY the receipt. The previous approach kept
@@ -108,7 +108,7 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
       `}</style>
 
       <div id="pos-receipt">
-        <h2>{location?.name || 'Anfal Sports'}</h2>
+        <h2>{location?.name || STORE_NAME}</h2>
         <div className="meta">
           {location?.address && <div>{location.address}</div>}
           {location?.phone && <div>Tel: {location.phone}</div>}
@@ -149,15 +149,22 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
         <hr />
         <table>
           <tbody>
-            {parseFloat(order.discount || 0) > 0 && (() => {
+            {/* Show the subtotal whenever anything sits between it and the
+                total — a discount, a delivery charge, or both. */}
+            {(parseFloat(order.discount || 0) > 0 || parseFloat(order.shippingCharge || 0) > 0) && (() => {
               const subtotal = (order.items || []).reduce((s, it) => s + (parseFloat(it.price) || 0) * (parseInt(it.quantity, 10) || 0), 0);
               return (
                 <>
                   <tr><td>Subtotal</td><td className="right">{fmt(subtotal)}</td></tr>
-                  <tr><td>Discount{order.couponCode ? ` (${order.couponCode})` : ''}</td><td className="right">−{fmt(order.discount)}</td></tr>
+                  {parseFloat(order.discount || 0) > 0 && (
+                    <tr><td>Discount{order.couponCode ? ` (${order.couponCode})` : ''}</td><td className="right">−{fmt(order.discount)}</td></tr>
+                  )}
                 </>
               );
             })()}
+            {parseFloat(order.shippingCharge || 0) > 0 && (
+              <tr><td>Delivery</td><td className="right">{fmt(order.shippingCharge)}</td></tr>
+            )}
             <tr className="total-row">
               <td>TOTAL</td>
               <td className="right">{fmt(order.totalAmount)}</td>

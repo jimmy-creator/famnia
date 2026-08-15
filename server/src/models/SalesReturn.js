@@ -50,7 +50,9 @@ const SalesReturn = sequelize.define('SalesReturn', {
     defaultValue: 0,
   },
   refundMethod: {
-    type: DataTypes.ENUM('cash', 'card', 'knet', 'store_credit'),
+    // No store_credit: the store extends no customer credit, and the
+    // value had no redemption path anywhere in the system.
+    type: DataTypes.ENUM('cash', 'card'),
     allowNull: false,
   },
   reason: {

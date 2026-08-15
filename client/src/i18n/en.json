@@ -121,7 +121,6 @@
     "country": "Country",
     "paymentCash": "Cash on delivery",
     "paymentCard": "Card",
-    "paymentKnet": "KNET",
     "paymentBank": "Bank transfer",
     "guest": "You’re checking out as a guest.",
     "guestSignIn": "Sign in for faster checkout",

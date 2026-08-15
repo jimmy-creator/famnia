@@ -26,16 +26,23 @@ import { protect, admin } from '../middleware/auth.js';
 
 const router = Router();
 
-async function computeBalance(supplierId) {
+// Exported so the balance sheet reports the same payable figure the
+// supplier screen shows.
+export async function computeBalance(supplierId) {
   const supplier = await Supplier.findByPk(supplierId, { attributes: ['openingBalance'] });
   if (!supplier) return 0;
   const [poSum, paySum, returnSum] = await Promise.all([
+    // Only committed POs are payable. A draft is a shopping list, not an
+    // obligation — counting it inflated the balance.
     PurchaseOrder.sum('totalAmount', {
-      where: { supplierId, status: { [Op.ne]: 'cancelled' } },
+      where: { supplierId, status: { [Op.notIn]: ['cancelled', 'draft'] } },
     }),
     SupplierPayment.sum('amount', { where: { supplierId } }),
+    // Only a credit note reduces what we owe. A cash or bank refund already
+    // came back as money in (see purchaseReturns.js), so subtracting it here
+    // too would count the same refund twice.
     PurchaseReturn.sum('totalAmount', {
-      where: { supplierId, status: 'completed' },
+      where: { supplierId, status: 'completed', refundMethod: 'credit_note' },
     }),
   ]);
   return +((parseFloat(supplier.openingBalance) || 0)

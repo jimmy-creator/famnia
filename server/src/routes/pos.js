@@ -16,6 +16,7 @@ import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
   Product, ProductStock, Order, CashierSession, Location, CashAccount, User, Coupon, SalesReturn,
+  Category,
   recomputeProductStock, writeCashTxn, logActivity, verifyManagerPin,
 } from '../models/index.js';
 
@@ -24,6 +25,8 @@ import {
 const DISCOUNT_PCT_THRESHOLD = 15;     // percent
 const REFUND_AMOUNT_THRESHOLD = 50;    // currency units (KWD)
 import { protectCashier } from '../middleware/auth.js';
+import { refundValuer } from '../utils/refund.js';
+import { nextInvoiceNumber } from '../services/invoiceSequence.js';
 
 const router = Router();
 
@@ -31,19 +34,166 @@ function genOrderNumber() {
   return `POS-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 }
 
+// ── Shared product shaping for the terminal (search, quick-pick, browse) ──
+const posStockKey = (pid, vIdx) => `${pid}:${vIdx ?? 'b'}`;
+
+// Build a {productId:variantIndex -> qty} map of per-location stock.
+async function posStockMap(productIds, locationId) {
+  if (!productIds.length) return new Map();
+  const stocks = await ProductStock.findAll({
+    where: { productId: { [Op.in]: productIds }, locationId },
+  });
+  return new Map(stocks.map((s) => [posStockKey(s.productId, s.variantIndex), s.quantity]));
+}
+
+// Shape a product (no specific variant chosen) into the uniform result the
+// terminal's add-to-cart flow expects, with per-location stock attached.
+// Browse and quick-pick return the SAME shape as search so the variant
+// picker and add-to-cart work identically from every entry point.
+function shapeProduct(product, stockMap) {
+  const obj = product.toJSON ? product.toJSON() : product;
+  const hasVariants = Array.isArray(obj.variants) && obj.variants.length > 0;
+  return {
+    productId: obj.id,
+    name: obj.name,
+    code: obj.code || null,
+    price: parseFloat(obj.price) || 0,
+    variantIndex: null,
+    variantOptions: null,
+    category: obj.category || null,
+    image: obj.images?.[0] || null,
+    stockAtLocation: stockMap.get(posStockKey(obj.id, null)) || 0,
+    hasVariants,
+    variants: hasVariants
+      ? obj.variants.map((vr, idx) => ({ ...vr, stockAtLocation: stockMap.get(posStockKey(obj.id, idx)) || 0 }))
+      : undefined,
+  };
+}
+
+// ─── Categories for the browse tiles ───────────────────────────────
+// Each row carries a productCount so the tile can show "N items". Counted
+// in JS off one lean query rather than a COUNT per category, because a
+// product matches on its primary `category` OR anywhere in `categories`.
+router.get('/categories', protectCashier, async (req, res) => {
+  try {
+    const rows = await Category.findAll({
+      where: { active: true },
+      attributes: ['id', 'name', 'nameAr', 'image'],
+      order: [['sortOrder', 'ASC'], ['name', 'ASC']],
+    });
+    const products = await Product.findAll({
+      where: { active: true },
+      attributes: ['category', 'categories'],
+      raw: true,
+    });
+    const countByName = new Map();
+    for (const p of products) {
+      const names = Array.isArray(p.categories) && p.categories.length
+        ? p.categories
+        : (p.category ? [p.category] : []);
+      for (const n of new Set(names)) countByName.set(n, (countByName.get(n) || 0) + 1);
+    }
+    res.json(rows.map((c) => ({
+      ...c.toJSON(),
+      productCount: countByName.get(c.name) || 0,
+    })));
+  } catch (err) {
+    console.error('[pos/categories]', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── Quick-pick tiles ──────────────────────────────────────────────
+// Featured products plus best sellers, for selling without scanning.
+router.get('/quick-products', protectCashier, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 30, 30);
+    const PROD_ATTRS = ['id', 'name', 'code', 'price', 'images', 'variants', 'category'];
+
+    const featuredRows = await Product.findAll({
+      where: { active: true, featured: true },
+      attributes: PROD_ATTRS,
+      order: [['name', 'ASC']],
+      limit,
+    });
+
+    // Best sellers — units sold across paid orders in the last 90 days.
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const paidOrders = await Order.findAll({
+      where: { paymentStatus: 'paid', createdAt: { [Op.gte]: since } },
+      attributes: ['items'],
+      raw: true,
+    });
+    const qtyByProduct = new Map();
+    for (const o of paidOrders) {
+      const items = typeof o.items === 'string' ? JSON.parse(o.items || '[]') : (o.items || []);
+      for (const it of items) {
+        if (!it.productId) continue;
+        qtyByProduct.set(it.productId, (qtyByProduct.get(it.productId) || 0) + (parseInt(it.quantity, 10) || 0));
+      }
+    }
+    const topIds = [...qtyByProduct.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([id]) => id);
+    const topRows = topIds.length
+      ? await Product.findAll({ where: { id: { [Op.in]: topIds }, active: true }, attributes: PROD_ATTRS })
+      : [];
+    const topById = new Map(topRows.map((p) => [p.id, p]));
+    const topSorted = topIds.map((id) => topById.get(id)).filter(Boolean);   // keep sold-rank order
+
+    const allIds = [...new Set([...featuredRows, ...topSorted].map((p) => p.id))];
+    const stockMap = await posStockMap(allIds, req.cashierLocationId);
+    res.json({
+      featured: featuredRows.map((p) => shapeProduct(p, stockMap)),
+      topSellers: topSorted.map((p) => shapeProduct(p, stockMap)),
+    });
+  } catch (err) {
+    console.error('[pos/quick-products]', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // ─── Search products for the cart panel ────────────────────────────
 // Optimised for a barcode-scanner workflow: tries an exact code/SKU
 // match first, then a "starts with" name match, capped at 15 results.
 router.get('/products', protectCashier, async (req, res) => {
   try {
     const q = (req.query.q || '').toString().trim();
+    const category = (req.query.category || '').toString().trim();
+
+    // Browse by category (image grid) — matches the primary `category` OR
+    // any entry in the `categories` array. No search query in this mode.
+    if (category && !q) {
+      const catJson = sequelize.escape(JSON.stringify(category));
+      const rows = await Product.findAll({
+        where: {
+          active: true,
+          [Op.or]: [{ category }, sequelize.literal(`JSON_CONTAINS(categories, ${catJson})`)],
+        },
+        attributes: ['id', 'name', 'code', 'price', 'images', 'variants', 'category'],
+        order: [['name', 'ASC']],
+        limit: 60,
+      });
+      const stockMap = await posStockMap(rows.map((p) => p.id), req.cashierLocationId);
+      return res.json(rows.map((p) => shapeProduct(p, stockMap)));
+    }
+
     if (!q) return res.json([]);
 
     // 1. Exact code match (barcode scanned)
-    const exact = await Product.findAll({
+    let exact = await Product.findAll({
       where: { active: true, code: q },
       limit: 5,
     });
+
+    // 1b. Products with no code get a "P<id>" label barcode (see
+    //     BarcodeLabelSheet.barcodeForProduct). Resolve that form back to
+    //     the product so a label printed from admin or the till scans.
+    if (exact.length === 0) {
+      const m = /^P(\d+)$/i.exec(q);
+      if (m) {
+        const byId = await Product.findOne({ where: { id: parseInt(m[1], 10), active: true } });
+        if (byId) exact = [byId];
+      }
+    }
 
     // 2. Variant-SKU match — Product.variants is JSON, can't index easily,
     //    so we fetch a small slice and filter in JS. For larger catalogues
@@ -254,12 +404,16 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
     const voidItems = [];
     let refundTotal = 0;
     const productIds = new Set();
+    // Value each line net of its own line discount plus its share of the
+    // order-level (manual + coupon) discount — the same valuer the sales
+    // return route uses, so a void and a full return pay out identically.
+    const refundValue = refundValuer(order);
     for (const it of (order.items || [])) {
       const vIdx = it.variantIndex ?? null;
       const k = `${it.productId}:${vIdx ?? 'b'}`;
       const remainingQty = (parseInt(it.quantity, 10) || 0) - (returnedSoFar.get(k) || 0);
       if (remainingQty <= 0) continue;
-      const lineRefund = +((parseFloat(it.price) || 0) * remainingQty).toFixed(3);
+      const lineRefund = refundValue(it, remainingQty);
       refundTotal += lineRefund;
       voidItems.push({
         productId: it.productId,
@@ -267,20 +421,14 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
         name: it.name,
         nameAr: it.nameAr || null,
         sku: it.sku || it.variant?.sku || null,
-        price: parseFloat(it.price) || 0,
+        price: +(lineRefund / remainingQty).toFixed(3),   // net unit price, so qty × price adds up
+        listPrice: parseFloat(it.price) || 0,
+        costPrice: parseFloat(it.costPrice) || 0,   // COGS snapshot, so the P&L can credit it back
         quantity: remainingQty,
         refundAmount: lineRefund,
         returnToStock: true,
       });
       productIds.add(it.productId);
-    }
-    // If discount was applied, prorate it down: refund = subtotal share −
-    // discount share. Keeps the void total = order remaining.
-    if (parseFloat(order.discount) > 0 && refundTotal > 0) {
-      const subtotal = (order.items || []).reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseInt(i.quantity, 10) || 0), 0);
-      const discountFactor = subtotal > 0 ? (subtotal - parseFloat(order.discount)) / subtotal : 1;
-      refundTotal = +(refundTotal * discountFactor).toFixed(3);
-      voidItems.forEach((v) => { v.refundAmount = +(v.refundAmount * discountFactor).toFixed(3); });
     }
     refundTotal = +Math.min(refundTotal, remaining).toFixed(3);
     if (refundTotal <= 0) {
@@ -289,10 +437,7 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
     }
 
     // Refund via the same rail the customer paid through.
-    const refundMethod = order.paymentMethod === 'pos_cash' ? 'cash'
-      : order.paymentMethod === 'pos_card' ? 'card'
-      : order.paymentMethod === 'pos_knet' ? 'knet'
-      : 'cash';
+    const refundMethod = order.paymentMethod === 'pos_card' ? 'card' : 'cash';
 
     // Decrement stock back to this location.
     for (const v of voidItems) {
@@ -329,9 +474,7 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
       refundAmount: +(alreadyRefunded + refundTotal).toFixed(3),
     }, { transaction: t });
 
-    const acctType = refundMethod === 'cash' ? 'drawer'
-      : refundMethod === 'knet' ? 'knet_terminal'
-      : 'card_terminal';
+    const acctType = refundMethod === 'cash' ? 'drawer' : 'card_terminal';
     const acct = await CashAccount.findOne({
       where: { locationId: req.cashierLocationId, type: acctType, active: true },
       transaction: t,
@@ -461,6 +604,7 @@ router.post('/sales/:id/append', protectCashier, async (req, res) => {
         nameAr: product.nameAr ? product.nameAr + appendSuffix : null,
         sku: variant?.sku || product.code || null,
         category: product.category,
+        variantIndex: vIdx,
         price: unitPrice,
         costPrice: unitCost,
         quantity: qty,
@@ -527,12 +671,17 @@ router.post('/sales/:id/append', protectCashier, async (req, res) => {
     // Write CashTransaction(s) for the new tender(s).
     for (const tn of newTenders) {
       if (!tn.amount || tn.amount <= 0) continue;
+      // Same mapping as the sale path.
       const acctType = tn.method === 'cash' ? 'drawer' : 'card_terminal';
       const acct = await CashAccount.findOne({
         where: { locationId: req.cashierLocationId, type: acctType, active: true },
         transaction: t,
       });
-      if (!acct) continue;
+      if (!acct) {
+        console.warn(`[pos] no ${acctType} account at location ${req.cashierLocationId} — ` +
+          `${tn.method} ${tn.amount} on ${order.orderNumber} is NOT in the cash ledger`);
+        continue;
+      }
       await writeCashTxn({
         cashAccountId: acct.id,
         amount: tn.amount,
@@ -706,7 +855,13 @@ router.post('/customers', protectCashier, async (req, res) => {
 router.post('/sale', protectCashier, async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const { items, customer, payment, userId, couponCode, manualDiscount, managerOverride } = req.body || {};
+    const {
+      items, customer, payment, userId, couponCode, manualDiscount, managerOverride,
+      deliveryCharge: deliveryChargeRaw,
+    } = req.body || {};
+    // Optional delivery charge. Adds to the total as its own income line;
+    // deliberately NOT taxed, and the receipt hides the line when zero.
+    const deliveryCharge = Math.max(0, parseFloat(deliveryChargeRaw) || 0);
     if (!Array.isArray(items) || items.length === 0) {
       await t.rollback();
       return res.status(400).json({ message: 'No items in sale' });
@@ -720,15 +875,15 @@ router.post('/sale', protectCashier, async (req, res) => {
         method: t.method,
         amount: parseFloat(t.amount),
       }));
-    } else if (payment?.method && ['cash', 'card', 'knet'].includes(payment.method)) {
+    } else if (payment?.method && ['cash', 'card'].includes(payment.method)) {
       tenders = [{ method: payment.method, amount: null }];   // amount filled after total
     } else {
       await t.rollback();
       return res.status(400).json({ message: 'payment.method or payment.tenders required' });
     }
-    if (tenders.some((t) => !['cash', 'card', 'knet'].includes(t.method))) {
+    if (tenders.some((t) => !['cash', 'card'].includes(t.method))) {
       await t.rollback();
-      return res.status(400).json({ message: 'Each tender must be cash, card or knet' });
+      return res.status(400).json({ message: 'Each tender must be cash or card' });
     }
 
     // Validate shift is still open.
@@ -749,6 +904,9 @@ router.post('/sale', protectCashier, async (req, res) => {
     const orderItems = [];
     const stockDecrements = [];   // [{stockRow, qty}]
     let subTotal = 0;
+    let lineOffTotal = 0;         // sum of per-line discounts
+    let repricedLines = 0;        // audit: how many lines were price-overridden
+    let repriceDelta = 0;         // audit: net effect of those overrides
 
     for (const it of items) {
       const productId = parseInt(it.productId, 10);
@@ -770,9 +928,40 @@ router.post('/sale', protectCashier, async (req, res) => {
       }
       stockDecrements.push({ stockRow: stock, qty });
 
-      const unitPrice = parseFloat(variant?.price ?? product.price) || 0;
+      const listPrice = parseFloat(variant?.price ?? product.price) || 0;
       const unitCost = parseFloat(variant?.costPrice ?? product.costPrice ?? 0) || 0;
-      subTotal += unitPrice * qty;
+
+      // Per-sale price override — the cashier charges a different price for
+      // this sale only; the catalogue price is untouched. Stored as the
+      // line's `price` so every downstream reader (receipt, returns,
+      // reports) sees what was actually charged, with `listPrice` kept for
+      // the audit trail.
+      let unitPrice = listPrice;
+      if (it.priceOverride != null && it.priceOverride !== '') {
+        const po = parseFloat(it.priceOverride);
+        if (!Number.isFinite(po) || po < 0) throw new Error(`Invalid price for ${product.name}`);
+        unitPrice = +po.toFixed(3);
+      }
+      const repriced = unitPrice !== listPrice;
+      if (repriced) {
+        repricedLines += 1;
+        repriceDelta += (unitPrice - listPrice) * qty;
+      }
+
+      const lineGross = unitPrice * qty;
+      subTotal += lineGross;
+
+      // Per-line discount — recomputed here from the server-side price so a
+      // tampered client can't inflate it. A fixed amount is per item, so it
+      // applies once per unit. Capped at the line's gross.
+      let lineOff = 0;
+      const ld = it.lineDiscount;
+      if (ld && parseFloat(ld.value) > 0) {
+        const v = parseFloat(ld.value);
+        lineOff = ld.kind === 'percentage' ? (lineGross * v) / 100 : v * qty;
+        lineOff = +Math.min(lineOff, lineGross).toFixed(3);
+        lineOffTotal += lineOff;
+      }
       const variantSuffix = variant ? ` (${Object.values(variant.options || {}).join('/')})` : '';
       orderItems.push({
         productId,
@@ -780,9 +969,16 @@ router.post('/sale', protectCashier, async (req, res) => {
         nameAr: product.nameAr ? product.nameAr + variantSuffix : null,
         sku: variant?.sku || product.code || null,   // snapshot SKU for receipt
         category: product.category,
+        // Persist the variant index on the line. Without it the returns
+        // matcher falls through to "first line with this productId" and a
+        // multi-variant order refunds the wrong line's price.
+        variantIndex: vIdx,
         price: unitPrice,
+        listPrice,                           // catalogue price at time of sale
+        priceOverridden: repriced,
         costPrice: unitCost,                 // snapshot for COGS
         quantity: qty,
+        lineDiscount: lineOff > 0 ? { kind: ld.kind, value: parseFloat(ld.value), amount: lineOff } : null,
         image: product.images?.[0] || null,
         variant: variant ? { ...variant.options, sku: variant.sku } : null,
         taxable: product.taxable || false,
@@ -804,15 +1000,21 @@ router.post('/sale', protectCashier, async (req, res) => {
     // Apply discounts. Manual discount applies to the cart subtotal,
     // then the coupon applies to (subtotal − manual). Final total is
     // capped at 0 in case both stack heavily.
+    // Discount waterfall: per-line discounts first, then the manual bill
+    // discount on what's left, then any coupon on top of that.
+    lineOffTotal = +lineOffTotal.toFixed(3);
+    const afterLines = +Math.max(0, subTotal - lineOffTotal).toFixed(3);
     let manualOff = 0;
     let manualPct = 0;
     if (manualDiscount && parseFloat(manualDiscount.value) > 0) {
       const v = parseFloat(manualDiscount.value);
       manualOff = manualDiscount.kind === 'percentage'
-        ? (subTotal * v) / 100
+        ? (afterLines * v) / 100
         : v;
-      manualOff = Math.min(manualOff, subTotal);
-      manualPct = subTotal > 0 ? (manualOff / subTotal) * 100 : 0;
+      manualOff = Math.min(manualOff, afterLines);
+      // Gauge the override threshold against the gross, so stacking a line
+      // discount under a bill discount can't slip past the manager gate.
+      manualPct = subTotal > 0 ? ((manualOff + lineOffTotal) / subTotal) * 100 : 0;
     }
 
     // Manager override gate: any manual discount whose effective
@@ -841,7 +1043,7 @@ router.post('/sale', protectCashier, async (req, res) => {
     if (couponCode) {
       const result = await validateCoupon({
         code: couponCode,
-        subtotal: +Math.max(0, subTotal - manualOff).toFixed(3),
+        subtotal: +Math.max(0, afterLines - manualOff).toFixed(3),
         items: orderItems,
         userId: linkedUser?.id,
         transaction: t,
@@ -849,10 +1051,18 @@ router.post('/sale', protectCashier, async (req, res) => {
       couponOff = result.discount;
       appliedCoupon = result.coupon;
     }
-    const totalDiscount = +(manualOff + couponOff).toFixed(3);
-    const totalAmount = +(Math.max(0, subTotal - totalDiscount)).toFixed(3);
+    // order.discount is the FULL discount including per-line ones — the
+    // refund valuer subtracts the line discounts back out to work out the
+    // order-level slice, so this must not exclude them.
+    const totalDiscount = +(lineOffTotal + manualOff + couponOff).toFixed(3);
+    // Delivery is charged on top of the discounted goods and is not
+    // discountable — a coupon shouldn't erode the courier fee. Folding it
+    // into totalAmount here means every tender check below, the ledger
+    // posting and the P&L all pick it up without further changes.
+    const goodsTotal = +(Math.max(0, subTotal - totalDiscount)).toFixed(3);
+    const totalAmount = +(goodsTotal + deliveryCharge).toFixed(3);
 
-    const orderNumber = genOrderNumber();
+    const orderNumber = await nextInvoiceNumber(t);
 
     // Resolve tenders. Single-tender back-compat: amount comes from the
     // legacy `amountTendered` field (any overage is the cash change).
@@ -871,7 +1081,7 @@ router.post('/sale', protectCashier, async (req, res) => {
         if (amountTendered < totalAmount) throw new Error('Amount tendered is less than total');
         single.amount = totalAmount;       // retained, not tendered
       } else {
-        // Card and KNET terminals charge exactly the bill amount.
+        // Card terminals charge exactly the bill amount.
         if (change > 0) throw new Error(`${single.method.toUpperCase()} payment cannot exceed total`);
         single.amount = totalAmount;
       }
@@ -908,10 +1118,10 @@ router.post('/sale', protectCashier, async (req, res) => {
       orderStatus: 'delivered',
       locationId: req.cashierLocationId,
       cashierSessionId: req.cashierSessionId,
-      shippingCharge: 0,
+      shippingCharge: deliveryCharge,
       discount: totalDiscount,
       couponCode: appliedCoupon?.code || null,
-      taxAmount: 0,
+      taxAmount: 0,   // delivery is zero-rated and goods tax is not charged at POS
       paymentBreakdown: isSplit ? tenders : null,
     }, { transaction: t });
 
@@ -930,9 +1140,15 @@ router.post('/sale', protectCashier, async (req, res) => {
         paymentMethod,
         itemCount: orderItems.reduce((s, i) => s + i.quantity, 0),
         discount: totalDiscount,
+        lineDiscount: lineOffTotal,
         manualPct: +manualPct.toFixed(2),
         couponCode: appliedCoupon?.code || null,
         customerId: linkedUser?.id || null,
+        deliveryCharge: deliveryCharge || undefined,
+        // Price overrides are worth auditing on their own — they change
+        // what was charged without leaving a discount trail.
+        repricedLines: repricedLines || undefined,
+        repriceDelta: repricedLines ? +repriceDelta.toFixed(3) : undefined,
       },
       managerOverrideBy: managerUser?.id || null,
       reason: managerUser ? (managerOverride?.reason || `Discount ${manualPct.toFixed(1)}%`) : null,
@@ -946,7 +1162,7 @@ router.post('/sale', protectCashier, async (req, res) => {
     // drawer; card hits its card-terminal account. Missing account is
     // non-fatal — POS keeps working, the sale just doesn't hit the
     // ledger for that tender until the account is created.
-    const methodToAcct = { cash: 'drawer', card: 'card_terminal', knet: 'knet_terminal' };
+    const methodToAcct = { cash: 'drawer', card: 'card_terminal' };
     const acctCache = {};   // type -> CashAccount
     for (const tn of tenders) {
       if (!tn.amount || tn.amount <= 0) continue;
@@ -1004,7 +1220,7 @@ router.get('/shift-summary', protectCashier, async (req, res) => {
 
     const orders = await Order.findAll({
       where: { cashierSessionId: session.id },
-      attributes: ['id', 'orderNumber', 'totalAmount', 'paymentMethod', 'createdAt'],
+      attributes: ['id', 'orderNumber', 'totalAmount', 'paymentMethod', 'paymentBreakdown', 'createdAt'],
       order: [['createdAt', 'DESC']],
     });
 
@@ -1012,7 +1228,16 @@ router.get('/shift-summary', protectCashier, async (req, res) => {
       const amt = parseFloat(o.totalAmount || 0);
       s.totalSales += amt;
       s.orderCount += 1;
-      if (o.paymentMethod === 'pos_cash') s.cashSales += amt;
+      // Split-payment sales carry per-tender amounts; without this branch a
+      // pos_split order counts into totalSales but into no tender line, and
+      // the drawer never reconciles.
+      if (Array.isArray(o.paymentBreakdown) && o.paymentBreakdown.length > 0) {
+        for (const tn of o.paymentBreakdown) {
+          const tAmt = parseFloat(tn.amount || 0);
+          if (tn.method === 'cash') s.cashSales += tAmt;
+          else if (tn.method === 'card') s.cardSales += tAmt;
+        }
+      } else if (o.paymentMethod === 'pos_cash') s.cashSales += amt;
       else if (o.paymentMethod === 'pos_card') s.cardSales += amt;
       return s;
     }, { totalSales: 0, cashSales: 0, cardSales: 0, orderCount: 0 });

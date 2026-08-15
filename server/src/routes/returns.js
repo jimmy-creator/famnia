@@ -29,6 +29,7 @@ import {
 
 const REFUND_AMOUNT_THRESHOLD = 50;    // KWD — over this needs manager approval
 import { protect, admin, protectCashier } from '../middleware/auth.js';
+import { refundValuer } from '../utils/refund.js';
 
 const router = Router();
 
@@ -86,8 +87,17 @@ router.get('/lookup/:orderNumber', authEither, async (req, res) => {
       }
     }
 
+    // Stamp each line with its discount-inclusive unit value so the terminal
+    // quotes the same refund the create route will actually pay out.
+    const orderJson = order.toJSON();
+    const refundValue = refundValuer(orderJson);
+    orderJson.items = (orderJson.items || []).map((it) => ({
+      ...it,
+      netUnitPrice: refundValue(it, 1),
+    }));
+
     res.json({
-      order: order.toJSON(),
+      order: orderJson,
       returnedSoFar,
       priorReturns: prior.length,
     });
@@ -108,9 +118,12 @@ router.post('/', authEither, async (req, res) => {
       await t.rollback();
       return res.status(400).json({ message: 'orderId and items[] required' });
     }
-    if (!['cash', 'card', 'knet', 'store_credit'].includes(refundMethod)) {
+    // No customer credit: every refund goes back out a real money rail.
+    // store_credit was removed — it wrote no ledger entry and nothing
+    // anywhere could redeem it, so issuing it created a hidden liability.
+    if (!['cash', 'card'].includes(refundMethod)) {
       await t.rollback();
-      return res.status(400).json({ message: 'refundMethod must be cash, card, knet or store_credit' });
+      return res.status(400).json({ message: 'refundMethod must be cash or card' });
     }
 
     const order = await Order.findByPk(orderId, { transaction: t });
@@ -172,6 +185,7 @@ router.post('/', authEither, async (req, res) => {
     const returnedItems = [];
     let refundTotal = 0;
     const stockBumps = [];
+    const refundValue = refundValuer(order);
 
     for (const it of items) {
       const productId = parseInt(it.productId, 10);
@@ -196,8 +210,9 @@ router.post('/', authEither, async (req, res) => {
         });
       }
 
-      const unitPrice = parseFloat(original.price) || 0;
-      const lineRefund = +(unitPrice * qty).toFixed(3);
+      // Refund what the customer actually paid for these units, not the
+      // gross price — line, manual and coupon discounts all come off.
+      const lineRefund = refundValue(original, qty);
       refundTotal += lineRefund;
       returnedItems.push({
         productId,
@@ -205,7 +220,13 @@ router.post('/', authEither, async (req, res) => {
         name: original.name,
         nameAr: original.nameAr || null,
         sku: original.sku || original.variant?.sku || null,
-        price: unitPrice,
+        price: +(lineRefund / qty).toFixed(3),   // net unit price, so the receipt's qty × price adds up
+        listPrice: parseFloat(original.price) || 0,
+        // Carry the original line's COGS snapshot so the P&L can credit it
+        // back. Without it refundCogs stays 0: the goods return to stock
+        // (inventory up) while COGS is never reduced (profit unchanged),
+        // which shows up as a permanent balance-sheet drift.
+        costPrice: parseFloat(original.costPrice) || 0,
         quantity: qty,
         refundAmount: lineRefund,
         returnToStock,
@@ -275,12 +296,10 @@ router.post('/', authEither, async (req, res) => {
     const newRefundAmount = +((parseFloat(order.refundAmount) || 0) + refundTotal).toFixed(3);
     await order.update({ refundAmount: newRefundAmount }, { transaction: t });
 
-    // Cash/card/KNET refunds are money OUT of the corresponding location
+    // Cash/card refunds are money OUT of the corresponding location
     // account. Store credit doesn't move cash, so no ledger entry.
-    if (['cash', 'card', 'knet'].includes(refundMethod)) {
-      const acctType = refundMethod === 'cash' ? 'drawer'
-        : refundMethod === 'knet' ? 'knet_terminal'
-        : 'card_terminal';
+    if (['cash', 'card'].includes(refundMethod)) {
+      const acctType = refundMethod === 'cash' ? 'drawer' : 'card_terminal';
       const acct = await CashAccount.findOne({
         where: { locationId, type: acctType, active: true },
         transaction: t,
@@ -311,7 +330,7 @@ router.post('/', authEither, async (req, res) => {
         orderNumber: order.orderNumber,
         refundAmount: refundTotal,
         refundMethod,
-        itemCount: lines.reduce((s, l) => s + l.quantity, 0),
+        itemCount: returnedItems.reduce((s, l) => s + l.quantity, 0),
       },
       managerOverrideBy: managerUser?.id || null,
       reason: managerUser ? (req.body.managerOverride?.reason || reason || `Refund ${refundTotal}`) : null,
