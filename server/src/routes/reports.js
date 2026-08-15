@@ -108,7 +108,7 @@ router.get('/cashier-sales', protect, admin, async (req, res) => {
 
     const orders = await Order.findAll({
       where,
-      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'items',
+      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items',
                    'cashierSessionId', 'locationId', 'createdAt'],
       include: [{
         model: CashierSession,
@@ -196,7 +196,7 @@ router.get('/location-sales', protect, admin, async (req, res) => {
 
     const orders = await Order.findAll({
       where,
-      attributes: ['id', 'totalAmount', 'refundAmount', 'paymentMethod', 'items', 'locationId', 'createdAt'],
+      attributes: ['id', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items', 'locationId', 'createdAt'],
     });
 
     const returns = await SalesReturn.findAll({ where });
@@ -253,7 +253,7 @@ router.get('/x', protectCashier, async (req, res) => {
 
     const orders = await Order.findAll({
       where: { cashierSessionId: session.id },
-      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'items', 'createdAt'],
+      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items', 'createdAt'],
       order: [['createdAt', 'DESC']],
     });
     const returns = await SalesReturn.findAll({
@@ -300,7 +300,7 @@ router.get('/z/:sessionId', protect, async (req, res) => {
 
     const orders = await Order.findAll({
       where: { cashierSessionId: session.id },
-      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'items', 'createdAt'],
+      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items', 'createdAt'],
       order: [['createdAt', 'DESC']],
     });
     const returns = await SalesReturn.findAll({

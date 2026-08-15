@@ -26,16 +26,22 @@ import sequelize from '../config/database.js';
 
 const router = Router();
 
+// One source of truth for how long a till stays logged in. The cookie and
+// the JWT must agree: previously the cookie expired at 12h while the token
+// was signed with the storefront's JWT_EXPIRE (7d), so a till open past 12h
+// started 401-ing on every call with the shift still showing as open.
+const CASHIER_SESSION_MS = 24 * 60 * 60 * 1000;  // 24h — covers any shift
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax',
-  maxAge: 12 * 60 * 60 * 1000,  // 12h — covers a long shift
+  maxAge: CASHIER_SESSION_MS,
 };
 
 function issueToken(payload) {
   return jwt.sign(payload, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '12h',
+    expiresIn: Math.floor(CASHIER_SESSION_MS / 1000),
   });
 }
 

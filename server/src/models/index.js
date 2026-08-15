@@ -180,7 +180,13 @@ export async function writeCashTxn({
   cashAccountId, amount, source, sourceType = null, sourceId = null,
   reference = null, description = null, date, createdBy = null, transaction = null,
 }) {
-  if (!cashAccountId) return null;
+  if (!cashAccountId) {
+    // Silently dropping a money movement is worse than a noisy log — the
+    // daybook and every cash balance would just be quietly wrong.
+    console.warn(`[writeCashTxn] no cashAccountId for ${source}/${sourceType}#${sourceId} ` +
+      `(${amount}) — movement NOT recorded in the cash ledger`);
+    return null;
+  }
   return CashTransaction.create({
     cashAccountId,
     amount,

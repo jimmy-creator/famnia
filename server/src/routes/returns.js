@@ -29,6 +29,7 @@ import {
 
 const REFUND_AMOUNT_THRESHOLD = 50;    // KWD — over this needs manager approval
 import { protect, admin, protectCashier } from '../middleware/auth.js';
+import { refundValuer } from '../utils/refund.js';
 
 const router = Router();
 
@@ -86,8 +87,17 @@ router.get('/lookup/:orderNumber', authEither, async (req, res) => {
       }
     }
 
+    // Stamp each line with its discount-inclusive unit value so the terminal
+    // quotes the same refund the create route will actually pay out.
+    const orderJson = order.toJSON();
+    const refundValue = refundValuer(orderJson);
+    orderJson.items = (orderJson.items || []).map((it) => ({
+      ...it,
+      netUnitPrice: refundValue(it, 1),
+    }));
+
     res.json({
-      order: order.toJSON(),
+      order: orderJson,
       returnedSoFar,
       priorReturns: prior.length,
     });
@@ -172,6 +182,7 @@ router.post('/', authEither, async (req, res) => {
     const returnedItems = [];
     let refundTotal = 0;
     const stockBumps = [];
+    const refundValue = refundValuer(order);
 
     for (const it of items) {
       const productId = parseInt(it.productId, 10);
@@ -196,8 +207,9 @@ router.post('/', authEither, async (req, res) => {
         });
       }
 
-      const unitPrice = parseFloat(original.price) || 0;
-      const lineRefund = +(unitPrice * qty).toFixed(3);
+      // Refund what the customer actually paid for these units, not the
+      // gross price — line, manual and coupon discounts all come off.
+      const lineRefund = refundValue(original, qty);
       refundTotal += lineRefund;
       returnedItems.push({
         productId,
@@ -205,7 +217,8 @@ router.post('/', authEither, async (req, res) => {
         name: original.name,
         nameAr: original.nameAr || null,
         sku: original.sku || original.variant?.sku || null,
-        price: unitPrice,
+        price: +(lineRefund / qty).toFixed(3),   // net unit price, so the receipt's qty × price adds up
+        listPrice: parseFloat(original.price) || 0,
         quantity: qty,
         refundAmount: lineRefund,
         returnToStock,
@@ -311,7 +324,7 @@ router.post('/', authEither, async (req, res) => {
         orderNumber: order.orderNumber,
         refundAmount: refundTotal,
         refundMethod,
-        itemCount: lines.reduce((s, l) => s + l.quantity, 0),
+        itemCount: returnedItems.reduce((s, l) => s + l.quantity, 0),
       },
       managerOverrideBy: managerUser?.id || null,
       reason: managerUser ? (req.body.managerOverride?.reason || reason || `Refund ${refundTotal}`) : null,

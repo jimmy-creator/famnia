@@ -24,6 +24,7 @@ import {
 const DISCOUNT_PCT_THRESHOLD = 15;     // percent
 const REFUND_AMOUNT_THRESHOLD = 50;    // currency units (KWD)
 import { protectCashier } from '../middleware/auth.js';
+import { refundValuer } from '../utils/refund.js';
 
 const router = Router();
 
@@ -254,12 +255,16 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
     const voidItems = [];
     let refundTotal = 0;
     const productIds = new Set();
+    // Value each line net of its own line discount plus its share of the
+    // order-level (manual + coupon) discount — the same valuer the sales
+    // return route uses, so a void and a full return pay out identically.
+    const refundValue = refundValuer(order);
     for (const it of (order.items || [])) {
       const vIdx = it.variantIndex ?? null;
       const k = `${it.productId}:${vIdx ?? 'b'}`;
       const remainingQty = (parseInt(it.quantity, 10) || 0) - (returnedSoFar.get(k) || 0);
       if (remainingQty <= 0) continue;
-      const lineRefund = +((parseFloat(it.price) || 0) * remainingQty).toFixed(3);
+      const lineRefund = refundValue(it, remainingQty);
       refundTotal += lineRefund;
       voidItems.push({
         productId: it.productId,
@@ -267,20 +272,13 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
         name: it.name,
         nameAr: it.nameAr || null,
         sku: it.sku || it.variant?.sku || null,
-        price: parseFloat(it.price) || 0,
+        price: +(lineRefund / remainingQty).toFixed(3),   // net unit price, so qty × price adds up
+        listPrice: parseFloat(it.price) || 0,
         quantity: remainingQty,
         refundAmount: lineRefund,
         returnToStock: true,
       });
       productIds.add(it.productId);
-    }
-    // If discount was applied, prorate it down: refund = subtotal share −
-    // discount share. Keeps the void total = order remaining.
-    if (parseFloat(order.discount) > 0 && refundTotal > 0) {
-      const subtotal = (order.items || []).reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseInt(i.quantity, 10) || 0), 0);
-      const discountFactor = subtotal > 0 ? (subtotal - parseFloat(order.discount)) / subtotal : 1;
-      refundTotal = +(refundTotal * discountFactor).toFixed(3);
-      voidItems.forEach((v) => { v.refundAmount = +(v.refundAmount * discountFactor).toFixed(3); });
     }
     refundTotal = +Math.min(refundTotal, remaining).toFixed(3);
     if (refundTotal <= 0) {
@@ -527,12 +525,20 @@ router.post('/sales/:id/append', protectCashier, async (req, res) => {
     // Write CashTransaction(s) for the new tender(s).
     for (const tn of newTenders) {
       if (!tn.amount || tn.amount <= 0) continue;
-      const acctType = tn.method === 'cash' ? 'drawer' : 'card_terminal';
+      // Same mapping as the sale path — without the KNET branch, KNET
+      // appends were landing on the card terminal and neither reconciled.
+      const acctType = tn.method === 'cash' ? 'drawer'
+        : tn.method === 'knet' ? 'knet_terminal'
+        : 'card_terminal';
       const acct = await CashAccount.findOne({
         where: { locationId: req.cashierLocationId, type: acctType, active: true },
         transaction: t,
       });
-      if (!acct) continue;
+      if (!acct) {
+        console.warn(`[pos] no ${acctType} account at location ${req.cashierLocationId} — ` +
+          `${tn.method} ${tn.amount} on ${order.orderNumber} is NOT in the cash ledger`);
+        continue;
+      }
       await writeCashTxn({
         cashAccountId: acct.id,
         amount: tn.amount,
@@ -1004,7 +1010,7 @@ router.get('/shift-summary', protectCashier, async (req, res) => {
 
     const orders = await Order.findAll({
       where: { cashierSessionId: session.id },
-      attributes: ['id', 'orderNumber', 'totalAmount', 'paymentMethod', 'createdAt'],
+      attributes: ['id', 'orderNumber', 'totalAmount', 'paymentMethod', 'paymentBreakdown', 'createdAt'],
       order: [['createdAt', 'DESC']],
     });
 
@@ -1012,10 +1018,21 @@ router.get('/shift-summary', protectCashier, async (req, res) => {
       const amt = parseFloat(o.totalAmount || 0);
       s.totalSales += amt;
       s.orderCount += 1;
-      if (o.paymentMethod === 'pos_cash') s.cashSales += amt;
+      // Split-payment sales carry per-tender amounts; without this branch a
+      // pos_split order counts into totalSales but into no tender line, and
+      // the drawer never reconciles.
+      if (Array.isArray(o.paymentBreakdown) && o.paymentBreakdown.length > 0) {
+        for (const tn of o.paymentBreakdown) {
+          const tAmt = parseFloat(tn.amount || 0);
+          if (tn.method === 'cash') s.cashSales += tAmt;
+          else if (tn.method === 'card') s.cardSales += tAmt;
+          else if (tn.method === 'knet') s.knetSales += tAmt;
+        }
+      } else if (o.paymentMethod === 'pos_cash') s.cashSales += amt;
       else if (o.paymentMethod === 'pos_card') s.cardSales += amt;
+      else if (o.paymentMethod === 'pos_knet') s.knetSales += amt;
       return s;
-    }, { totalSales: 0, cashSales: 0, cardSales: 0, orderCount: 0 });
+    }, { totalSales: 0, cashSales: 0, cardSales: 0, knetSales: 0, orderCount: 0 });
 
     summary.openingCash = parseFloat(session.openingCash) || 0;
     summary.expectedCash = summary.openingCash + summary.cashSales;
