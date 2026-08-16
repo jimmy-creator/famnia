@@ -75,6 +75,13 @@ function ScrollToTop() {
 
 function PageWrapper({ children }) {
   const { pathname } = useLocation();
+  // The POS is a full-screen kiosk whose bottom nav and cart sheet are
+  // position:fixed. This wrapper's fade animation leaves a residual
+  // transform/filter on the element, and ANY transformed ancestor becomes
+  // the containing block for fixed descendants — which pins them to the
+  // scrolled page instead of the viewport, so the nav scrolls away. The
+  // fade is meaningless on a till anyway, so skip the wrapper there.
+  if (isPosPath(pathname)) return children;
   return <div key={pathname} className="page-transition">{children}</div>;
 }
 
@@ -86,9 +93,14 @@ function PageWrapper({ children }) {
 // POS surface doesn't show up to customers/bots scanning common routes.
 // The auth gate is still the real protection — this is just hygiene.
 export const STAFF_BASE = '/femnia-staff-q9m4';
+
+// includes(), not ===, so the locale-prefixed form (/ar/<slug>) matches too.
+// The slug is unique enough that a substring test is unambiguous.
+const isPosPath = (pathname) => pathname.includes(STAFF_BASE);
+
 function PosAware({ children }) {
   const { pathname } = useLocation();
-  if (pathname === STAFF_BASE || pathname === `${STAFF_BASE}/login`) return null;
+  if (isPosPath(pathname)) return null;
   if (pathname.startsWith('/admin')) return null;
   return children;
 }

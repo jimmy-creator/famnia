@@ -109,6 +109,10 @@ export default function Pos() {
   const [splitOpen, setSplitOpen] = useState(false);
   const [printerOpen, setPrinterOpen] = useState(false);
   const [labelPrintOpen, setLabelPrintOpen] = useState(false);
+  // Mobile only: the cart is a bottom sheet rather than a side panel,
+  // because a phone has no room for both and the till must always be
+  // one tap from Total and Pay.
+  const [cartOpen, setCartOpen] = useState(false);
   const [editBill, setEditBill] = useState(null);   // orderNumber | null
   const [payOpen, setPayOpen] = useState(null);    // 'cash' | 'card' | null
   const [tendered, setTendered] = useState('');
@@ -257,6 +261,7 @@ export default function Pos() {
     return +Math.min(calc, gross).toFixed(3);
   };
 
+  const cartCount = cart.reduce((n, c) => n + c.quantity, 0);
   const subTotal = cart.reduce((s, c) => s + unitOf(c) * c.quantity, 0);
   const lineOffTotal = +cart.reduce((s, c) => s + lineOffOf(c), 0).toFixed(3);
   const afterLines = +Math.max(0, subTotal - lineOffTotal).toFixed(3);
@@ -590,7 +595,10 @@ export default function Pos() {
         </section>
 
         {/* ─── Right: cart + checkout ────────────── */}
-        <aside className="pos-right">
+        <aside className={`pos-right ${cartOpen ? 'is-open' : ''}`}>
+          <button className="cart-sheet-close" onClick={() => setCartOpen(false)} aria-label="Close cart">
+            <HiX size={20} />
+          </button>
           <div className="cart-header">
             <h2>Cart</h2>
             {cart.length > 0 && <button className="link-btn" onClick={() => setCart([])}>Clear</button>}
@@ -697,6 +705,21 @@ export default function Pos() {
           </button>
         </aside>
       </div>
+
+      {/* Mobile-only summary bar. The cart sheet is off-screen by default,
+          so this is what keeps the running total and a route to Pay visible
+          at all times — without it the cashier has to scroll the whole
+          catalogue to find out what they've rung up. */}
+      <button className="cart-bar" onClick={() => setCartOpen(true)}>
+        <span className="cart-bar-count">
+          {cartCount === 0 ? 'Cart empty' : `${cartCount} item${cartCount === 1 ? '' : 's'}`}
+        </span>
+        <span className="cart-bar-total">{fmt(total)}</span>
+        <span className="cart-bar-cta">{cartCount === 0 ? 'Open' : 'Pay →'}</span>
+      </button>
+
+      {/* Tapping outside the sheet closes it. */}
+      {cartOpen && <div className="cart-scrim" onClick={() => setCartOpen(false)} />}
 
       {/* ─── Variant picker ─────────────────── */}
       {variantPicker && (
@@ -1005,10 +1028,111 @@ export default function Pos() {
           display: grid; grid-template-columns: 1fr 440px;
           min-height: 0;
         }
+        /* Desktop-only chrome, hidden until the mobile block turns it on. */
+        .cart-bar, .cart-scrim, .cart-sheet-close { display: none; }
+
+        /* ── Mobile / small tablet ──────────────────────────────
+           The old rule here just collapsed .pos-grid to one column, which
+           pushed the cart below the entire browse grid — a till where you
+           scroll past the catalogue to reach Pay. Instead: the rail becomes
+           a bottom nav, the cart becomes a bottom sheet, and a summary bar
+           keeps the total and a route to Pay permanently on screen. */
         @media (max-width: 900px) {
-          .pos-app { grid-template-columns: 64px 1fr; }
-          .rail-btn span { display: none; }
+          .pos-app {
+            /* Single source of truth for the bottom nav height — the summary
+               bar sits on top of it and the content pads clear of both. */
+            --pos-navh: 64px;
+            grid-template-columns: 1fr;
+            grid-template-rows: 56px 1fr auto;
+            grid-template-areas: "topbar" "grid" "rail";
+            /* Room for the summary bar, which sits above the rail. */
+            padding-bottom: 0;
+          }
+
+          /* Rail becomes a bottom nav. It must be FIXED, not just the last
+             grid row — as a flow row it scrolls off the moment the product
+             list is taller than the viewport, which is almost always. */
+          .pos-rail {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+            box-sizing: border-box;
+            height: calc(var(--pos-navh) + env(safe-area-inset-bottom));
+            flex-direction: row; justify-content: space-around; align-items: center;
+            background: var(--pos-surface);
+            border-right: none; border-top: 1px solid var(--pos-border);
+            padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+            gap: 0; overflow-x: auto;
+          }
+          .rail-brand { display: none; }
+          .rail-spacer { display: none; }
+          /* min-width:0 so all eight actions share the width evenly — at
+             56px the last one (Exit) fell off the edge behind a scroll. */
+          .rail-btn { width: auto; min-width: 0; flex: 1 1 0; font-size: 9.5px; padding: 6px 1px; }
+          .rail-btn span { white-space: nowrap; }
+          .rail-btn span { display: block; }
+
           .pos-grid { grid-template-columns: 1fr; }
+          /* Clear both fixed bars (nav ~58px + summary ~50px) so the last
+             product tile isn't trapped underneath them. */
+          .pos-left { padding: 1rem 1rem calc(var(--pos-navh) + 60px + env(safe-area-inset-bottom)); }
+
+          /* Cart becomes a bottom sheet. Off-screen until opened; the
+             visibility toggle keeps it out of the tab order while hidden. */
+          .pos-right {
+            position: fixed; left: 0; right: 0; bottom: 0;
+            max-height: 88vh; z-index: 60;
+            border-left: none; border-top: 1px solid var(--pos-border-strong);
+            border-radius: 16px 16px 0 0;
+            box-shadow: 0 -8px 32px rgba(0,0,0,0.5);
+            transform: translateY(100%); visibility: hidden;
+            transition: transform .22s ease, visibility .22s;
+            overflow-y: auto;
+            padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+          }
+          .pos-right.is-open { transform: translateY(0); visibility: visible; }
+          /* The slide is decoration. If motion is suppressed, the sheet must
+             still open — a cashier can't be locked out of Pay by an
+             animation that never runs. */
+          @media (prefers-reduced-motion: reduce) {
+            .pos-right { transition: none; }
+          }
+
+          /* Keep the header's Clear link out from under the close button. */
+          .cart-header { padding-right: 34px; }
+          .cart-sheet-close {
+            display: block; position: absolute; top: 10px; right: 12px;
+            background: transparent; border: none; color: var(--pos-text-2);
+            cursor: pointer; padding: 4px; line-height: 0;
+          }
+
+          .cart-scrim {
+            display: block; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.5); z-index: 55;
+          }
+
+          /* Summary bar — sits directly above the bottom nav. */
+          .cart-bar {
+            display: flex; align-items: center; gap: 0.75rem;
+            position: fixed; left: 0; right: 0; z-index: 50;
+            bottom: calc(var(--pos-navh) + env(safe-area-inset-bottom));
+            padding: 0.7rem 1rem;
+            background: var(--pos-elevated);
+            border: none; border-top: 1px solid var(--pos-border-strong);
+            color: var(--pos-text); font-family: inherit; font-size: 0.9rem;
+            cursor: pointer; text-align: left;
+          }
+          .cart-bar-count { color: var(--pos-text-2); }
+          .cart-bar-total { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+          .cart-bar-cta {
+            background: var(--pos-accent); color: #fff;
+            padding: 0.35rem 0.75rem; border-radius: 8px;
+            font-weight: 600; font-size: 0.85rem; white-space: nowrap;
+          }
+
+          /* Tighter chrome on a narrow screen. */
+          .search-hint { display: none; }
+          .topbar-clock { display: none; }
+          .tile-grid { grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); }
+          .cat-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
         }
 
         .pos-left, .pos-right { padding: 1.25rem 1.5rem; display: flex; flex-direction: column; min-height: 0; }

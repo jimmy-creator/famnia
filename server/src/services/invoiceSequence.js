@@ -12,7 +12,9 @@ async function getConfig() {
     Setting.findByPk('pos_invoice_start'),
   ]);
   const prefix = (prefixRow?.value ?? process.env.POS_INVOICE_PREFIX ?? 'INV-');
-  const start = parseInt(startRow?.value ?? process.env.POS_INVOICE_START ?? '1', 10) || 1;
+  // Femnia's series begins at 1001 — a first invoice reading INV-1 looks
+  // like a system that has never sold anything.
+  const start = parseInt(startRow?.value ?? process.env.POS_INVOICE_START ?? '1001', 10) || 1001;
   return { prefix, start };
 }
 
