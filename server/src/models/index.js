@@ -228,6 +228,51 @@ export async function getCashAccountBalance(cashAccountId) {
   return +((parseFloat(acct.openingBalance) || 0) + (sum || 0)).toFixed(3);
 }
 
+// Push a stock figure typed into the admin PRODUCT form through to the
+// per-location ProductStock rows.
+//
+// Without this the product form is a trap once multi-location is on:
+// Product.stock is a derived rollup that recomputeProductStock() overwrites
+// from SUM(ProductStock) after any ERP action, so the edit silently vanishes
+// and the till never sees it — the stock has to be re-entered under
+// Inventory to have any effect.
+//
+// Only applied when there is exactly ONE active location. With several, the
+// destination is genuinely ambiguous (which branch got the goods?) and
+// Inventory / Stock Transfers are the right tools; the caller is told so it
+// can say as much rather than discard the number quietly.
+//
+// Returns 'synced' | 'ambiguous' | 'off'.
+export async function syncProductStockFromForm(productId, body = {}) {
+  if (process.env.FEATURE_MULTILOC !== 'true') return 'off';
+  if (!('stock' in body) && !Array.isArray(body.variants)) return 'off';
+
+  const locations = await Location.findAll({ where: { active: true }, attributes: ['id'] });
+  if (locations.length === 0) return 'off';
+  if (locations.length > 1) return 'ambiguous';
+  const locationId = locations[0].id;
+
+  const product = await Product.findByPk(productId, { attributes: ['id', 'variants'] });
+  if (!product) return 'off';
+
+  // A product with variants carries its stock per variant; one without
+  // carries a single base figure. Match whichever shape was submitted.
+  const targets = Array.isArray(body.variants) && body.variants.length
+    ? body.variants.map((v, i) => ({ variantIndex: i, quantity: parseInt(v?.stock, 10) || 0 }))
+    : [{ variantIndex: null, quantity: parseInt(body.stock, 10) || 0 }];
+
+  for (const t of targets) {
+    const [row] = await ProductStock.findOrCreate({
+      where: { productId, variantIndex: t.variantIndex, locationId },
+      defaults: { quantity: t.quantity },
+    });
+    if (row.quantity !== t.quantity) await row.update({ quantity: t.quantity });
+  }
+
+  await recomputeProductStock(productId);
+  return 'synced';
+}
+
 export async function recomputeProductStock(productId) {
   if (!productId) return;
   try {

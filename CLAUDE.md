@@ -81,6 +81,8 @@ Gated behind **two** flags that must agree: `VITE_FEATURE_MULTILOC` (client, hid
 
 `Product.hideOnline` marks a product POS-only: hidden from the storefront, API, sitemap and SSR injector, still sellable at the till.
 
+**Editing stock:** `Product.stock` is a derived rollup once the flag is on — anything writing it directly is overwritten by the next `recomputeProductStock()`. The admin product form therefore routes its figure through `syncProductStockFromForm()` (`models/index.js`), which writes the per-location rows and recomputes. It only does so when exactly **one** active Location exists; with several the destination branch is ambiguous, so it returns `'ambiguous'` and the UI points the user at Inventory rather than discarding the number.
+
 ### Accounting
 
 `routes/accounting.js` — fixed assets, owner capital, balance sheet. Straight-line depreciation (20%/yr default) accrues monthly via `services/depreciationJob.js`, which is idempotent on a unique `(fixedAssetId, period)` index and self-healing (it always walks from the asset's start month, so downtime needs no catch-up). Depreciation writes **no** `CashTransaction` — it is non-cash by construction.

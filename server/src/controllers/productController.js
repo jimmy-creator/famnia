@@ -1,6 +1,6 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
-import { Product } from '../models/index.js';
+import { Product, syncProductStockFromForm } from '../models/index.js';
 
 // Storefront visibility: active AND not flagged POS-only. Applied to every
 // public-facing product query so a `hideOnline` product never leaks out.
@@ -119,7 +119,13 @@ export const createProduct = async (req, res) => {
 
     const code = req.body.code?.trim() || null;
     const product = await Product.create({ ...req.body, slug, code });
-    res.status(201).json(product);
+
+    // Seed the per-location row so a new product is sellable at the till
+    // immediately, rather than reading as zero stock until someone opens
+    // Inventory and enters the same number again.
+    const stockSync = await syncProductStockFromForm(product.id, req.body);
+    await product.reload();
+    res.status(201).json({ ...product.toJSON(), stockSync });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -144,7 +150,12 @@ export const updateProduct = async (req, res) => {
     }
 
     await product.update(req.body);
-    res.json(product);
+
+    // Mirror the typed figure into per-location stock. Without this the
+    // number is a derived rollup that the next ERP action overwrites.
+    const stockSync = await syncProductStockFromForm(product.id, req.body);
+    await product.reload();
+    res.json({ ...product.toJSON(), stockSync });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -1344,12 +1344,17 @@ export default function Admin() {
     }
     try {
       const payload = { ...form, categories: cats, category: cats[0] };
-      if (editing) {
-        await api.put(`/products/${editing}`, payload);
-        toast.success('Product updated');
+      const { data: saved } = editing
+        ? await api.put(`/products/${editing}`, payload)
+        : await api.post('/products', payload);
+      // With more than one branch the server can't tell which one received
+      // the goods, so it won't guess — say so instead of letting the number
+      // disappear on the next stock recompute.
+      if (saved?.stockSync === 'ambiguous') {
+        toast(`${editing ? 'Product updated' : 'Product created'} — set stock per branch under Inventory`,
+          { icon: 'ℹ️', duration: 6000 });
       } else {
-        await api.post('/products', payload);
-        toast.success('Product created');
+        toast.success(editing ? 'Product updated' : 'Product created');
       }
       setShowForm(false);
       setEditing(null);
