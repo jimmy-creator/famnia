@@ -16,6 +16,7 @@ import { Router } from 'express';
 import sequelize from '../config/database.js';
 import { StockTransfer, ProductStock, Location, User, recomputeProductStock } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
+import { lineKey, mergeLines, parseVariantIndex, totalsByKey } from '../utils/lines.js';
 
 const router = Router();
 
@@ -55,15 +56,16 @@ router.post('/', protect, admin, async (req, res) => {
       return res.status(400).json({ message: 'At least one item required' });
     }
 
-    const cleanItems = items
+    // One line per product, so dispatch checks the combined quantity.
+    const cleanItems = mergeLines(items
       .map((it) => ({
         productId: parseInt(it.productId, 10),
-        variantIndex: it.variantIndex == null || it.variantIndex === '' ? null : parseInt(it.variantIndex, 10),
+        variantIndex: parseVariantIndex(it.variantIndex),
         quantity: parseInt(it.quantity, 10),
         name: it.name || null,
         sku: it.sku || null,
       }))
-      .filter((it) => it.productId && it.quantity > 0);
+      .filter((it) => it.productId && it.quantity > 0));
     if (cleanItems.length === 0) {
       return res.status(400).json({ message: 'No valid items in the list' });
     }
@@ -93,17 +95,20 @@ router.post('/:id/dispatch', protect, admin, async (req, res) => {
       return res.status(400).json({ message: `Can only dispatch a pending transfer (currently ${xfr.status})` });
     }
 
-    // Decrement source. Fail if any line would go negative.
-    for (const it of xfr.items) {
+    // Decrement source. Fail if any product would go negative — checked on
+    // the combined quantity, since older transfers may repeat a product.
+    const needed = totalsByKey(xfr.items);
+    for (const it of mergeLines(xfr.items)) {
       const stock = await ProductStock.findOne({
         where: { productId: it.productId, variantIndex: it.variantIndex, locationId: xfr.fromLocationId },
         transaction: t,
       });
       const have = stock?.quantity || 0;
-      if (have < it.quantity) {
+      const need = needed.get(lineKey(it.productId, it.variantIndex));
+      if (have < need) {
         await t.rollback();
         return res.status(400).json({
-          message: `Insufficient stock at source for product ${it.productId}${it.variantIndex != null ? ' v' + it.variantIndex : ''} — have ${have}, need ${it.quantity}`,
+          message: `Insufficient stock at source for product ${it.productId}${it.variantIndex != null ? ' v' + it.variantIndex : ''} — have ${have}, need ${need}`,
         });
       }
     }

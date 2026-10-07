@@ -26,13 +26,20 @@
  *     user the terminal shows "No locations set up" and login is
  *     impossible.
  *
+ *  5. Order.channel backfill. The column arrived after the POS was already
+ *     in use, and the sync gives every existing row the default 'web' — so
+ *     past till sales would vanish from the daily report (which reads
+ *     channel != 'web') and show as website sales in the channel split.
+ *     Orders rung up in a shift (cashierSessionId set) are re-tagged 'pos'.
+ *
  * CashAccount rows are NOT created here — finance.js seeds a drawer, card
  * terminal, petty cash and bank account automatically on
  * the next boot, once a Location exists.
  */
+import { Op } from 'sequelize';
 import sequelize from '../config/database.js';   // also runs dotenv.config()
 import {
-  Location, Product, ProductStock, ExpenseCategory, User,
+  Location, Product, ProductStock, ExpenseCategory, User, Order,
 } from '../models/index.js';
 
 const STORE_NAME = process.env.STORE_NAME || 'Femnia Fashion';
@@ -159,6 +166,15 @@ async function ensureCashier(locationId) {
   return cashier;
 }
 
+// ── 5. Order.channel backfill ─────────────────────────────────────
+async function backfillPosChannel() {
+  const [n] = await Order.update(
+    { channel: 'pos' },
+    { where: { cashierSessionId: { [Op.ne]: null }, channel: 'web' } },
+  );
+  console.log(`✓ Order channel: ${n} till sale(s) re-tagged from 'web' to 'pos'`);
+}
+
 async function main() {
   if (process.env.FEATURE_MULTILOC !== 'true') {
     console.warn('⚠  FEATURE_MULTILOC is not "true" in server/.env — the ERP will stay');
@@ -174,6 +190,7 @@ async function main() {
   await backfillStock(loc.id);
   await ensureExpenseCategories();
   await ensureCashier(loc.id);
+  await backfillPosChannel();
 
   console.log('\nERP bootstrap complete. Restart the server to auto-seed cash accounts.');
 }

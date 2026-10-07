@@ -27,6 +27,8 @@ const REFUND_AMOUNT_THRESHOLD = 50;    // currency units (KWD)
 import { protectCashier } from '../middleware/auth.js';
 import { refundValuer } from '../utils/refund.js';
 import { nextInvoiceNumber } from '../services/invoiceSequence.js';
+import { mergeLines, parseVariantIndex } from '../utils/lines.js';
+import { rollup, saleTenders, splitRefund } from '../utils/posTotals.js';
 
 const router = Router();
 
@@ -178,9 +180,9 @@ router.get('/products', protectCashier, async (req, res) => {
 
     if (!q) return res.json([]);
 
-    // 1. Exact code match (barcode scanned)
+    // 1. Exact SKU or barcode match (barcode scanned)
     let exact = await Product.findAll({
-      where: { active: true, code: q },
+      where: { active: true, [Op.or]: [{ code: q }, { barcode: q }] },
       limit: 5,
     });
 
@@ -207,7 +209,7 @@ router.get('/products', protectCashier, async (req, res) => {
       });
       for (const p of candidates) {
         if (!Array.isArray(p.variants)) continue;
-        const idx = p.variants.findIndex((v) => v.sku === q);
+        const idx = p.variants.findIndex((v) => v.sku === q || v.barcode === q);
         if (idx >= 0) variantHits.push({ product: p, variantIndex: idx });
       }
     }
@@ -421,6 +423,7 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
         name: it.name,
         nameAr: it.nameAr || null,
         sku: it.sku || it.variant?.sku || null,
+        barcode: it.barcode || null,
         price: +(lineRefund / remainingQty).toFixed(3),   // net unit price, so qty × price adds up
         listPrice: parseFloat(it.price) || 0,
         costPrice: parseFloat(it.costPrice) || 0,   // COGS snapshot, so the P&L can credit it back
@@ -436,8 +439,11 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
       return res.status(400).json({ message: 'Nothing to void' });
     }
 
-    // Refund via the same rail the customer paid through.
-    const refundMethod = order.paymentMethod === 'pos_card' ? 'card' : 'cash';
+    // Refund via the same rail(s) the customer paid through. A split sale
+    // goes back across its tenders in proportion — refunding it all as
+    // cash left the drawer short and the card terminal overstated.
+    const refundLegs = splitRefund(saleTenders(order), refundTotal);
+    const refundMethod = refundLegs.reduce((a, b) => (b.amount > a.amount ? b : a)).method;
 
     // Decrement stock back to this location.
     for (const v of voidItems) {
@@ -463,6 +469,7 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
       items: voidItems,
       refundAmount: refundTotal,
       refundMethod,
+      refundBreakdown: refundLegs.length > 1 ? refundLegs : null,
       reason: managerOverride.reason || 'Sale voided',
       notes: req.body.notes?.trim() || null,
       processedBy: req.user.id,
@@ -474,20 +481,21 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
       refundAmount: +(alreadyRefunded + refundTotal).toFixed(3),
     }, { transaction: t });
 
-    const acctType = refundMethod === 'cash' ? 'drawer' : 'card_terminal';
-    const acct = await CashAccount.findOne({
-      where: { locationId: req.cashierLocationId, type: acctType, active: true },
-      transaction: t,
-    });
-    if (acct) {
+    for (const leg of refundLegs) {
+      const acctType = leg.method === 'cash' ? 'drawer' : 'card_terminal';
+      const acct = await CashAccount.findOne({
+        where: { locationId: req.cashierLocationId, type: acctType, active: true },
+        transaction: t,
+      });
+      if (!acct) continue;
       await writeCashTxn({
         cashAccountId: acct.id,
-        amount: -refundTotal,
+        amount: -leg.amount,
         source: 'return',
         sourceType: 'SalesReturn',
         sourceId: sr.id,
         reference: sr.returnNumber,
-        description: `Void of ${order.orderNumber}`,
+        description: `Void of ${order.orderNumber}${refundLegs.length > 1 ? ` (${leg.method})` : ''}`,
         date: new Date(),
         createdBy: req.user.id,
         transaction: t,
@@ -569,22 +577,30 @@ router.post('/sales/:id/append', protectCashier, async (req, res) => {
       return res.status(403).json({ message: err.message, requires: 'manager_override' });
     }
 
+    if (items.some((i) => !(parseInt(i.quantity, 10) >= 1))) {
+      await t.rollback();
+      return res.status(400).json({ message: 'Every line needs a quantity of at least 1' });
+    }
+    // Same product on two lines is checked and deducted as one line.
+    const addLines = mergeLines(items.map((i) => ({
+      productId: parseInt(i.productId, 10),
+      variantIndex: parseVariantIndex(i.variantIndex),
+      quantity: parseInt(i.quantity, 10),
+    })));
+
     // Resolve product details + stock at this location.
-    const productIds = [...new Set(items.map((i) => parseInt(i.productId, 10)).filter(Boolean))];
+    const productIds = [...new Set(addLines.map((i) => i.productId).filter(Boolean))];
     const products = await Product.findAll({ where: { id: { [Op.in]: productIds } }, transaction: t });
     const productMap = new Map(products.map((p) => [p.id, p]));
 
     const newLines = [];
     const stockDecrements = [];
     let delta = 0;
-    for (const it of items) {
-      const productId = parseInt(it.productId, 10);
+    for (const it of addLines) {
+      const { productId, variantIndex: vIdx, quantity: qty } = it;
       const product = productMap.get(productId);
       if (!product) throw new Error(`Product ${productId} not found`);
-      const vIdx = it.variantIndex == null || it.variantIndex === '' ? null : parseInt(it.variantIndex, 10);
       const variant = vIdx != null && Array.isArray(product.variants) ? product.variants[vIdx] : null;
-      const qty = parseInt(it.quantity, 10);
-      if (!qty || qty < 1) throw new Error(`Invalid quantity for ${product.name}`);
 
       const stock = await ProductStock.findOne({
         where: { productId, variantIndex: vIdx, locationId: req.cashierLocationId },
@@ -603,6 +619,7 @@ router.post('/sales/:id/append', protectCashier, async (req, res) => {
         name: product.name + appendSuffix,
         nameAr: product.nameAr ? product.nameAr + appendSuffix : null,
         sku: variant?.sku || product.code || null,
+        barcode: variant?.barcode || product.barcode || null,
         category: product.category,
         variantIndex: vIdx,
         price: unitPrice,
@@ -622,6 +639,12 @@ router.post('/sales/:id/append', protectCashier, async (req, res) => {
     let newTenders = [];
     if (Array.isArray(payment?.tenders) && payment.tenders.length > 0) {
       newTenders = payment.tenders.map((tn) => ({ method: tn.method, amount: parseFloat(tn.amount) }));
+      if (newTenders.some((tn) => !['cash', 'card'].includes(tn.method))) {
+        throw new Error('Each tender must be cash or card');
+      }
+      if (newTenders.some((tn) => !Number.isFinite(tn.amount) || tn.amount <= 0)) {
+        throw new Error('Each split tender must be a positive amount');
+      }
       const sum = +newTenders.reduce((s, tn) => s + (tn.amount || 0), 0).toFixed(3);
       if (sum !== delta) throw new Error(`Tenders sum to ${sum} but added line total is ${delta}`);
     } else if (payment?.method && ['cash', 'card'].includes(payment.method)) {
@@ -885,6 +908,33 @@ router.post('/sale', protectCashier, async (req, res) => {
       await t.rollback();
       return res.status(400).json({ message: 'Each tender must be cash or card' });
     }
+    // Which card option the cashier picked (single card tender only).
+    const CARD_TYPE_LABELS = { mastercard: 'Mastercard', visa: 'Visa' };
+    const cardType = tenders.length === 1 && tenders[0].method === 'card' && CARD_TYPE_LABELS[payment.cardType]
+      ? payment.cardType : null;
+    // A negative tender let the split still sum to the total while the
+    // positive leg credited the drawer with money never taken.
+    if (tenders.length > 1 && tenders.some((t) => !Number.isFinite(t.amount) || t.amount <= 0)) {
+      await t.rollback();
+      return res.status(400).json({ message: 'Each split tender must be a positive amount' });
+    }
+    if (items.some((i) => !(parseInt(i.quantity, 10) >= 1))) {
+      await t.rollback();
+      return res.status(400).json({ message: 'Every line needs a quantity of at least 1' });
+    }
+    // Same product on two lines is checked and deducted as one line.
+    const cartLines = mergeLines(items.map((i) => ({
+      productId: parseInt(i.productId, 10),
+      variantIndex: parseVariantIndex(i.variantIndex),
+      quantity: parseInt(i.quantity, 10),
+      // Cashier-edited unit price (special price for a customer); null = list price.
+      price: i.price == null || i.price === '' ? null : parseFloat(i.price),
+      lineDiscount: i.lineDiscount || null,
+    })));
+    if (cartLines.some((i) => i.price != null && !(i.price >= 0))) {
+      await t.rollback();
+      return res.status(400).json({ message: 'Edited price must be a number of 0 or more' });
+    }
 
     // Validate shift is still open.
     const session = await CashierSession.findByPk(req.cashierSessionId, { transaction: t });
@@ -894,7 +944,7 @@ router.post('/sale', protectCashier, async (req, res) => {
     }
 
     // Resolve each cart line against the product + per-location stock.
-    const productIds = [...new Set(items.map((i) => parseInt(i.productId, 10)).filter(Boolean))];
+    const productIds = [...new Set(cartLines.map((i) => i.productId).filter(Boolean))];
     const products = await Product.findAll({
       where: { id: { [Op.in]: productIds } },
       transaction: t,
@@ -904,19 +954,17 @@ router.post('/sale', protectCashier, async (req, res) => {
     const orderItems = [];
     const stockDecrements = [];   // [{stockRow, qty}]
     let subTotal = 0;
+    let listSubTotal = 0;         // at list prices — price cuts count toward the discount threshold
     let lineOffTotal = 0;         // sum of per-line discounts
-    let repricedLines = 0;        // audit: how many lines were price-overridden
-    let repriceDelta = 0;         // audit: net effect of those overrides
+    let repricedLines = 0;        // audit: how many lines were price-edited
+    let repriceDelta = 0;         // audit: net effect of those edits
 
-    for (const it of items) {
-      const productId = parseInt(it.productId, 10);
+    for (const it of cartLines) {
+      const { productId, variantIndex: vIdx, quantity: qty } = it;
       const product = productMap.get(productId);
       if (!product) throw new Error(`Product ${productId} not found`);
 
-      const vIdx = it.variantIndex == null || it.variantIndex === '' ? null : parseInt(it.variantIndex, 10);
       const variant = vIdx != null && Array.isArray(product.variants) ? product.variants[vIdx] : null;
-      const qty = parseInt(it.quantity, 10);
-      if (!qty || qty < 1) throw new Error(`Invalid quantity for ${product.name}`);
 
       const stock = await ProductStock.findOne({
         where: { productId, variantIndex: vIdx, locationId: req.cashierLocationId },
@@ -931,17 +979,12 @@ router.post('/sale', protectCashier, async (req, res) => {
       const listPrice = parseFloat(variant?.price ?? product.price) || 0;
       const unitCost = parseFloat(variant?.costPrice ?? product.costPrice ?? 0) || 0;
 
-      // Per-sale price override — the cashier charges a different price for
-      // this sale only; the catalogue price is untouched. Stored as the
-      // line's `price` so every downstream reader (receipt, returns,
-      // reports) sees what was actually charged, with `listPrice` kept for
-      // the audit trail.
-      let unitPrice = listPrice;
-      if (it.priceOverride != null && it.priceOverride !== '') {
-        const po = parseFloat(it.priceOverride);
-        if (!Number.isFinite(po) || po < 0) throw new Error(`Invalid price for ${product.name}`);
-        unitPrice = +po.toFixed(3);
-      }
+      // Cashier-edited price — charged for this sale only; the catalogue
+      // price is untouched. Stored as the line's `price` so every downstream
+      // reader (receipt, returns, reports) sees what was actually charged,
+      // with `listPrice` kept for the audit trail.
+      const unitPrice = it.price != null ? +it.price.toFixed(3) : listPrice;
+      listSubTotal += listPrice * qty;
       const repriced = unitPrice !== listPrice;
       if (repriced) {
         repricedLines += 1;
@@ -968,6 +1011,7 @@ router.post('/sale', protectCashier, async (req, res) => {
         name: product.name + variantSuffix,
         nameAr: product.nameAr ? product.nameAr + variantSuffix : null,
         sku: variant?.sku || product.code || null,   // snapshot SKU for receipt
+        barcode: variant?.barcode || product.barcode || null,
         category: product.category,
         // Persist the variant index on the line. Without it the returns
         // matcher falls through to "first line with this productId" and a
@@ -1012,10 +1056,12 @@ router.post('/sale', protectCashier, async (req, res) => {
         ? (afterLines * v) / 100
         : v;
       manualOff = Math.min(manualOff, afterLines);
-      // Gauge the override threshold against the gross, so stacking a line
-      // discount under a bill discount can't slip past the manager gate.
-      manualPct = subTotal > 0 ? ((manualOff + lineOffTotal) / subTotal) * 100 : 0;
     }
+    // Gauge the override threshold against the list-price gross, so neither
+    // stacking a line discount under a bill discount nor editing the price
+    // below list can slip past the manager gate.
+    const priceCut = Math.max(0, listSubTotal - subTotal);
+    manualPct = listSubTotal > 0 ? ((manualOff + lineOffTotal + priceCut) / listSubTotal) * 100 : 0;
 
     // Manager override gate: any manual discount whose effective
     // percentage exceeds the threshold must be approved by a manager.
@@ -1110,12 +1156,17 @@ router.post('/sale', protectCashier, async (req, res) => {
         phone: linkedUser?.phone || customer?.phone || '',
         notes: [
           'In-store sale (POS)',
+          cardType ? `Card: ${CARD_TYPE_LABELS[cardType]}` : null,
           manualDiscount?.reason ? `Discount reason: ${manualDiscount.reason}` : null,
         ].filter(Boolean).join(' · '),
       },
       paymentMethod,
       paymentStatus: 'paid',
       orderStatus: 'delivered',
+      // Walk-in sale unless the cashier is keying in an order that came in
+      // by phone/WhatsApp but was rung up in store.
+      channel: ['phone', 'whatsapp', 'other'].includes(req.body.channel) ? req.body.channel : 'pos',
+      channelRef: req.body.channelRef?.trim() || null,
       locationId: req.cashierLocationId,
       cashierSessionId: req.cashierSessionId,
       shippingCharge: deliveryCharge,
@@ -1182,7 +1233,7 @@ router.post('/sale', protectCashier, async (req, res) => {
         sourceType: 'Order',
         sourceId: order.id,
         reference: order.orderNumber,
-        description: `POS sale (${tn.method})${isSplit ? ' [split]' : ''}`,
+        description: `POS sale (${tn.method}${cardType ? ` · ${CARD_TYPE_LABELS[cardType]}` : ''})${isSplit ? ' [split]' : ''}`,
         date: order.createdAt,
         createdBy: req.user.id,
         transaction: t,
@@ -1202,6 +1253,7 @@ router.post('/sale', protectCashier, async (req, res) => {
       order: order.toJSON(),
       change,
       amountTendered,
+      cardType: cardType ? CARD_TYPE_LABELS[cardType] : null,
       location,
       cashier: { id: req.user.id, name: req.user.name },
     });
@@ -1210,6 +1262,20 @@ router.post('/sale', protectCashier, async (req, res) => {
     console.error('[pos/sale]', err);
     res.status(400).json({ message: err.message });
   }
+});
+
+// ─── No-sale drawer open ───────────────────────────────────────────
+// The kick itself happens in the browser (WebUSB → receipt printer);
+// this only records who opened the drawer outside a sale.
+router.post('/drawer-open', protectCashier, async (req, res) => {
+  await logActivity({
+    userId: req.user.id,
+    action: 'pos_drawer_open',
+    locationId: req.cashierLocationId,
+    cashierSessionId: req.cashierSessionId,
+    ip: req.ip,
+  });
+  res.json({ ok: true });
 });
 
 // ─── Running totals for the current shift ──────────────────────────
@@ -1223,27 +1289,15 @@ router.get('/shift-summary', protectCashier, async (req, res) => {
       attributes: ['id', 'orderNumber', 'totalAmount', 'paymentMethod', 'paymentBreakdown', 'createdAt'],
       order: [['createdAt', 'DESC']],
     });
+    const returns = await SalesReturn.findAll({
+      where: { cashierSessionId: session.id, status: 'completed' },
+    });
 
-    const summary = orders.reduce((s, o) => {
-      const amt = parseFloat(o.totalAmount || 0);
-      s.totalSales += amt;
-      s.orderCount += 1;
-      // Split-payment sales carry per-tender amounts; without this branch a
-      // pos_split order counts into totalSales but into no tender line, and
-      // the drawer never reconciles.
-      if (Array.isArray(o.paymentBreakdown) && o.paymentBreakdown.length > 0) {
-        for (const tn of o.paymentBreakdown) {
-          const tAmt = parseFloat(tn.amount || 0);
-          if (tn.method === 'cash') s.cashSales += tAmt;
-          else if (tn.method === 'card') s.cardSales += tAmt;
-        }
-      } else if (o.paymentMethod === 'pos_cash') s.cashSales += amt;
-      else if (o.paymentMethod === 'pos_card') s.cardSales += amt;
-      return s;
-    }, { totalSales: 0, cashSales: 0, cardSales: 0, orderCount: 0 });
-
+    // Same arithmetic as the X/Z reports and shift close — this used to
+    // ignore refunds and split tenders, so it disagreed with them.
+    const summary = rollup(orders, returns);
     summary.openingCash = parseFloat(session.openingCash) || 0;
-    summary.expectedCash = summary.openingCash + summary.cashSales;
+    summary.expectedCash = +(summary.openingCash + summary.cashSales - summary.cashRefunds).toFixed(3);
     res.json({ session, summary, recentOrders: orders.slice(0, 20) });
   } catch (err) {
     res.status(500).json({ message: err.message });

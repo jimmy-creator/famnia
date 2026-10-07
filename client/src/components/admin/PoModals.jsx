@@ -8,14 +8,15 @@
  * Props are state from the parent Admin component so opening/closing
  * stays controlled at the top level.
  */
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../api/axios';
+import ProductSearchPicker from './ProductSearchPicker';
 
 export default function PoModals({
   poForm, setPoForm, poDetail, setPoDetail,
   receiveForm, setReceiveForm, payForm, setPayForm,
-  suppliers, locations, products, currency, refresh,
+  suppliers, locations, products, currency, refresh, onReceived,
 }) {
   return (
     <>
@@ -25,6 +26,22 @@ export default function PoModals({
       {poDetail && (
         <PoDetail po={poDetail} currency={currency}
           onClose={() => setPoDetail(null)}
+          onEdit={() => {
+            setPoForm({
+              id: poDetail.id, poNumber: poDetail.poNumber, status: poDetail.status,
+              supplierId: String(poDetail.supplierId), locationId: String(poDetail.locationId),
+              items: (poDetail.items || []).map((l) => ({
+                productId: l.productId, variantIndex: l.variantIndex ?? null, name: l.name, sku: l.sku,
+                orderedQty: l.orderedQty, unitCost: l.unitCost, taxRate: l.taxRate,
+              })),
+              shippingCost: parseFloat(poDetail.shippingCost) || 0,
+              discount: parseFloat(poDetail.discount) || 0,
+              expectedDate: (poDetail.expectedDate || '').slice(0, 10),
+              notes: poDetail.notes || '',
+              _editing: true,
+            });
+            setPoDetail(null);
+          }}
           onReceive={() => setReceiveForm({ poId: poDetail.id, items: (poDetail.items || []).map((it) => ({ ...it, receiveQty: (it.orderedQty || 0) - (it.receivedQty || 0) })) })}
           onPay={() => setPayForm({ poId: poDetail.id, amount: +((parseFloat(poDetail.totalAmount) - parseFloat(poDetail.amountPaid || 0)).toFixed(3)), paymentMethod: 'cash', reference: '', notes: '' })}
           onSend={async () => {
@@ -40,7 +57,7 @@ export default function PoModals({
       )}
       {receiveForm && (
         <ReceiveModal form={receiveForm} setForm={setReceiveForm} currency={currency}
-          onDone={() => { setReceiveForm(null); refresh(); if (poDetail) api.get(`/purchase-orders/${poDetail.id}`).then((r) => setPoDetail(r.data)); }} />
+          onDone={() => { setReceiveForm(null); refresh(); onReceived?.(); if (poDetail) api.get(`/purchase-orders/${poDetail.id}`).then((r) => setPoDetail(r.data)); }} />
       )}
       {payForm && (
         <PayModal form={payForm} setForm={setPayForm} currency={currency}
@@ -52,24 +69,45 @@ export default function PoModals({
 
 // ─── PO Editor (new / edit) ────────────────────────────────────────
 function PoEditor({ form, setForm, suppliers, locations, products, currency, onSaved }) {
-  const [search, setSearch] = useState('');
   const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(3)}`;
 
-  const searchHits = useMemo(() => {
-    if (!search.trim()) return [];
-    const q = search.toLowerCase();
-    return (products || []).filter((p) =>
-      p.name?.toLowerCase().includes(q) || p.code?.toLowerCase().includes(q)
-    ).slice(0, 8);
-  }, [search, products]);
+  // Keyboard flow, no mouse needed: pick in search (ProductSearchPicker) →
+  // the line's Qty takes focus, selected so typing replaces it → Tab on to
+  // cost/tax → Enter returns to search for the next item.
+  const searchRef = useRef(null);
+  const qtyRefs = useRef([]);
+  // Line whose Qty should take focus once the added row has rendered.
+  const focusLine = useRef(null);
+  // Line to scroll into view after the next render — a scan doesn't move
+  // focus, so on a long PO the new line would land off-screen.
+  const scrollLine = useRef(null);
+  const linesRef = useRef(null);
+  useEffect(() => {
+    if (scrollLine.current != null) {
+      linesRef.current?.querySelector(`[data-line="${scrollLine.current}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      scrollLine.current = null;
+    }
+    if (focusLine.current == null) return;
+    qtyRefs.current[focusLine.current]?.focus();
+    qtyRefs.current[focusLine.current]?.select();
+    focusLine.current = null;
+  }, [form.items]);
 
-  const addProductLine = (p, variantIndex = null) => {
+  // Enter in a line's fields goes back to search instead of submitting.
+  const onLineKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); searchRef.current?.focus(); }
+  };
+
+  const addProductLine = (p, variantIndex = null, { scanned } = {}) => {
     const variant = variantIndex != null && Array.isArray(p.variants) ? p.variants[variantIndex] : null;
     const name = p.name + (variant ? ` (${Object.values(variant.options || {}).join('/')})` : '');
     const existing = (form.items || []).findIndex((l) => l.productId === p.id && (l.variantIndex ?? null) === (variantIndex ?? null));
+    // A scan stays in the search box for the next scan instead of jumping to Qty.
+    if (!scanned) focusLine.current = existing >= 0 ? existing : (form.items || []).length;
+    scrollLine.current = existing >= 0 ? existing : (form.items || []).length;
     if (existing >= 0) {
       const next = [...form.items];
-      next[existing] = { ...next[existing], orderedQty: (next[existing].orderedQty || 0) + 1 };
+      next[existing] = { ...next[existing], orderedQty: (parseInt(next[existing].orderedQty, 10) || 0) + 1 };
       setForm({ ...form, items: next });
     } else {
       setForm({
@@ -77,11 +115,51 @@ function PoEditor({ form, setForm, suppliers, locations, products, currency, onS
         items: [...(form.items || []), {
           productId: p.id, variantIndex,
           name, sku: variant?.sku || p.code || null,
-          orderedQty: 1, unitCost: parseFloat(variant?.price ?? p.price) || 0, taxRate: 0,
+          // Start from the product's current cost (last received landed
+          // cost), not its retail price — this line becomes the new cost on
+          // receive. Blank when the product has no cost yet.
+          orderedQty: 1, unitCost: parseFloat(p.costPrice) > 0 ? parseFloat(p.costPrice) : '', taxRate: 0,
         }],
       });
     }
-    setSearch('');
+  };
+
+  // The chosen supplier's products (linked or bought from it before), for
+  // quick-adding lines. Stock is at the receiving location when one's picked.
+  // Tagged with the supplier/location it was fetched for, so a list from the
+  // previously chosen supplier never shows while the next one loads.
+  const [supplierList, setSupplierList] = useState({ key: null, rows: [] });
+  const [showSupplierProducts, setShowSupplierProducts] = useState(true);
+  const listKey = form.supplierId ? `${form.supplierId}:${form.locationId || ''}` : null;
+  useEffect(() => {
+    if (!listKey) return;
+    let live = true;
+    api.get(`/suppliers/${form.supplierId}/products`, { params: form.locationId ? { locationId: form.locationId } : {} })
+      .then((r) => { if (live) setSupplierList({ key: listKey, rows: r.data }); })
+      .catch(() => { if (live) setSupplierList({ key: listKey, rows: [] }); });
+    return () => { live = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listKey]);
+  const supplierProducts = listKey && supplierList.key === listKey ? supplierList.rows : null;
+
+  const onPo = (row) => (form.items || []).some((l) => l.productId === row.productId && (l.variantIndex ?? null) === (row.variantIndex ?? null));
+  const belowReorder = (row) => row.reorderLevel != null && row.stock <= row.reorderLevel;
+  // Add several at once: one setForm, since addProductLine reads `form` and
+  // calling it in a loop would keep only the last line.
+  const addSupplierRows = (rows) => {
+    const fresh = rows.filter((r) => !onPo(r));
+    if (fresh.length === 0) { toast('Already on the PO'); return; }
+    scrollLine.current = (form.items || []).length + fresh.length - 1;
+    setForm({
+      ...form,
+      items: [...(form.items || []), ...fresh.map((r) => ({
+        productId: r.productId, variantIndex: r.variantIndex ?? null, name: r.name, sku: r.code || null,
+        // Top up to the reorder level (or the product's reorder qty), else 1.
+        orderedQty: Math.max(1, r.reorderQty || (r.reorderLevel != null ? r.reorderLevel - r.stock + 1 : 1)),
+        unitCost: r.lastCost > 0 ? r.lastCost : (r.costPrice > 0 ? r.costPrice : ''),
+        taxRate: 0,
+      }))],
+    });
   };
 
   const setLine = (idx, patch) => {
@@ -94,6 +172,7 @@ function PoEditor({ form, setForm, suppliers, locations, products, currency, onS
   const subtotal = (form.items || []).reduce((s, l) => s + (parseFloat(l.unitCost) || 0) * (parseInt(l.orderedQty, 10) || 0), 0);
   const taxAmount = (form.items || []).reduce((s, l) => s + (parseFloat(l.unitCost) || 0) * (parseInt(l.orderedQty, 10) || 0) * ((parseFloat(l.taxRate) || 0) / 100), 0);
   const total = +(subtotal + taxAmount + (parseFloat(form.shippingCost) || 0) - (parseFloat(form.discount) || 0)).toFixed(3);
+  const totalQty = (form.items || []).reduce((s, l) => s + (parseInt(l.orderedQty, 10) || 0), 0);
 
   const submit = async (e, statusOverride) => {
     if (e) e.preventDefault();
@@ -103,9 +182,12 @@ function PoEditor({ form, setForm, suppliers, locations, products, currency, onS
       const body = {
         supplierId: parseInt(form.supplierId, 10),
         locationId: parseInt(form.locationId, 10),
+        // Line fields hold the raw typed text while editing; parse here.
         items: form.items.map((l) => ({
           productId: l.productId, variantIndex: l.variantIndex, name: l.name,
-          orderedQty: l.orderedQty, unitCost: l.unitCost, taxRate: l.taxRate,
+          orderedQty: Math.max(1, parseInt(l.orderedQty, 10) || 1),
+          unitCost: parseFloat(l.unitCost) || 0,
+          taxRate: parseFloat(l.taxRate) || 0,
         })),
         shippingCost: form.shippingCost,
         discount: form.discount,
@@ -145,39 +227,59 @@ function PoEditor({ form, setForm, suppliers, locations, products, currency, onS
           </div>
         </div>
 
-        <div style={{ background: 'var(--bg-warm, #f5f1e8)', padding: '0.75rem', borderRadius: 8, marginBottom: '0.75rem' }}>
-          <label style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Add items</label>
-          <input
-            placeholder="Search products by name or code…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: '100%' }}
-          />
-          {searchHits.length > 0 && (
-            <div style={{ background: 'white', border: '1px solid var(--border-light)', borderRadius: 6, marginTop: 6, maxHeight: 200, overflowY: 'auto' }}>
-              {searchHits.map((p) => {
-                if (Array.isArray(p.variants) && p.variants.length > 0) {
-                  return p.variants.map((v, vi) => (
-                    <div key={`${p.id}-${vi}`} style={hitRow} onClick={() => addProductLine(p, vi)}>
-                      <span>{p.name} <span style={{ color: 'var(--text-light)' }}>({Object.values(v.options || {}).join('/')})</span></span>
-                      <span style={{ color: 'var(--text-light)', fontSize: 12 }}>{fmt(v.price ?? p.price)}</span>
-                    </div>
-                  ));
-                }
-                return (
-                  <div key={p.id} style={hitRow} onClick={() => addProductLine(p)}>
-                    <span>{p.name}</span>
-                    <span style={{ color: 'var(--text-light)', fontSize: 12 }}>{fmt(p.price)}</span>
-                  </div>
-                );
-              })}
+        {supplierProducts && (
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '0.6rem 0.75rem', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button type="button" className="link-btn" onClick={() => setShowSupplierProducts((v) => !v)} style={{ fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                {showSupplierProducts ? '▾' : '▸'} This supplier's products ({supplierProducts.length})
+              </button>
+              {supplierProducts.some(belowReorder) && (
+                <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem' }} onClick={() => addSupplierRows(supplierProducts.filter(belowReorder))}>
+                  Add all below reorder level ({supplierProducts.filter(belowReorder).length})
+                </button>
+              )}
             </div>
-          )}
-        </div>
+            {showSupplierProducts && (supplierProducts.length === 0 ? (
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginTop: '0.4rem' }}>
+                Nothing bought from this supplier yet — search below, or link products on the Suppliers tab.
+              </div>
+            ) : (
+              <div style={{ maxHeight: 240, overflowY: 'auto', marginTop: '0.5rem' }}>
+                <table className="admin-table" style={{ fontSize: '0.85rem' }}>
+                  <thead><tr><th>Item</th><th style={{ textAlign: 'right' }}>Stock</th><th style={{ textAlign: 'right' }}>Reorder at</th><th style={{ textAlign: 'right' }}>Last cost</th><th>Last bought</th><th></th></tr></thead>
+                  <tbody>
+                    {supplierProducts.map((r) => (
+                      <tr key={`${r.productId}:${r.variantIndex ?? 'b'}`}>
+                        <td>{r.name}{r.code && <span style={{ color: 'var(--text-light)', fontFamily: 'monospace', fontSize: '0.75rem' }}> · {r.code}</span>}</td>
+                        <td style={{ textAlign: 'right', color: belowReorder(r) ? 'var(--danger, #dc2626)' : undefined, fontWeight: belowReorder(r) ? 600 : undefined }}>{r.stock}</td>
+                        <td style={{ textAlign: 'right' }}>{r.reorderLevel ?? '—'}</td>
+                        <td style={{ textAlign: 'right' }}>{r.lastCost != null ? fmt(r.lastCost) : '—'}</td>
+                        <td>{r.lastBoughtAt ? new Date(r.lastBoughtAt).toLocaleDateString() : '—'}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          {onPo(r)
+                            ? <span style={{ fontSize: '0.75rem', color: 'var(--text-light)' }}>Added</span>
+                            : <button type="button" className="btn btn-secondary" style={{ padding: '0.2rem 0.6rem', fontSize: '0.8rem' }} onClick={() => addSupplierRows([r])}>Add</button>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
 
-        <div className="admin-table-wrap" style={{ marginBottom: '0.75rem' }}>
-          <table className="admin-table">
-            <thead><tr><th>Item</th><th style={{ width: 70 }}>Qty</th><th style={{ width: 110 }}>Unit cost</th><th style={{ width: 80 }}>Tax %</th><th style={{ width: 110, textAlign: 'right' }}>Line total</th><th style={{ width: 110, textAlign: 'right' }}>Landed / unit</th><th style={{ width: 40 }}></th></tr></thead>
+        <ProductSearchPicker
+          ref={searchRef}
+          products={products}
+          currency={currency}
+          onPick={addProductLine}
+          hint="↑ ↓ to choose · Enter to add · type the qty, Tab to cost and tax · Enter to come back here"
+        />
+
+        <div className="admin-table-wrap" style={{ marginBottom: '0.75rem' }} ref={linesRef}>
+          <table className="admin-table po-lines">
+            <thead><tr><th>Item</th><th style={{ width: 96 }}>Qty</th><th style={{ width: 110 }}>Unit cost</th><th style={{ width: 80 }}>Tax %</th><th style={{ width: 110, textAlign: 'right' }}>Line total</th><th style={{ width: 110, textAlign: 'right' }}>Landed / unit</th><th style={{ width: 40 }}></th></tr></thead>
             <tbody>
               {(form.items || []).length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-light)' }}>No items yet</td></tr>}
               {(form.items || []).map((l, i) => {
@@ -190,11 +292,17 @@ function PoEditor({ form, setForm, suppliers, locations, products, currency, onS
                 const shippingShare = subtotal > 0 ? ((parseFloat(form.shippingCost) || 0) * lineValue / subtotal) : 0;
                 const landedUnit = qty > 0 ? (lineTotal + shippingShare) / qty : 0;
                 return (
-                  <tr key={i}>
+                  <tr key={i} data-line={i}>
                     <td>{l.name}</td>
-                    <td><input type="number" min={1} value={l.orderedQty} onChange={(e) => setLine(i, { orderedQty: parseInt(e.target.value, 10) || 1 })} style={{ width: '100%' }} /></td>
-                    <td><input type="number" step="0.001" value={l.unitCost} onChange={(e) => setLine(i, { unitCost: parseFloat(e.target.value) || 0 })} style={{ width: '100%' }} /></td>
-                    <td><input type="number" step="0.01" value={l.taxRate} onChange={(e) => setLine(i, { taxRate: parseFloat(e.target.value) || 0 })} style={{ width: '100%' }} /></td>
+                    {/* Raw text while typing — forcing a number on every
+                        keystroke snapped a cleared Qty back to 1, so
+                        backspace-then-7 gave 17. Clamped on blur and save. */}
+                    <td><input ref={(el) => { qtyRefs.current[i] = el; }} type="number" min={1} inputMode="numeric" value={l.orderedQty}
+                      onChange={(e) => setLine(i, { orderedQty: e.target.value })}
+                      onBlur={() => { if (!(parseInt(l.orderedQty, 10) >= 1)) setLine(i, { orderedQty: 1 }); }}
+                      onKeyDown={onLineKey} style={{ width: '100%' }} /></td>
+                    <td><input type="number" step="0.001" inputMode="decimal" value={l.unitCost} onChange={(e) => setLine(i, { unitCost: e.target.value })} onKeyDown={onLineKey} style={{ width: '100%' }} /></td>
+                    <td><input type="number" step="0.01" inputMode="decimal" value={l.taxRate} onChange={(e) => setLine(i, { taxRate: e.target.value })} onKeyDown={onLineKey} style={{ width: '100%' }} /></td>
                     <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(lineTotal)}</td>
                     <td style={{ textAlign: 'right', color: 'var(--text-light)' }}>{fmt(landedUnit)}</td>
                     <td><button type="button" className="icon-btn" onClick={() => removeLine(i)}>×</button></td>
@@ -202,6 +310,17 @@ function PoEditor({ form, setForm, suppliers, locations, products, currency, onS
                 );
               })}
             </tbody>
+            {(form.items || []).length > 0 && (
+              <tfoot>
+                <tr style={{ fontWeight: 600 }}>
+                  <td>{form.items.length} item{form.items.length === 1 ? '' : 's'} · Total qty</td>
+                  <td style={{ paddingLeft: '0.75rem' }}>{totalQty}</td>
+                  <td colSpan={2}></td>
+                  <td style={{ textAlign: 'right' }}>{fmt(subtotal + taxAmount)}</td>
+                  <td colSpan={2}></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
 
@@ -219,13 +338,19 @@ function PoEditor({ form, setForm, suppliers, locations, products, currency, onS
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0', borderTop: '1px solid var(--border-light)', fontSize: '1.1rem' }}>
-          <strong>Total</strong>
+          <strong>Total <span style={{ fontWeight: 400, fontSize: '0.85rem', color: 'var(--text-light)' }}>· {totalQty} units</span></strong>
           <strong>{fmt(total)}</strong>
         </div>
 
         <div className="form-actions">
-          <button type="button" className="btn btn-secondary" onClick={(e) => submit(e, 'draft')}>Save as draft</button>
-          <button type="button" className="btn btn-primary" onClick={(e) => submit(e, 'sent')}>Save & send</button>
+          {form._editing && form.status === 'sent' ? (
+            <button type="button" className="btn btn-primary" onClick={(e) => submit(e, 'sent')}>Save changes</button>
+          ) : (
+            <>
+              <button type="button" className="btn btn-secondary" onClick={(e) => submit(e, 'draft')}>Save as draft</button>
+              <button type="button" className="btn btn-primary" onClick={(e) => submit(e, 'sent')}>Save & send</button>
+            </>
+          )}
           <button type="button" className="btn btn-secondary" onClick={() => setForm(null)}>Cancel</button>
         </div>
       </form>
@@ -234,7 +359,7 @@ function PoEditor({ form, setForm, suppliers, locations, products, currency, onS
 }
 
 // ─── PO Detail ─────────────────────────────────────────────────────
-function PoDetail({ po, currency, onClose, onReceive, onPay, onSend, onCancel }) {
+function PoDetail({ po, currency, onClose, onEdit, onReceive, onPay, onSend, onCancel }) {
   const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(3)}`;
   const outstanding = +((parseFloat(po.totalAmount) || 0) - (parseFloat(po.amountPaid) || 0)).toFixed(3);
   const editable = po.status === 'draft' || po.status === 'sent' || po.status === 'partial';
@@ -275,6 +400,14 @@ function PoDetail({ po, currency, onClose, onReceive, onPay, onSend, onCancel })
                 );
               })}
             </tbody>
+            <tfoot>
+              <tr style={{ fontWeight: 600 }}>
+                <td>{(po.items || []).length} items · Total qty</td>
+                <td style={{ textAlign: 'right' }}>{(po.items || []).reduce((s, l) => s + (parseInt(l.orderedQty, 10) || 0), 0)}</td>
+                <td style={{ textAlign: 'right' }}>{(po.items || []).reduce((s, l) => s + (parseInt(l.receivedQty, 10) || 0), 0)}</td>
+                <td colSpan={3}></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
 
@@ -310,11 +443,14 @@ function PoDetail({ po, currency, onClose, onReceive, onPay, onSend, onCancel })
 
         <div className="form-actions" style={{ marginTop: '1rem', flexWrap: 'wrap' }}>
           {po.status === 'draft' && <button className="btn btn-primary" onClick={onSend}>Send</button>}
+          {/* Editable until goods arrive — the server refuses once anything's received. */}
+          {(po.status === 'draft' || po.status === 'sent') && <button className="btn btn-secondary" onClick={onEdit}>Edit</button>}
           {editable && !fullyReceived && <button className="btn btn-primary" onClick={onReceive}>Receive goods</button>}
           {po.status !== 'cancelled' && outstanding > 0 && <button className="btn btn-primary" onClick={onPay}>Record payment</button>}
           {editable && !((po.items || []).some((i) => (i.receivedQty || 0) > 0)) && (
             <button className="btn btn-secondary" onClick={onCancel}>Cancel PO</button>
           )}
+          <button className="btn btn-secondary" onClick={() => window.open(`${api.defaults.baseURL}/purchase-orders/${po.id}/pdf`, '_blank')}>Print / PDF</button>
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>
@@ -336,6 +472,27 @@ function ReceiveModal({ form, setForm, currency, onDone }) {
   const total = form.items.reduce((s, l) => s + (l.unitCost || 0) * (l.receiveQty || 0), 0);
   const anySelected = form.items.some((l) => (l.receiveQty || 0) > 0);
 
+  // Keyboard: opens on the first line still outstanding; Enter steps to the
+  // next one, and from the last to the Receive button (Enter again confirms).
+  const qtyRefs = useRef([]);
+  const receiveBtn = useRef(null);
+  const receivable = form.items
+    .map((l, i) => ((l.orderedQty || 0) - (l.receivedQty || 0) > 0 ? i : null))
+    .filter((i) => i != null);
+  useEffect(() => {
+    const first = qtyRefs.current[receivable[0]];
+    first?.focus();
+    first?.select();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const onQtyKey = (e, i) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const next = receivable[receivable.indexOf(i) + 1];
+    if (next != null) { qtyRefs.current[next]?.focus(); qtyRefs.current[next]?.select(); }
+    else receiveBtn.current?.focus();
+  };
+
   const submit = async () => {
     try {
       const items = form.items
@@ -354,7 +511,7 @@ function ReceiveModal({ form, setForm, currency, onDone }) {
       <div className="admin-form" style={{ maxWidth: 720 }}>
         <h3>Receive Goods</h3>
         <div className="admin-table-wrap">
-          <table className="admin-table">
+          <table className="admin-table po-lines">
             <thead><tr><th>Item</th><th style={{ textAlign: 'right' }}>Ordered</th><th style={{ textAlign: 'right' }}>Received</th><th style={{ width: 120 }}>Receive now</th></tr></thead>
             <tbody>
               {form.items.map((l, i) => {
@@ -365,9 +522,10 @@ function ReceiveModal({ form, setForm, currency, onDone }) {
                     <td style={{ textAlign: 'right' }}>{l.orderedQty}</td>
                     <td style={{ textAlign: 'right' }}>{l.receivedQty || 0}</td>
                     <td>
-                      <input type="number" min={0} max={outstanding} value={l.receiveQty || 0}
-                        onChange={(e) => setLine(i, e.target.value)} disabled={outstanding < 1}
-                        style={{ width: '100%' }} />
+                      <input ref={(el) => { qtyRefs.current[i] = el; }} type="number" min={0} max={outstanding}
+                        inputMode="numeric" value={l.receiveQty || 0}
+                        onChange={(e) => setLine(i, e.target.value)} onKeyDown={(e) => onQtyKey(e, i)}
+                        disabled={outstanding < 1} style={{ width: '100%' }} />
                     </td>
                   </tr>
                 );
@@ -384,7 +542,7 @@ function ReceiveModal({ form, setForm, currency, onDone }) {
           <textarea rows={2} value={form.notes || ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
         </div>
         <div className="form-actions">
-          <button className="btn btn-primary" onClick={submit} disabled={!anySelected}>Receive</button>
+          <button ref={receiveBtn} className="btn btn-primary" onClick={submit} disabled={!anySelected}>Receive</button>
           <button className="btn btn-secondary" onClick={() => setForm(null)}>Cancel</button>
         </div>
       </div>
@@ -446,8 +604,3 @@ function PayModal({ form, setForm, currency, onDone }) {
     </div>
   );
 }
-
-const hitRow = {
-  display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.75rem',
-  cursor: 'pointer', borderBottom: '1px solid var(--border-light)',
-};

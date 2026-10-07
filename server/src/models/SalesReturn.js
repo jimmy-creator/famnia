@@ -15,6 +15,9 @@ import sequelize from '../config/database.js';
  *
  * The original Order's refundAmount is also bumped (additively) so the
  * customer's order history reflects total refunded against that order.
+ *
+ * A no-receipt return has no Order (orderId null) — items are priced at the
+ * product's selling price at the time of the return.
  */
 const SalesReturn = sequelize.define('SalesReturn', {
   id: {
@@ -29,7 +32,7 @@ const SalesReturn = sequelize.define('SalesReturn', {
   },
   orderId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,   // null for a no-receipt return (customer has no bill)
   },
   locationId: {
     type: DataTypes.INTEGER,
@@ -54,6 +57,13 @@ const SalesReturn = sequelize.define('SalesReturn', {
     // value had no redemption path anywhere in the system.
     type: DataTypes.ENUM('cash', 'card'),
     allowNull: false,
+  },
+  // Set only when one refund goes out over several rails — voiding a split
+  // sale refunds each tender it was paid with: [{ method, amount }].
+  // refundMethod then holds the largest leg. Null means refundMethod alone.
+  refundBreakdown: {
+    type: DataTypes.JSON,
+    allowNull: true,
   },
   reason: {
     type: DataTypes.STRING,

@@ -11,11 +11,13 @@
 import { Router } from 'express';
 import { Op } from 'sequelize';
 import { Location, ProductStock, Order } from '../models/index.js';
-import { protect, admin } from '../middleware/auth.js';
+import { protect, requirePermission } from '../middleware/auth.js';
 
 const router = Router();
 
-router.get('/', protect, admin, async (req, res) => {
+// Every ERP screen uses the location list as a filter, so any staff area
+// may read it; changing locations needs the products (inventory) permission.
+router.get('/', protect, requirePermission('products', 'analytics', 'orders'), async (req, res) => {
   try {
     const rows = await Location.findAll({ order: [['sortOrder', 'ASC'], ['id', 'ASC']] });
     res.json(rows);
@@ -24,7 +26,7 @@ router.get('/', protect, admin, async (req, res) => {
   }
 });
 
-router.post('/', protect, admin, async (req, res) => {
+router.post('/', protect, requirePermission('products'), async (req, res) => {
   try {
     const { name, code, type, address, phone, isOnlineDefault, sortOrder } = req.body;
     if (!name?.trim()) return res.status(400).json({ message: 'Name is required' });
@@ -48,7 +50,7 @@ router.post('/', protect, admin, async (req, res) => {
   }
 });
 
-router.patch('/:id', protect, admin, async (req, res) => {
+router.patch('/:id', protect, requirePermission('products'), async (req, res) => {
   try {
     const loc = await Location.findByPk(req.params.id);
     if (!loc) return res.status(404).json({ message: 'Location not found' });
@@ -66,7 +68,7 @@ router.patch('/:id', protect, admin, async (req, res) => {
   }
 });
 
-router.delete('/:id', protect, admin, async (req, res) => {
+router.delete('/:id', protect, requirePermission('products'), async (req, res) => {
   try {
     const loc = await Location.findByPk(req.params.id);
     if (!loc) return res.status(404).json({ message: 'Location not found' });
@@ -86,7 +88,7 @@ router.delete('/:id', protect, admin, async (req, res) => {
   }
 });
 
-router.post('/:id/set-online-default', protect, admin, async (req, res) => {
+router.post('/:id/set-online-default', protect, requirePermission('products'), async (req, res) => {
   try {
     const loc = await Location.findByPk(req.params.id);
     if (!loc) return res.status(404).json({ message: 'Location not found' });

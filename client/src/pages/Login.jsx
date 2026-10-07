@@ -15,6 +15,9 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 
+// Admins start in the ERP and step into the e-commerce admin from there.
+const homeFor = (role) => (role === 'admin' ? '/admin/erp' : role === 'staff' ? '/admin' : '/');
+
 export default function Login() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
@@ -23,8 +26,10 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   // Already signed in — never show the login page to authenticated users
-  // (back button, manual URL, etc.); send them home instead.
-  if (user) return <Navigate to="/" replace />;
+  // (back button, manual URL, etc.); send them to their role's home instead.
+  // This also fires right after login() sets the user, so it must use the
+  // same role-based target as handleSubmit.
+  if (user) return <Navigate to={homeFor(user.role)} replace />;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,7 +37,7 @@ export default function Login() {
     try {
       const data = await login(email, password);
       toast.success('Welcome back!');
-      navigate(data.user?.role === 'admin' || data.user?.role === 'staff' ? '/admin' : '/');
+      navigate(homeFor(data.user?.role));
     } catch (error) {
       toast.error(error.response?.data?.message || 'Login failed');
     } finally {

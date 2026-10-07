@@ -12,6 +12,7 @@ import { Router } from 'express';
 import { Op } from 'sequelize';
 import { ActivityLog, User, Location } from '../models/index.js';
 import { protect } from '../middleware/auth.js';
+import { rangeStart, rangeEnd } from '../utils/dates.js';
 
 const router = Router();
 
@@ -24,8 +25,8 @@ router.get('/', protect, async (req, res) => {
     if (!canView(req)) return res.status(403).json({ message: 'Forbidden' });
     const where = {};
     if (req.query.from || req.query.to) {
-      const from = req.query.from ? new Date(req.query.from) : new Date('1970-01-01');
-      const to = req.query.to ? new Date(req.query.to) : new Date('2999-12-31');
+      const from = req.query.from ? rangeStart(req.query.from) : new Date('1970-01-01');
+      const to = req.query.to ? rangeEnd(req.query.to) : new Date('2999-12-31');
       where.createdAt = { [Op.between]: [from, to] };
     }
     if (req.query.userId) where.userId = parseInt(req.query.userId, 10);

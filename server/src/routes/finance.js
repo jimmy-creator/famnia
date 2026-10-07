@@ -42,6 +42,7 @@ import {
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
 import { ensureDepreciation } from '../services/depreciationJob.js';
+import { localDate, rangeStart, rangeEnd } from '../utils/dates.js';
 
 const router = Router();
 
@@ -147,9 +148,12 @@ router.get('/cash-accounts/:id/transactions', protect, async (req, res) => {
   try {
     if (!hasFinanceAccess(req)) return res.status(403).json({ message: 'Forbidden' });
     const where = { cashAccountId: parseInt(req.params.id, 10) };
+    if (!(await CashAccount.count({ where: { id: where.cashAccountId } }))) {
+      return res.status(404).json({ message: 'Cash account not found' });
+    }
     if (req.query.from || req.query.to) {
-      const from = req.query.from ? new Date(req.query.from) : new Date('1970-01-01');
-      const to = req.query.to ? new Date(req.query.to) : new Date('2999-12-31');
+      const from = req.query.from ? rangeStart(req.query.from) : new Date('1970-01-01');
+      const to = req.query.to ? rangeEnd(req.query.to) : new Date('2999-12-31');
       where.date = { [Op.between]: [from, to] };
     }
     const txns = await CashTransaction.findAll({
@@ -167,6 +171,10 @@ router.get('/cash-accounts/:id/transactions', protect, async (req, res) => {
 // ─── Expense Categories ────────────────────────────────────────────
 router.get('/expense-categories', protect, async (req, res) => {
   try {
+    // The wastage form offers these too, so inventory staff may read them.
+    if (!hasFinanceAccess(req) && !(req.user.permissions || []).includes('products')) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
     const rows = await ExpenseCategory.findAll({ order: [['name', 'ASC']] });
     res.json(rows);
   } catch (err) {
@@ -221,8 +229,8 @@ router.get('/expenses', protect, async (req, res) => {
     if (!hasFinanceAccess(req)) return res.status(403).json({ message: 'Forbidden' });
     const where = {};
     if (req.query.from || req.query.to) {
-      const from = req.query.from ? new Date(req.query.from) : new Date('1970-01-01');
-      const to = req.query.to ? new Date(req.query.to) : new Date('2999-12-31');
+      const from = req.query.from ? rangeStart(req.query.from) : new Date('1970-01-01');
+      const to = req.query.to ? rangeEnd(req.query.to) : new Date('2999-12-31');
       where.expenseDate = { [Op.between]: [from, to] };
     }
     if (req.query.locationId) where.locationId = parseInt(req.query.locationId, 10);
@@ -356,8 +364,8 @@ router.get('/cash-transfers', protect, async (req, res) => {
     if (!hasFinanceAccess(req)) return res.status(403).json({ message: 'Forbidden' });
     const where = {};
     if (req.query.from || req.query.to) {
-      const from = req.query.from ? new Date(req.query.from) : new Date('1970-01-01');
-      const to = req.query.to ? new Date(req.query.to) : new Date('2999-12-31');
+      const from = req.query.from ? rangeStart(req.query.from) : new Date('1970-01-01');
+      const to = req.query.to ? rangeEnd(req.query.to) : new Date('2999-12-31');
       where.transferDate = { [Op.between]: [from, to] };
     }
     const rows = await CashTransfer.findAll({
@@ -460,7 +468,7 @@ router.get('/daily-cash', protect, async (req, res) => {
   try {
     if (!hasFinanceAccess(req)) return res.status(403).json({ message: 'Forbidden' });
 
-    const dateStr = req.query.date || new Date().toISOString().slice(0, 10);
+    const dateStr = req.query.date || localDate();
     const dayStart = new Date(dateStr + 'T00:00:00');
     const dayEnd = new Date(dateStr + 'T23:59:59.999');
 
@@ -521,10 +529,10 @@ router.get('/daybook', protect, async (req, res) => {
     if (!hasFinanceAccess(req)) return res.status(403).json({ message: 'Forbidden' });
     let from, to;
     if (req.query.from || req.query.to) {
-      from = req.query.from ? new Date(req.query.from) : new Date('1970-01-01');
-      to = req.query.to ? new Date(req.query.to) : new Date('2999-12-31');
+      from = req.query.from ? rangeStart(req.query.from) : new Date('1970-01-01');
+      to = req.query.to ? rangeEnd(req.query.to) : new Date('2999-12-31');
     } else {
-      const dateStr = req.query.date || new Date().toISOString().slice(0, 10);
+      const dateStr = req.query.date || localDate();
       from = new Date(dateStr + 'T00:00:00');
       to = new Date(dateStr + 'T23:59:59.999');
     }
@@ -748,8 +756,8 @@ function parseRange(q) {
   const now = new Date();
   const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-  const from = q.from ? new Date(q.from) : firstOfMonth;
-  const to = q.to ? new Date(q.to) : endOfMonth;
+  const from = q.from ? rangeStart(q.from) : firstOfMonth;
+  const to = q.to ? rangeEnd(q.to) : endOfMonth;
   return { from, to };
 }
 

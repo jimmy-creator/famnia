@@ -79,6 +79,10 @@ Gated behind **two** flags that must agree: `VITE_FEATURE_MULTILOC` (client, hid
 
 **Stock has two representations.** With the flag off, `Product.stock` / `variants[].stock` are the source of truth. With it on, `ProductStock` rows per (product, variant, location) are, and `recomputeProductStock()` rolls them up into `Product.stock` for legacy readers. Anything that moves stock for a web order must go through `decrementOnlineStock()` / `restoreOnlineStock()` (`models/index.js`), which fall back to the legacy path when the flag is off — writing `Product.stock` directly instead means the next ERP action silently reverts the sale.
 
+The ERP/POS was brought over from the sibling Salla-kuwait project (Oct 2026) with Famnia's own additions kept on top. Deliberately left out: recipes/production, raw materials and units, expiry batches, the old-POS legacy import, Arabic auto-translate, and the Kuwait specifics (KNET, Keeta/Deliveroo/Talabat, 3-decimal KWD columns). The server pins `process.env.TZ` to `Asia/Qatar` (`server/src/tz.js`, override with `STORE_TIMEZONE`) and the client formats dates on the same clock (`client/src/lib/storeTime.js`). Shift money (X/Z reports, shift close, shift summary) all goes through `server/src/utils/posTotals.js` so they agree. Cashiers edit a line's price inline (server keeps `listPrice` + `priceOverridden`); price cuts, line discounts and the bill discount share the 15% manager-PIN threshold.
+
+**Schema upgrade on an existing DB** — `sync({ alter: true })` needs two manual steps around it: `ALTER TABLE SalesReturns MODIFY orderId INT NULL` *before* (no-receipt returns; otherwise the re-added ON DELETE SET NULL foreign key is rejected), and `CREATE UNIQUE INDEX product_barcode_unique ON Products (barcode)` *after* (alter adds the column but not its named unique index). Then `npm run seed:erp`, which also re-tags pre-existing till sales from the `'web'` channel default to `'pos'`.
+
 `Product.hideOnline` marks a product POS-only: hidden from the storefront, API, sitemap and SSR injector, still sellable at the till.
 
 **Editing stock:** `Product.stock` is a derived rollup once the flag is on — anything writing it directly is overwritten by the next `recomputeProductStock()`. The admin product form therefore routes its figure through `syncProductStockFromForm()` (`models/index.js`), which writes the per-location rows and recomputes. It only does so when exactly **one** active Location exists; with several the destination branch is ambiguous, so it returns `'ambiguous'` and the UI points the user at Inventory rather than discarding the number.
@@ -95,7 +99,7 @@ POS tenders are **cash and card only**. KNET was inherited from the Kuwait upstr
 
 ### Database
 
-Sequelize ORM with MySQL. Models in `server/src/models/`. Key models: User, Product, Order, Review, Category, Coupon, Setting, Pincode, AbandonedCart, plus the ERP set (Location, ProductStock, Supplier, PurchaseOrder, CashAccount, CashTransaction, Expense, FixedAsset, DepreciationEntry, CapitalEntry, Counter). Sync behavior: `DB_SYNC_ALTER=true` enables `sync({ alter: true })` — only use in development, never in production (causes duplicate index buildup).
+Sequelize ORM with MySQL. Models in `server/src/models/`. Key models: User, Product, Order, Review, Category, Coupon, Setting, Pincode, AbandonedCart, plus the ERP set (Location, ProductStock, Supplier, PurchaseOrder, CashAccount, CashTransaction, Expense, FixedAsset, DepreciationEntry, CapitalEntry, Counter, Wastage). Sync behavior: `DB_SYNC_ALTER=true` enables `sync({ alter: true })` — only use in development, never in production (causes duplicate index buildup).
 
 ### Background Jobs
 
@@ -108,7 +112,7 @@ Sequelize ORM with MySQL. Models in `server/src/models/`. Key models: User, Prod
 - **Dates:** `parseRange` and friends build `Date`s in LOCAL time, so never format a DATEONLY bound with `toISOString()` — on UTC+3 that shifts the window a day and leaks rows between periods. Use the exported `dateOnly()` / `monthKeyLocal()` helpers in `routes/finance.js`. Depreciation periods are `'YYYY-MM'` strings precisely to avoid this.
 - **Sequelize returns DECIMAL as a string.** `row.cost + 20` concatenates while subtraction coerces, which makes the bug intermittent — `parseFloat` on every read, and `Model.sum()` returns `null` (not 0) for an empty set.
 - Server env: copy `server/.env.example` → `server/.env`. Client env: `client/.env`. The client proxies `/api` and `/uploads` to localhost:3000 in dev.
-- Admin panel is a single large component at `client/src/pages/Admin.jsx` with tab-based navigation.
+- The admin is split across two sibling pages, both tab-based: `client/src/pages/Admin.jsx` (`/admin` — catalog, orders, customers, coupons, theme) and `client/src/pages/Erp.jsx` (`/admin/erp` — inventory, purchasing, finance, assets, POS ops, reports, audit, backup). Erp.jsx keeps its tab in `?tab=` so screens are linkable; admins land there after login. Tab bodies live in `client/src/components/admin/*`; Products and Categories are self-contained (`ProductsManager`, `CategoriesManager`) and served from both pages.
 - Email templates are inline HTML in `server/src/services/emailService.js`.
 
 ## VPS Deployment

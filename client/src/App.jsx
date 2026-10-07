@@ -18,6 +18,7 @@ import Register from './pages/Register';
 import Orders from './pages/Orders';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
+import Erp from './pages/Erp';
 import OrderSuccess from './pages/OrderSuccess';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -112,7 +113,7 @@ function StaffGate({ children }) {
   const isStaff = user && (user.role === 'admin' || user.role === 'staff');
   if (isStaff && !didInitialStaffRedirect) {
     didInitialStaffRedirect = true;
-    return <Navigate to="/admin" replace />;
+    return <Navigate to={user.role === 'admin' ? '/admin/erp' : '/admin'} replace />;
   }
   return children;
 }
@@ -159,6 +160,7 @@ export default function App() {
                       <Route path={p('/orders')} element={<Orders />} />
                       <Route path={p('/profile')} element={<Profile />} />
                       <Route path={p('/admin')} element={<Admin />} />
+                      <Route path={p('/admin/erp')} element={<Erp />} />
                       <Route path={p('/order-success')} element={<OrderSuccess />} />
                       <Route path={p('/wishlist')} element={<Wishlist />} />
                       <Route path={p('/forgot-password')} element={<ForgotPassword />} />

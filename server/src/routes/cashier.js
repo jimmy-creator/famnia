@@ -21,8 +21,15 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
 import { User, Location, CashierSession, Order, SalesReturn } from '../models/index.js';
-import { protect, admin, protectCashier } from '../middleware/auth.js';
+import { protect, protectCashier } from '../middleware/auth.js';
 import sequelize from '../config/database.js';
+import { rollup } from '../utils/posTotals.js';
+import { rangeStart, rangeEnd } from '../utils/dates.js';
+
+// Shift history is POS money data: a cashier sees their own, staff need the
+// analytics permission, customers see nothing.
+const canSeeAllShifts = (user) =>
+  user.role === 'admin' || (user.role === 'staff' && (user.permissions || []).includes('analytics'));
 
 const router = Router();
 
@@ -52,7 +59,8 @@ router.get('/cashiers', async (req, res) => {
     const rows = await User.findAll({
       where,
       attributes: ['id', 'name', 'homeLocationId'],
-      include: [{ model: Location, as: 'homeLocation', attributes: ['id', 'name', 'code'] }],
+      // `active` lets the POS store picker hide deactivated stores.
+      include: [{ model: Location, as: 'homeLocation', attributes: ['id', 'name', 'code', 'active'] }],
       order: [['name', 'ASC']],
     });
     res.json(rows);
@@ -177,37 +185,21 @@ router.post('/shift/close', protectCashier, async (req, res) => {
       return res.status(400).json({ message: 'closingCash is required' });
     }
 
-    // Compute expected cash = opening + cash sales − cash refunds for THIS shift.
-    // Cash sales come from Orders attributed to this session; cash refunds come
-    // from SalesReturn rows attributed to this session with refundMethod='cash'
-    // (this handles returns of items sold in earlier shifts correctly).
-    // Cash sales: pure-cash orders contribute totalAmount; split orders
-    // contribute only the cash tender from paymentBreakdown.
-    const cashOrders = await Order.findAll({
-      where: {
-        cashierSessionId: session.id,
-        paymentMethod: { [Op.in]: ['cash', 'pos_cash'] },
-      },
-      attributes: ['totalAmount'],
+    // Expected cash = opening + cash sales − cash refunds for THIS shift,
+    // computed by the same rollup as the X/Z reports so the three agree
+    // (split sales count only their cash leg; returns of items sold in
+    // earlier shifts still come out of this drawer).
+    const orders = await Order.findAll({
+      where: { cashierSessionId: session.id },
+      attributes: ['totalAmount', 'paymentMethod', 'paymentBreakdown'],
       transaction: t,
     });
-    const splitOrders = await Order.findAll({
-      where: { cashierSessionId: session.id, paymentMethod: 'pos_split' },
-      attributes: ['paymentBreakdown'],
+    const returns = await SalesReturn.findAll({
+      where: { cashierSessionId: session.id, status: 'completed' },
       transaction: t,
     });
-    const cashReturns = await SalesReturn.findAll({
-      where: { cashierSessionId: session.id, refundMethod: 'cash', status: 'completed' },
-      attributes: ['refundAmount'],
-      transaction: t,
-    });
-    const cashSales = cashOrders.reduce((s, o) => s + parseFloat(o.totalAmount || 0), 0)
-      + splitOrders.reduce((s, o) => {
-          const cashLine = (o.paymentBreakdown || []).find((t) => t.method === 'cash');
-          return s + (cashLine ? parseFloat(cashLine.amount || 0) : 0);
-        }, 0);
-    const cashRefunds = cashReturns.reduce((s, r) => s + parseFloat(r.refundAmount || 0), 0);
-    const expectedCash = parseFloat(session.openingCash || 0) + cashSales - cashRefunds;
+    const { cashSales, cashRefunds } = rollup(orders, returns);
+    const expectedCash = +(parseFloat(session.openingCash || 0) + cashSales - cashRefunds).toFixed(3);
     const variance = +(closingCash - expectedCash).toFixed(3);
 
     await session.update({
@@ -231,10 +223,16 @@ router.post('/shift/close', protectCashier, async (req, res) => {
 router.get('/shifts', protect, async (req, res) => {
   try {
     const where = {};
-    // Admin/staff sees all; cashier sees own only.
     if (req.user.role === 'cashier') where.userId = req.user.id;
+    else if (!canSeeAllShifts(req.user)) return res.status(403).json({ message: 'Forbidden' });
     if (req.query.locationId) where.locationId = parseInt(req.query.locationId, 10);
     if (req.query.status) where.status = req.query.status;
+    // ?from=&to= — shifts opened on those (store-local) days.
+    if (req.query.from || req.query.to) {
+      where.openedAt = {};
+      if (req.query.from) where.openedAt[Op.gte] = rangeStart(req.query.from);
+      if (req.query.to) where.openedAt[Op.lte] = rangeEnd(req.query.to);
+    }
     const rows = await CashierSession.findAll({
       where,
       order: [['openedAt', 'DESC']],
@@ -259,7 +257,8 @@ router.get('/shifts/:id', protect, async (req, res) => {
       ],
     });
     if (!session) return res.status(404).json({ message: 'Shift not found' });
-    if (req.user.role === 'cashier' && session.userId !== req.user.id) {
+    const ownShift = req.user.role === 'cashier' && session.userId === req.user.id;
+    if (!ownShift && !canSeeAllShifts(req.user)) {
       return res.status(403).json({ message: 'Not your shift' });
     }
     res.json(session);

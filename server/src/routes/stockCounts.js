@@ -24,6 +24,7 @@ import {
   recomputeProductStock, writeCashTxn, logActivity, verifyManagerPin,
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
+import { localDate, rangeStart, rangeEnd } from '../utils/dates.js';
 
 const router = Router();
 
@@ -62,10 +63,10 @@ router.get('/lookup', protect, admin, async (req, res) => {
     const locationId = parseInt(req.query.locationId, 10);
     if (!q || !locationId) return res.json([]);
 
-    // 1. Exact product code
-    const exact = await Product.findAll({ where: { active: true, code: q }, limit: 5 });
+    // 1. Exact product SKU or barcode
+    const exact = await Product.findAll({ where: { active: true, [Op.or]: [{ code: q }, { barcode: q }] }, limit: 5 });
 
-    // 2. Variant SKU
+    // 2. Variant SKU or barcode
     let variantHits = [];
     if (exact.length === 0) {
       const candidates = await Product.findAll({
@@ -75,7 +76,7 @@ router.get('/lookup', protect, admin, async (req, res) => {
       });
       for (const p of candidates) {
         if (!Array.isArray(p.variants)) continue;
-        const idx = p.variants.findIndex((v) => v.sku === q);
+        const idx = p.variants.findIndex((v) => v.sku === q || v.barcode === q);
         if (idx >= 0) variantHits.push({ product: p, variantIndex: idx });
       }
     }
@@ -95,10 +96,11 @@ router.get('/lookup', protect, admin, async (req, res) => {
         })
       : [];
 
+    // `exact` = matched a SKU/barcode outright, so a scan can add it without a pick.
     const candidates = [
-      ...exact.map((p) => ({ product: p, variantIndex: null })),
-      ...variantHits,
-      ...nameHits.map((p) => ({ product: p, variantIndex: null })),
+      ...exact.map((p) => ({ product: p, variantIndex: null, exact: true })),
+      ...variantHits.map((h) => ({ ...h, exact: true })),
+      ...nameHits.map((p) => ({ product: p, variantIndex: null, exact: false })),
     ];
     if (candidates.length === 0) return res.json([]);
 
@@ -109,7 +111,7 @@ router.get('/lookup', protect, admin, async (req, res) => {
     const stockKey = (pid, vIdx) => `${pid}:${vIdx ?? 'b'}`;
     const stockMap = new Map(stocks.map((s) => [stockKey(s.productId, s.variantIndex), s.quantity]));
 
-    const results = candidates.map(({ product, variantIndex }) => {
+    const results = candidates.map(({ product, variantIndex, exact: isExact }) => {
       const obj = product.toJSON();
       const v = variantIndex != null && Array.isArray(obj.variants) ? obj.variants[variantIndex] : null;
       const hasVariants = Array.isArray(obj.variants) && obj.variants.length > 0 && variantIndex == null;
@@ -129,6 +131,7 @@ router.get('/lookup', protect, admin, async (req, res) => {
         stockAtLocation: stockMap.get(stockKey(obj.id, variantIndex)) || 0,
         hasVariants,
         variants: variantsWithStock,
+        exact: isExact,
       };
     });
 
@@ -215,6 +218,9 @@ router.post('/:id/lines', protect, admin, async (req, res) => {
     });
     const expectedQty = stock ? stock.quantity : 0;
     const cqty = countedQty == null || countedQty === '' ? null : parseInt(countedQty, 10);
+    if (cqty != null && !(cqty >= 0)) {
+      return res.status(400).json({ message: 'Counted quantity must be 0 or more' });
+    }
 
     const line = await StockCountLine.create({
       stockCountId: sc.id,
@@ -255,6 +261,9 @@ router.put('/:id/lines/:lineId', protect, admin, async (req, res) => {
     if (req.body.countedQty !== undefined) {
       const c = req.body.countedQty == null || req.body.countedQty === ''
         ? null : parseInt(req.body.countedQty, 10);
+      if (c != null && !(c >= 0)) {
+        return res.status(400).json({ message: 'Counted quantity must be 0 or more' });
+      }
       updates.countedQty = c;
       updates.variance = c != null ? c - line.expectedQty : null;
     }
@@ -386,7 +395,7 @@ router.post('/:id/post', protect, admin, async (req, res) => {
         paymentMethod: 'other',
         description: `Stock variance ${sc.countNumber}`,
         reference: sc.countNumber,
-        expenseDate: new Date().toISOString().slice(0, 10),
+        expenseDate: localDate(),
         status: 'paid',
         createdBy: req.user.id,
       }, { transaction: t });
@@ -470,8 +479,8 @@ router.get('/report/variance', protect, admin, async (req, res) => {
     const where = { status: 'posted' };
     if (req.query.locationId) where.locationId = parseInt(req.query.locationId, 10);
     if (req.query.from || req.query.to) {
-      const from = req.query.from ? new Date(req.query.from) : new Date('1970-01-01');
-      const to = req.query.to ? new Date(req.query.to) : new Date('2999-12-31');
+      const from = req.query.from ? rangeStart(req.query.from) : new Date('1970-01-01');
+      const to = req.query.to ? rangeEnd(req.query.to) : new Date('2999-12-31');
       where.postedAt = { [Op.between]: [from, to] };
     }
     const counts = await StockCount.findAll({

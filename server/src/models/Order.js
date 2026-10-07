@@ -129,6 +129,25 @@ const Order = sequelize.define('Order', {
     type: DataTypes.INTEGER,
     allowNull: true,
   },
+  channel: {
+    // Sales channel the order arrived through — drives the channel split in
+    // the sales report. Phone/WhatsApp orders are rung up at the till.
+    // Orders that predate this column are backfilled by scripts/seedErp.js
+    // (till sales → 'pos'); otherwise they'd all read as 'web'.
+    type: DataTypes.ENUM('web', 'pos', 'phone', 'whatsapp', 'other'),
+    defaultValue: 'web',
+    allowNull: false,
+  },
+  channelRef: {
+    // External reference for the order (e.g. the WhatsApp chat or phone
+    // order number), for tracing it during reconciliation.
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+}, {
+  indexes: [
+    { fields: ['channel'] },
+  ],
 });
 
 export default Order;

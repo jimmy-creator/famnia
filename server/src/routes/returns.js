@@ -23,13 +23,14 @@ import { Router } from 'express';
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
-  Order, SalesReturn, ProductStock, Location, CashierSession, User, CashAccount,
+  Order, SalesReturn, Product, ProductStock, Location, CashierSession, User, CashAccount, CashTransaction,
   recomputeProductStock, writeCashTxn, logActivity, verifyManagerPin,
 } from '../models/index.js';
 
 const REFUND_AMOUNT_THRESHOLD = 50;    // KWD — over this needs manager approval
-import { protect, admin, protectCashier } from '../middleware/auth.js';
+import { protect, requirePermission } from '../middleware/auth.js';
 import { refundValuer } from '../utils/refund.js';
+import { rangeStart, rangeEnd } from '../utils/dates.js';
 
 const router = Router();
 
@@ -50,8 +51,14 @@ async function authEither(req, res, next) {
       if (decoded.role === 'cashier' && decoded.sessionId) {
         req.cashierSessionId = decoded.sessionId;
         req.cashierLocationId = decoded.locationId;
+        return next();
       }
-      return next();
+      // Otherwise only admin or staff with the orders permission — a lookup
+      // returns the customer's name, phone and address.
+      if (user.role === 'admin' || (user.role === 'staff' && (user.permissions || []).includes('orders'))) {
+        return next();
+      }
+      return res.status(403).json({ message: 'Not authorised' });
     } catch {
       return res.status(401).json({ message: 'Invalid token' });
     }
@@ -108,15 +115,20 @@ router.get('/lookup/:orderNumber', authEither, async (req, res) => {
 });
 
 // ─── Create return ─────────────────────────────────────────────────
-// Body: { orderId, items: [{productId, variantIndex, quantity, returnToStock?}],
+// Body: { orderId?, items: [{productId, variantIndex, quantity, returnToStock?}],
 //         refundMethod, reason?, notes?, locationId? (admin only) }
+//
+// Without orderId it is a no-receipt return: the customer has no bill, so
+// there is nothing to cap quantities against and each item is refunded at
+// the product's CURRENT selling price. The manager-override threshold below
+// applies the same way.
 router.post('/', authEither, async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const { orderId, items, refundMethod, reason, notes } = req.body || {};
-    if (!orderId || !Array.isArray(items) || items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0) {
       await t.rollback();
-      return res.status(400).json({ message: 'orderId and items[] required' });
+      return res.status(400).json({ message: 'items[] required' });
     }
     // No customer credit: every refund goes back out a real money rail.
     // store_credit was removed — it wrote no ledger entry and nothing
@@ -126,8 +138,8 @@ router.post('/', authEither, async (req, res) => {
       return res.status(400).json({ message: 'refundMethod must be cash or card' });
     }
 
-    const order = await Order.findByPk(orderId, { transaction: t });
-    if (!order || order.paymentStatus !== 'paid') {
+    const order = orderId ? await Order.findByPk(orderId, { transaction: t }) : null;
+    if (orderId && (!order || order.paymentStatus !== 'paid')) {
       await t.rollback();
       return res.status(400).json({ message: 'Order not eligible for return' });
     }
@@ -146,10 +158,6 @@ router.post('/', authEither, async (req, res) => {
       cashierSessionId = session.id;
       locationId = req.cashierLocationId;
     } else {
-      if (req.user.role !== 'admin' && req.user.role !== 'staff') {
-        await t.rollback();
-        return res.status(403).json({ message: 'Not authorised to create returns' });
-      }
       locationId = parseInt(req.body.locationId, 10);
       if (!locationId) {
         await t.rollback();
@@ -158,10 +166,10 @@ router.post('/', authEither, async (req, res) => {
     }
 
     // Cap each return line against (sold - already-returned).
-    const prior = await SalesReturn.findAll({
+    const prior = order ? await SalesReturn.findAll({
       where: { orderId: order.id, status: 'completed' },
       attributes: ['items'], transaction: t,
-    });
+    }) : [];
     const key = (pid, vIdx) => `${pid}:${vIdx ?? 'b'}`;
     const returnedSoFar = {};
     for (const r of prior) {
@@ -171,7 +179,7 @@ router.post('/', authEither, async (req, res) => {
       }
     }
     const originalLineByKey = new Map();
-    for (const it of (order.items || [])) {
+    for (const it of (order?.items || [])) {
       originalLineByKey.set(key(it.productId, it.variant?.variantIndex ?? null), it);
     }
     // Fallback: many POS orders store variantIndex inside .variant, others on the line root.
@@ -185,7 +193,32 @@ router.post('/', authEither, async (req, res) => {
     const returnedItems = [];
     let refundTotal = 0;
     const stockBumps = [];
-    const refundValue = refundValuer(order);
+    const refundValue = order ? refundValuer(order) : null;
+
+    // No-receipt returns price each line from the product as it is today.
+    const productsById = new Map();
+    if (!order) {
+      const ids = [...new Set(items.map((it) => parseInt(it.productId, 10)).filter(Boolean))];
+      const rows = await Product.findAll({ where: { id: ids }, transaction: t });
+      for (const p of rows) productsById.set(p.id, p);
+    }
+    const currentLine = (productId, vIdx) => {
+      const p = productsById.get(productId);
+      if (!p) return null;
+      const v = vIdx != null && Array.isArray(p.variants) ? p.variants[vIdx] : null;
+      if (vIdx != null && !v) return null;
+      const suffix = v ? ` (${Object.values(v.options || {}).join('/')})` : '';
+      return {
+        name: p.name + suffix,
+        nameAr: p.nameAr ? p.nameAr + suffix : null,
+        sku: v?.sku || p.code || null,
+        barcode: v?.barcode || p.barcode || null,
+        price: parseFloat(v?.price ?? p.price) || 0,
+        // Current cost stands in for the missing sale snapshot, so the P&L
+        // still credits COGS back for goods returning to stock.
+        costPrice: parseFloat(v?.costPrice ?? p.costPrice ?? 0) || 0,
+      };
+    };
 
     for (const it of items) {
       const productId = parseInt(it.productId, 10);
@@ -195,6 +228,22 @@ router.post('/', authEither, async (req, res) => {
       if (!productId || !qty || qty < 1) {
         await t.rollback();
         return res.status(400).json({ message: 'Invalid item entry' });
+      }
+      if (!order) {
+        const line = currentLine(productId, vIdx);
+        if (!line) {
+          await t.rollback();
+          return res.status(400).json({ message: `Product ${productId} not found` });
+        }
+        const lineRefund = +(line.price * qty).toFixed(3);
+        refundTotal += lineRefund;
+        returnedItems.push({
+          productId, variantIndex: vIdx,
+          name: line.name, nameAr: line.nameAr, sku: line.sku, barcode: line.barcode,
+          price: line.price, costPrice: line.costPrice, quantity: qty, refundAmount: lineRefund, returnToStock,
+        });
+        if (returnToStock) stockBumps.push({ productId, variantIndex: vIdx, qty });
+        continue;
       }
       const original = findOriginal(productId, vIdx);
       if (!original) {
@@ -209,6 +258,9 @@ router.post('/', authEither, async (req, res) => {
           message: `Can only return ${maxReturnable} of "${original.name}" (already returned ${alreadyReturned})`,
         });
       }
+      // Count this line before checking the next, so the same product sent
+      // as two lines can't each pass against the original remaining qty.
+      returnedSoFar[key(productId, vIdx)] = alreadyReturned + qty;
 
       // Refund what the customer actually paid for these units, not the
       // gross price — line, manual and coupon discounts all come off.
@@ -220,6 +272,7 @@ router.post('/', authEither, async (req, res) => {
         name: original.name,
         nameAr: original.nameAr || null,
         sku: original.sku || original.variant?.sku || null,
+        barcode: original.barcode || null,
         price: +(lineRefund / qty).toFixed(3),   // net unit price, so the receipt's qty × price adds up
         listPrice: parseFloat(original.price) || 0,
         // Carry the original line's COGS snapshot so the P&L can credit it
@@ -279,7 +332,7 @@ router.post('/', authEither, async (req, res) => {
 
     const sr = await SalesReturn.create({
       returnNumber: genReturnNumber(),
-      orderId: order.id,
+      orderId: order?.id ?? null,
       locationId,
       cashierSessionId,
       items: returnedItems,
@@ -293,8 +346,10 @@ router.post('/', authEither, async (req, res) => {
 
     // Bump Order.refundAmount additively so the order history shows total
     // refunded against this order.
-    const newRefundAmount = +((parseFloat(order.refundAmount) || 0) + refundTotal).toFixed(3);
-    await order.update({ refundAmount: newRefundAmount }, { transaction: t });
+    if (order) {
+      const newRefundAmount = +((parseFloat(order.refundAmount) || 0) + refundTotal).toFixed(3);
+      await order.update({ refundAmount: newRefundAmount }, { transaction: t });
+    }
 
     // Cash/card refunds are money OUT of the corresponding location
     // account. Store credit doesn't move cash, so no ledger entry.
@@ -312,7 +367,9 @@ router.post('/', authEither, async (req, res) => {
           sourceType: 'SalesReturn',
           sourceId: sr.id,
           reference: sr.returnNumber,
-          description: `Refund vs ${order.orderNumber} (${refundMethod})`,
+          description: order
+            ? `Refund vs ${order.orderNumber} (${refundMethod})`
+            : `Refund, no receipt (${refundMethod})`,
           date: new Date(),
           createdBy: req.user.id,
           transaction: t,
@@ -327,7 +384,8 @@ router.post('/', authEither, async (req, res) => {
       entityId: sr.id,
       details: {
         returnNumber: sr.returnNumber,
-        orderNumber: order.orderNumber,
+        orderNumber: order?.orderNumber ?? null,
+        noReceipt: !order,
         refundAmount: refundTotal,
         refundMethod,
         itemCount: returnedItems.reduce((s, l) => s + l.quantity, 0),
@@ -352,7 +410,7 @@ router.post('/', authEither, async (req, res) => {
     });
     res.status(201).json({
       salesReturn: full.toJSON(),
-      order: { id: order.id, orderNumber: order.orderNumber },
+      order: order ? { id: order.id, orderNumber: order.orderNumber } : null,
     });
   } catch (err) {
     if (!t.finished) await t.rollback().catch(() => {});
@@ -369,8 +427,8 @@ router.get('/', protect, async (req, res) => {
     }
     const where = {};
     if (req.query.from || req.query.to) {
-      const from = req.query.from ? new Date(req.query.from) : new Date('1970-01-01');
-      const to = req.query.to ? new Date(req.query.to) : new Date('2999-12-31');
+      const from = req.query.from ? rangeStart(req.query.from) : new Date('1970-01-01');
+      const to = req.query.to ? rangeEnd(req.query.to) : new Date('2999-12-31');
       where.createdAt = { [Op.between]: [from, to] };
     }
     if (req.query.locationId) where.locationId = parseInt(req.query.locationId, 10);
@@ -416,7 +474,7 @@ router.get('/:id', protect, async (req, res) => {
 });
 
 // Admin override: also let admin cancel a return (reverses stock + refund).
-router.post('/:id/cancel', protect, admin, async (req, res) => {
+router.post('/:id/cancel', protect, requirePermission('orders'), async (req, res) => {
   const t = await sequelize.transaction();
   try {
     const sr = await SalesReturn.findByPk(req.params.id, { transaction: t });
@@ -441,6 +499,27 @@ router.post('/:id/cancel', protect, admin, async (req, res) => {
     if (order) {
       const newRefund = Math.max(0, +((parseFloat(order.refundAmount) || 0) - parseFloat(sr.refundAmount || 0)).toFixed(3));
       await order.update({ refundAmount: newRefund }, { transaction: t });
+    }
+    // Put the refunded money back: a +amount entry against each ledger row
+    // the return wrote (kept rather than deleted, for the audit trail).
+    // Store credit never touched an account, so it has none to reverse.
+    const refundTxns = await CashTransaction.findAll({
+      where: { sourceType: 'SalesReturn', sourceId: sr.id },
+      transaction: t,
+    });
+    for (const txn of refundTxns) {
+      await writeCashTxn({
+        cashAccountId: txn.cashAccountId,
+        amount: -parseFloat(txn.amount),
+        source: 'return',
+        sourceType: 'SalesReturn',
+        sourceId: sr.id,
+        reference: sr.returnNumber,
+        description: `Cancelled return ${sr.returnNumber}`,
+        date: new Date(),
+        createdBy: req.user.id,
+        transaction: t,
+      });
     }
     await sr.update({ status: 'cancelled' }, { transaction: t });
     await t.commit();

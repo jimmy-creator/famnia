@@ -14,6 +14,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { HiPlus, HiTrash, HiArrowLeft, HiSearch } from 'react-icons/hi';
 import api from '../../api/axios';
+import { localDate } from '../../lib/utils';
 
 export default function StockCounts(props) {
   const { tab } = props;
@@ -207,6 +208,42 @@ function StockCountDetail({ currency, setTab, activeStockCountId, expenseCategor
     }
   };
 
+  // Scanner (or Enter on a typed SKU/barcode): like the POS, an exact match is
+  // added straight to the count with qty 1, and scanning it again adds 1 more.
+  // Scans are queued so a fast run of the same item never races itself.
+  const scanQueue = useRef(Promise.resolve());
+  const doScan = async (code) => {
+    try {
+      const { data: hits } = await api.get('/stock-counts/lookup', { params: { q: code, locationId: sc.locationId } });
+      const exact = hits.filter((h) => h.exact);
+      if (exact.length !== 1) {
+        // Nothing exact (or ambiguous) — put the text back so its matches show to pick from.
+        setSearch(code);
+        if (hits.length === 0) toast.error(`No product for "${code}"`);
+        return;
+      }
+      const hit = exact[0];
+      setResults([]);
+      if (hit.hasVariants) { setVariantPicker(hit); return; }
+      // Read the count fresh so a repeat scan sees the qty the last one wrote.
+      const { data: fresh } = await api.get(`/stock-counts/${sc.id}`);
+      const line = (fresh.lines || []).find((l) => l.productId === hit.productId && (l.variantIndex ?? null) === (hit.variantIndex ?? null));
+      if (line) {
+        await api.put(`/stock-counts/${sc.id}/lines/${line.id}`, { countedQty: (line.countedQty || 0) + 1 });
+        toast.success(`${hit.name} · counted ${(line.countedQty || 0) + 1}`, { id: 'scan' });
+      } else {
+        await api.post(`/stock-counts/${sc.id}/lines`, { productId: hit.productId, variantIndex: hit.variantIndex, countedQty: 1 });
+        toast.success(`${hit.name} added · counted 1`, { id: 'scan' });
+      }
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message);
+    }
+  };
+  const scan = (code) => {
+    scanQueue.current = scanQueue.current.then(() => doScan(code));
+  };
+
   const updateLine = async (lineId, patch) => {
     try {
       await api.put(`/stock-counts/${sc.id}/lines/${lineId}`, patch);
@@ -303,6 +340,13 @@ function StockCountDetail({ currency, setTab, activeStockCountId, expenseCategor
               placeholder="Scan barcode or search by name…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' || !search.trim()) return;
+                e.preventDefault();
+                const code = search.trim();
+                setSearch('');
+                scan(code);
+              }}
               style={{ flex: 1, fontSize: '1rem', padding: '0.6rem 0.75rem' }}
               autoFocus
             />
@@ -484,7 +528,7 @@ function VarianceReport({ currency, locations, setTab }) {
   const [filter, setFilter] = useState(() => {
     const to = new Date();
     const from = new Date(); from.setDate(from.getDate() - 30);
-    return { locationId: '', from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+    return { locationId: '', from: localDate(from), to: localDate(to) };
   });
   const [data, setData] = useState(null);
 

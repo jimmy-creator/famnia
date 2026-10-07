@@ -281,4 +281,490 @@
 
   /* Page transition wrapper (applied to every route by App.jsx) */
   .page-transition { @apply animate-in fade-in duration-200; }
+
+  /* Purchasing line tables (PO, receive, purchase return): the browser's
+     spin arrows covered the number in these narrow cells.  ↑/↓ on the
+     keyboard still step the value. */
+  .po-lines input[type=number]::-webkit-inner-spin-button,
+  .po-lines input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .po-lines input[type=number] { -moz-appearance: textfield; }
+}
+
+/* ============================================================================
+   ERP back office skin  (.erp-ui)
+   ----------------------------------------------------------------------------
+   /admin/erp restyled after the vattus-erp back office: a fixed rail of nav
+   pills, soft card stacks, micro-caps table headers, gradient module tiles and
+   pill badges — inverted to light and driven entirely by the store brand
+   tokens, so changing the theme in Settings repaints this too.
+
+   Scoped under `.erp-ui` (set on the Erp page root) ON PURPOSE.  Every class it
+   overrides — .admin-table, .admin-section, .admin-form, .btn, .dash-card — is
+   shared with pages/Admin.jsx, which keeps its current look.  Don't lift these
+   rules out of the scope without restyling the store admin in the same pass.
+
+   The brand colour is a fill/border/icon colour here, never body text: on its
+   own tint it may not reach 4.5:1.  Text that must read as branded uses
+   --erp-ink-accent (a darkened copper) instead.
+   ========================================================================== */
+@layer components {
+  .erp-ui {
+    /* Surfaces — page is a warm off-white so white cards lift off it. */
+    --erp-page:       color-mix(in srgb, var(--bg-warm) 30%, #fff);
+    --erp-surface:    var(--bg-card);
+    --erp-raised:     color-mix(in srgb, var(--bg-warm) 55%, #fff);
+    --erp-hover:      color-mix(in srgb, var(--bg-warm) 45%, #fff);
+
+    /* Hairlines pick up a trace of copper so they read warm, not grey. */
+    --erp-line:       color-mix(in srgb, var(--primary) 10%, var(--border));
+    --erp-line-soft:  color-mix(in srgb, var(--primary) 5%, var(--border));
+
+    --erp-tint:       color-mix(in srgb, var(--primary) 8%, transparent);
+    --erp-tint-strong:color-mix(in srgb, var(--primary) 14%, transparent);
+    --erp-ring:       color-mix(in srgb, var(--primary) 22%, transparent);
+    /* Branded *text* colour — darkened so 12-14px still clears 4.5:1 on peach. */
+    --erp-ink-accent: color-mix(in srgb, var(--copper-dark) 76%, #240d02);
+
+    --erp-shadow:     0 1px 2px rgba(34, 35, 39, .04), 0 10px 26px -14px rgba(34, 35, 39, .13);
+    --erp-shadow-lift:0 2px 4px rgba(34, 35, 39, .05), 0 18px 34px -16px color-mix(in srgb, var(--primary) 34%, transparent);
+    --erp-radius:     14px;
+
+    /* Legacy tokens the tab bodies reference from inline styles but that the
+       deleted layout.css never replaced — defining them here retints ~20
+       filter bars and highlight blocks without touching their JSX. */
+    --surface-alt:    color-mix(in srgb, var(--bg-warm) 60%, #fff);
+    --surface:        var(--bg-card);
+    --card-bg:        var(--bg-card);
+
+    /* Darker secondary/muted text than the storefront greys, for legibility in
+       dense tables.  Derived from the theme's --text so a theme change still
+       carries through.  --muted-foreground is re-pointed because :root already
+       resolved it against the old --text-secondary. */
+    --text-secondary:   color-mix(in srgb, var(--text) 82%, var(--bg-card));
+    --text-light:       color-mix(in srgb, var(--text) 64%, var(--bg-card));
+    --muted-foreground: var(--text-secondary);
+
+    background: var(--erp-page);
+    color: var(--text);
+  }
+
+  /* Thin warm scrollbars, like the vattus shell. */
+  .erp-ui ::-webkit-scrollbar { width: 7px; height: 7px; }
+  .erp-ui ::-webkit-scrollbar-track { background: transparent; }
+  .erp-ui ::-webkit-scrollbar-thumb {
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+  }
+  .erp-ui ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--primary) 38%, transparent);
+  }
+
+  /* ── Shell ──────────────────────────────────────────────────────────── */
+
+  .erp-ui .erp-rail {
+    background: var(--erp-surface);
+    border-right: 1px solid var(--erp-line-soft);
+  }
+
+  /* Gradient brand tile — the light answer to vattus's gradient logo ring. */
+  .erp-ui .erp-brand-mark {
+    background: linear-gradient(135deg, var(--copper), var(--copper-light));
+    box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--copper) 55%, transparent);
+  }
+
+  .erp-ui .erp-topbar {
+    background: color-mix(in srgb, var(--erp-page) 80%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--erp-line-soft);
+  }
+
+  /* Section captions in the rail. */
+  .erp-ui .erp-rail-section {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: .5rem;
+    padding: .375rem .75rem;
+    border-radius: 8px;
+    color: var(--text-light);
+    font-size: .6875rem;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    transition: color .2s, background-color .2s;
+  }
+  .erp-ui .erp-rail-section:hover {
+    color: var(--text-secondary);
+    background: var(--erp-hover);
+  }
+
+  /* Nav pill.  Active = warm gradient wash + copper icon + copper edge, with
+     the label left in ink so it keeps its contrast (vattus does the same:
+     white label, teal icon). */
+  .erp-ui .erp-nav-link {
+    position: relative;
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: .625rem;
+    padding: .5rem .75rem;
+    border: 1px solid transparent;
+    border-radius: 11px;
+    color: var(--text-secondary);
+    font-size: .8125rem;
+    font-weight: 500;
+    text-align: left;
+    transition: background-color .2s, color .2s, border-color .2s, box-shadow .2s;
+  }
+  .erp-ui .erp-nav-link:hover {
+    background: var(--erp-hover);
+    color: var(--text);
+  }
+  .erp-ui .erp-nav-link.is-active {
+    background: linear-gradient(90deg, var(--erp-tint-strong), var(--erp-tint) 55%, transparent);
+    border-color: var(--erp-ring);
+    color: var(--text);
+    font-weight: 600;
+    box-shadow: 0 6px 16px -12px color-mix(in srgb, var(--primary) 70%, transparent);
+  }
+  .erp-ui .erp-nav-link.is-active::before {
+    content: '';
+    position: absolute;
+    left: -1px;
+    top: 50%;
+    height: 1.125rem;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--copper);
+    transform: translateY(-50%);
+  }
+  .erp-ui .erp-nav-link.is-active .erp-nav-icon { color: var(--copper); }
+  .erp-ui .erp-nav-icon { color: var(--text-light); flex: none; }
+
+  /* Avatar disc in the rail footer. */
+  .erp-ui .erp-avatar {
+    background: linear-gradient(135deg, var(--copper), var(--copper-light));
+    color: #fff;
+  }
+
+  /* Role / status pill. */
+  .erp-ui .erp-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    padding: .1875rem .5rem;
+    border: 1px solid var(--erp-ring);
+    border-radius: 99px;
+    background: var(--erp-tint);
+    color: var(--erp-ink-accent);
+    font-size: .625rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  /* ── Overview dashboard ─────────────────────────────────────────────── */
+
+  /* Stat tile. */
+  .erp-ui .erp-tile {
+    display: block;
+    width: 100%;
+    padding: 1.125rem 1.25rem;
+    border: 1px solid var(--erp-line-soft);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: var(--erp-shadow);
+    text-align: left;
+    transition: border-color .25s, box-shadow .25s, transform .25s;
+  }
+  .erp-ui .erp-tile:hover {
+    border-color: var(--erp-ring);
+    box-shadow: var(--erp-shadow-lift);
+    transform: translateY(-2px);
+  }
+  .erp-ui .erp-tile-label {
+    color: var(--text-light);
+    font-size: .6875rem;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  .erp-ui .erp-tile-value {
+    margin-top: .375rem;
+    font-size: 1.375rem;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .erp-ui .erp-tile-value.is-alert { color: var(--danger); }
+  .erp-ui .erp-tile-sub { margin-top: .25rem; color: var(--text-light); font-size: .75rem; }
+
+  /* Module card.  --m-from/--m-to are set per card from the JS module list, so
+     one rule serves every hue (vattus does this with per-card Tailwind hues). */
+  .erp-ui .erp-module {
+    --m-from: var(--copper);
+    --m-to: var(--copper-light);
+    padding: 1.25rem;
+    border: 1px solid color-mix(in srgb, var(--m-from) 16%, var(--border));
+    border-radius: 18px;
+    background:
+      linear-gradient(160deg, color-mix(in srgb, var(--m-from) 6%, transparent), transparent 62%),
+      var(--erp-surface);
+    box-shadow: var(--erp-shadow);
+    transition: border-color .3s, box-shadow .3s, transform .3s;
+  }
+  .erp-ui .erp-module:hover {
+    border-color: color-mix(in srgb, var(--m-from) 42%, transparent);
+    box-shadow: 0 2px 4px rgba(34, 35, 39, .05),
+                0 20px 36px -18px color-mix(in srgb, var(--m-from) 55%, transparent);
+    transform: translateY(-3px);
+  }
+  .erp-ui .erp-module-mark {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 13px;
+    background: linear-gradient(135deg, var(--m-from), var(--m-to));
+    color: #fff;
+    box-shadow: 0 8px 18px -8px color-mix(in srgb, var(--m-from) 65%, transparent);
+    transition: transform .3s;
+  }
+  .erp-ui .erp-module:hover .erp-module-mark { transform: scale(1.08); }
+
+  /* Chip links inside a module card. */
+  .erp-ui .erp-chip {
+    padding: .3125rem .625rem;
+    border: 1px solid var(--erp-line);
+    border-radius: 8px;
+    background: var(--erp-surface);
+    color: var(--text-secondary);
+    font-size: .75rem;
+    font-weight: 500;
+    transition: background-color .2s, border-color .2s, color .2s;
+  }
+  .erp-ui .erp-chip:hover {
+    border-color: color-mix(in srgb, var(--m-from, var(--primary)) 45%, transparent);
+    background: color-mix(in srgb, var(--m-from, var(--primary)) 8%, #fff);
+    color: var(--text);
+  }
+
+  /* ── Tab bodies: the shared legacy classes, re-skinned ──────────────── */
+
+  /* Tables — white card, micro-caps header over a peach wash, hairline rows. */
+  .erp-ui .admin-table,
+  .erp-ui .admin-table-wrap {
+    border: 1px solid var(--erp-line-soft);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: var(--erp-shadow);
+  }
+  .erp-ui .admin-table table { font-size: .8125rem; }
+  .erp-ui .admin-table thead { background: var(--erp-raised); }
+  .erp-ui .admin-table th {
+    height: 2.625rem;
+    padding: 0 .875rem;
+    border-bottom: 1px solid var(--erp-line-soft);
+    color: var(--text-light);
+    font-size: .6875rem;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .erp-ui .admin-table td {
+    padding: .6875rem .875rem;
+    border-top: 1px solid var(--erp-line-soft);
+    color: var(--text);
+  }
+  .erp-ui .admin-table tbody tr { transition: background-color .15s; }
+  .erp-ui .admin-table tbody tr:hover { background: var(--erp-hover); }
+  /* Figures line up: any right-aligned cell gets tabular numerals. */
+  .erp-ui .admin-table td[style*="right"],
+  .erp-ui .admin-table td.text-right { font-variant-numeric: tabular-nums; }
+
+  /* Sections — a card per block, caption in micro-caps over a hairline. */
+  .erp-ui .admin-section {
+    margin-bottom: 1.25rem;
+    padding: 1.25rem;
+    border: 1px solid var(--erp-line-soft);
+    border-radius: var(--erp-radius);
+    background: var(--erp-surface);
+    box-shadow: var(--erp-shadow);
+  }
+  .erp-ui .admin-section-header {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: .875rem;
+    padding-bottom: .625rem;
+    border-bottom: 1px solid var(--erp-line-soft);
+    color: var(--text-secondary);
+    font-size: .75rem;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  .erp-ui .admin-section-header::before {
+    content: '';
+    flex: none;
+    width: 3px;
+    height: .875rem;
+    border-radius: 2px;
+    background: var(--copper);
+  }
+  /* A table that is the body of a section shouldn't double the card chrome. */
+  .erp-ui .admin-section > .admin-table,
+  .erp-ui .admin-section > .admin-table-wrap { box-shadow: none; }
+
+  /* Filter bars. */
+  .erp-ui .report-filters {
+    padding: .875rem 1rem;
+    border: 1px solid var(--erp-line-soft);
+    border-radius: 12px;
+    background: var(--surface-alt);
+  }
+
+  /* Stat cards used inside tabs. */
+  .erp-ui .dash-card {
+    padding: .9375rem 1.0625rem;
+    border: 1px solid var(--erp-line-soft);
+    border-radius: 12px;
+    background: var(--erp-surface);
+    box-shadow: var(--erp-shadow);
+    transition: border-color .25s, box-shadow .25s;
+  }
+  .erp-ui .dash-card:hover { border-color: var(--erp-ring); }
+  .erp-ui .dash-card-label {
+    color: var(--text-light);
+    font-size: .6875rem;
+    font-weight: 600;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  .erp-ui .dash-card-value {
+    margin-top: .3125rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .erp-ui .dash-card-change { font-size: .75rem; color: var(--text-light); }
+
+  /* Buttons — copper gradient primary, like vattus's teal one. */
+  .erp-ui .btn {
+    height: 2.25rem;
+    border-radius: 10px;
+    font-size: .8125rem;
+    font-weight: 600;
+    transition: background-color .2s, border-color .2s, box-shadow .2s, transform .1s, filter .2s;
+  }
+  .erp-ui .btn:active { transform: translateY(1px); }
+  .erp-ui .btn-primary {
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--copper), var(--copper-light));
+    color: var(--text-inverse);
+    box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--copper) 70%, transparent);
+  }
+  .erp-ui .btn-primary:hover {
+    background: linear-gradient(135deg, var(--copper), var(--copper-light));
+    filter: brightness(1.06);
+    box-shadow: 0 10px 22px -8px color-mix(in srgb, var(--copper) 75%, transparent);
+  }
+  .erp-ui .btn-secondary {
+    border-color: var(--erp-line);
+    background: var(--erp-surface);
+    color: var(--text);
+    box-shadow: var(--erp-shadow);
+  }
+  .erp-ui .btn-secondary:hover {
+    border-color: var(--erp-ring);
+    background: var(--erp-hover);
+  }
+
+  .erp-ui .icon-btn {
+    border-radius: 9px;
+    color: var(--text-light);
+  }
+  .erp-ui .icon-btn:hover { background: var(--erp-hover); color: var(--text); }
+  .erp-ui .icon-btn.danger:hover {
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+    color: var(--danger);
+  }
+
+  /* .invoice-btn is styled globally; .link-btn and .qty-btn lost their rules
+     with the old layout.css and have been rendering unstyled until now. */
+  .erp-ui .invoice-btn,
+  .erp-ui .link-btn,
+  .erp-ui .qty-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .25rem;
+    border: 1px solid var(--erp-line);
+    border-radius: 8px;
+    background: var(--erp-surface);
+    color: var(--text-secondary);
+    font-size: .75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color .2s, border-color .2s, color .2s;
+  }
+  .erp-ui .invoice-btn, .erp-ui .link-btn { padding: .25rem .625rem; }
+  .erp-ui .qty-btn { width: 1.75rem; height: 1.75rem; font-size: .875rem; }
+  .erp-ui .invoice-btn:hover,
+  .erp-ui .link-btn:hover,
+  .erp-ui .qty-btn:hover {
+    border-color: var(--erp-ring);
+    background: var(--erp-tint);
+    color: var(--erp-ink-accent);
+  }
+  .erp-ui .link-btn { border-color: transparent; background: transparent; color: var(--erp-ink-accent); }
+
+  /* Modals — deeper radius and a real shadow, matching the card stack. */
+  .erp-ui .admin-form-overlay { background: rgba(28, 20, 16, .45); }
+  .erp-ui .admin-form {
+    border: 1px solid var(--erp-line-soft);
+    border-radius: 18px;
+    box-shadow: 0 24px 60px -20px rgba(34, 35, 39, .32);
+  }
+  .erp-ui .admin-form > h3 {
+    padding-bottom: .75rem;
+    border-bottom: 1px solid var(--erp-line-soft);
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  /* Fields — 3px copper focus ring, echoing vattus's ring-2 ring-teal-500.
+     Selector mirrors the global rule's :not() chain so it outranks it. */
+  .erp-ui :is(.form-group, .admin-form) :is(input, select, textarea):not([data-slot]):not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
+    border-radius: 10px;
+    border-color: var(--erp-line);
+    background: var(--erp-surface);
+    font-size: .8125rem;
+  }
+  .erp-ui :is(.form-group, .admin-form) :is(input, select, textarea):not([data-slot]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus-visible {
+    border-color: var(--copper);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
+  }
+  .erp-ui .form-group > label {
+    color: var(--text-secondary);
+    font-size: .75rem;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+  /* Bare fields outside a .form-group (filter bars build their own rows). */
+  .erp-ui .report-filters :is(input, select):not([data-slot]),
+  .erp-ui [class*="filter"] :is(input, select):not([data-slot]) {
+    border: 1px solid var(--erp-line);
+    border-radius: 10px;
+    background: var(--erp-surface);
+    padding: .4375rem .625rem;
+    font-size: .8125rem;
+    outline: none;
+  }
 }

@@ -4,10 +4,11 @@
  */
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { isEnabled, printReturn, getReceiptLocale } from '../lib/thermalPrinter';
+import { isEnabled, printReturn, getReceiptLocale, RECEIPT_STORE } from '../lib/thermalPrinter';
 
 export default function PosReturnReceipt({ payload, currency = 'KWD', onClose }) {
   const printedRef = useRef(false);
+  const logoRef = useRef(null);
 
   useEffect(() => {
     // Print exactly once — see PosReceipt for why a ref guard (not a cleanup
@@ -23,6 +24,11 @@ export default function PosReturnReceipt({ payload, currency = 'KWD', onClose })
         } catch (err) {
           console.warn('[thermal] direct return print failed, falling back:', err.message);
         }
+      }
+      // Don't print before the logo has loaded, or the header comes out blank.
+      const logo = logoRef.current;
+      if (logo && !logo.complete) {
+        await new Promise((resolve) => { logo.onload = resolve; logo.onerror = resolve; });
       }
       setTimeout(() => window.print(), 200);
     })();
@@ -47,37 +53,49 @@ export default function PosReturnReceipt({ payload, currency = 'KWD', onClose })
         .pos-receipt-overlay {
           position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100;
           display: grid; place-items: center; padding: 1rem;
+          /* Scroll a receipt taller than the viewport so the buttons stay reachable. */
+          overflow-y: auto;
         }
         @media print {
           body > #root { display: none !important; }
           .pos-receipt-overlay {
             position: static !important; background: none !important;
             display: block !important; padding: 0 !important; z-index: auto !important;
+            overflow: visible !important;
           }
           #pos-return-receipt {
             margin: 0 !important;
-            width: 80mm !important; padding: 4mm !important;
+            width: 72mm !important; padding: 2mm !important;
             box-shadow: none !important;
             background: white !important; color: black !important;
-            font-family: 'Courier New', monospace !important; font-size: 11pt !important;
+            font-family: 'Courier New', monospace !important; font-size: 10pt !important;
           }
           #pos-return-receipt .no-print { display: none !important; }
           @page { size: 80mm auto; margin: 0; }
         }
         #pos-return-receipt {
-          width: 80mm; margin: 24px auto; padding: 16px;
+          width: 72mm; margin: 24px auto; padding: 16px;
           background: white; color: #111;
           font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.4;
           box-shadow: 0 4px 24px rgba(0,0,0,0.3);
         }
+        #pos-return-receipt .logo { display: block; width: 60%; height: auto; margin: 0 auto 6px; }
+        #pos-return-receipt .location { font-size: 14px; font-weight: bold; text-align: center; }
         #pos-return-receipt h2 { font-size: 16px; margin: 0; text-align: center; letter-spacing: 2px; }
         #pos-return-receipt .meta { font-size: 11px; text-align: center; margin: 4px 0 8px; }
         #pos-return-receipt hr { border: none; border-top: 1px dashed #444; margin: 8px 0; }
         #pos-return-receipt table { width: 100%; border-collapse: collapse; }
         #pos-return-receipt td { padding: 2px 0; vertical-align: top; }
-        #pos-return-receipt .right { text-align: right; }
+        #pos-return-receipt, #pos-return-receipt * { box-sizing: border-box; }
+        /* Long SKUs/emails wrap instead of pushing the amount column off the paper. */
+        #pos-return-receipt { overflow-wrap: anywhere; }
+        #pos-return-receipt .right { text-align: right; white-space: nowrap; padding-left: 6px; }
         #pos-return-receipt .total-row { font-weight: bold; font-size: 14px; }
-        #pos-return-receipt .actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+        #pos-return-receipt .actions {
+          display: flex; gap: 8px; justify-content: center; margin-top: 16px;
+          /* Pinned to the bottom of the scrolling overlay so Close is always on screen. */
+          position: sticky; bottom: 0; background: white; padding: 8px 0;
+        }
         #pos-return-receipt .actions button {
           padding: 8px 16px; border: 1px solid #444; background: white;
           font-family: inherit; cursor: pointer;
@@ -85,15 +103,21 @@ export default function PosReturnReceipt({ payload, currency = 'KWD', onClose })
       `}</style>
 
       <div id="pos-return-receipt">
-        <h2>RETURN RECEIPT</h2>
+        <img ref={logoRef} src={RECEIPT_STORE.logo} alt={RECEIPT_STORE.name} className="logo" />
+        {sr.Location?.name && sr.Location.name !== RECEIPT_STORE.name && (
+          <div className="location">{sr.Location.name}</div>
+        )}
         <div className="meta">
-          <div>{sr.Location?.name || ''}</div>
-          {sr.Location?.phone && <div>Tel: {sr.Location.phone}</div>}
+          <div>{sr.Location?.address || RECEIPT_STORE.address}</div>
+          <div>Tel: {sr.Location?.phone || RECEIPT_STORE.phone}</div>
+          <div>{RECEIPT_STORE.email}</div>
         </div>
+        <hr />
+        <h2>RETURN RECEIPT</h2>
         <hr />
         <div style={{ fontSize: 11 }}>
           <div>Return #: {sr.returnNumber}</div>
-          <div>Original: {payload.order?.orderNumber}</div>
+          <div>Original: {payload.order?.orderNumber || 'No receipt'}</div>
           <div>Date: {when}</div>
           <div>Cashier: {sr.processor?.name || '—'}</div>
           {sr.reason && <div>Reason: {sr.reason}</div>}
@@ -102,7 +126,7 @@ export default function PosReturnReceipt({ payload, currency = 'KWD', onClose })
         <table>
           <tbody>
             {(sr.items || []).map((it, i) => {
-              const sku = it.sku || it.variant?.sku || null;
+              const sku = it.barcode || it.sku || it.variant?.sku || null;
               const dispName = pickName(it);
               return (
                 <tr key={i}>

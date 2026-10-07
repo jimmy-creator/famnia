@@ -1,3 +1,4 @@
+import './tz.js';
 import fs from 'node:fs';
 import express from 'express';
 import cors from 'cors';
@@ -23,6 +24,7 @@ import couponRoutes from './routes/coupons.js';
 import reviewRoutes from './routes/reviews.js';
 import analyticsRoutes from './routes/analytics.js';
 import settingsRoutes from './routes/settings.js';
+import backupRoutes from './routes/backup.js';
 import customerRoutes from './routes/customers.js';
 import categoryRoutes from './routes/categories.js';
 import bulkProductRoutes from './routes/bulkProducts.js';
@@ -49,6 +51,8 @@ import financeRoutes, { seedDefaultAccountsIfEmpty } from './routes/finance.js';
 import activityLogRoutes from './routes/activityLog.js';
 import accountingRoutes from './routes/accounting.js';
 import stockCountsRoutes from './routes/stockCounts.js';
+import wastageRoutes from './routes/wastage.js';
+import erpReportsRoutes from './routes/erpReports.js';
 import { registerShiprocketHooks } from './services/shiprocketSync.js';
 import { startAbandonedCartJob } from './services/abandonedCartJob.js';
 import { startLowStockJob } from './services/lowStockJob.js';
@@ -56,6 +60,7 @@ import { startDepreciationJob } from './services/depreciationJob.js';
 import sitemapRoutes from './routes/sitemap.js';
 import { sanitizeInput, preventInjection, forceHttps } from './middleware/security.js';
 import htmlInject from './middleware/htmlInject.js';
+import { validateDateQuery, sanitizeErrors } from './middleware/apiGuards.js';
 
 dotenv.config();
 
@@ -105,6 +110,7 @@ app.use(cookieParser());
 // Input sanitization (XSS + injection prevention)
 app.use(sanitizeInput);
 app.use(preventInjection);
+app.use('/api', validateDateQuery, sanitizeErrors);
 
 // Serve uploaded images
 // Uploaded images have unique hashed filenames (a replaced image gets a new
@@ -122,6 +128,7 @@ app.use('/api/coupons', couponRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/backup', backupRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/bulk-products', bulkProductRoutes);
@@ -148,6 +155,8 @@ app.use('/api/finance', financeRoutes);
 app.use('/api/activity-log', activityLogRoutes);
 app.use('/api/accounting', accountingRoutes);
 app.use('/api/stock-counts', stockCountsRoutes);
+app.use('/api/wastage', wastageRoutes);
+app.use('/api/erp-reports', erpReportsRoutes);
 app.use('/', sitemapRoutes);
 
 // Serve the built client bundles. Needed on hosts WITHOUT nginx (e.g.

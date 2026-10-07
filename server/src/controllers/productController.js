@@ -1,10 +1,20 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import { Product, syncProductStockFromForm } from '../models/index.js';
+import { priceFromMargin, PUBLIC_PRODUCT_ATTRIBUTES } from '../utils/pricing.js';
 
 // Storefront visibility: active AND not flagged POS-only. Applied to every
 // public-facing product query so a `hideOnline` product never leaks out.
 export const STOREFRONT_WHERE = { active: true, hideOnline: false };
+
+// A reused SKU or barcode would otherwise surface as a bare "Validation error".
+function duplicateCodeMessage(error) {
+  if (error.name !== 'SequelizeUniqueConstraintError') return null;
+  const field = error.errors?.[0]?.path || '';
+  if (field.includes('barcode')) return 'Another product already uses this barcode';
+  if (field.includes('code')) return 'Another product already uses this SKU / product code';
+  return null;
+}
 
 export const getProducts = async (req, res) => {
   try {
@@ -53,6 +63,7 @@ export const getProducts = async (req, res) => {
     const offset = (page - 1) * limit;
     const { count, rows } = await Product.findAndCountAll({
       where,
+      attributes: PUBLIC_PRODUCT_ATTRIBUTES,
       limit: parseInt(limit),
       offset,
       order: [[sort, order.toUpperCase()]],
@@ -73,6 +84,7 @@ export const getProduct = async (req, res) => {
   try {
     const product = await Product.findOne({
       where: { slug: req.params.slug, ...STOREFRONT_WHERE },
+      attributes: PUBLIC_PRODUCT_ATTRIBUTES,
     });
 
     if (!product) {
@@ -110,23 +122,47 @@ export const getCategories = async (req, res) => {
 };
 
 // Admin
+// Optional numeric columns: a blank form field arrives as '' and MySQL
+// rejects '' for DECIMAL/INTEGER, so it has to become null.
+const OPTIONAL_NUMBERS = ['comparePrice', 'costPrice', 'marginPercent', 'weight', 'taxRate',
+  'reorderLevel', 'reorderQty', 'preferredSupplierId'];
+
+function blankNumbersToNull(body) {
+  for (const f of OPTIONAL_NUMBERS) {
+    if (body[f] === '') body[f] = null;
+  }
+}
+
 export const createProduct = async (req, res) => {
   try {
-    const slug = req.body.name
+    const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+    if (!name) return res.status(400).json({ message: 'Product name is required' });
+    // With a margin set the price is cost + margin, whatever was typed.
+    const fromMargin = priceFromMargin(req.body.costPrice, req.body.marginPercent, req.body.price);
+    if (fromMargin != null) req.body.price = fromMargin;
+    const price = parseFloat(req.body.price);
+    if (!(price >= 0)) return res.status(400).json({ message: 'A valid price is required' });
+
+    const slug = name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
 
-    const code = req.body.code?.trim() || null;
-    const product = await Product.create({ ...req.body, slug, code });
+    const body = { ...req.body };
+    delete body.id; delete body.createdAt; delete body.updatedAt;
+    blankNumbersToNull(body);
+    const code = body.code?.trim() || null;
+    const barcode = body.barcode?.trim() || null;
+    const product = await Product.create({ ...body, name, slug, code, barcode });
 
     // Seed the per-location row so a new product is sellable at the till
     // immediately, rather than reading as zero stock until someone opens
     // Inventory and enters the same number again.
-    const stockSync = await syncProductStockFromForm(product.id, req.body);
+    const stockSync = await syncProductStockFromForm(product.id, body);
     await product.reload();
     res.status(201).json({ ...product.toJSON(), stockSync });
   } catch (error) {
+    if (duplicateCodeMessage(error)) return res.status(400).json({ message: duplicateCodeMessage(error) });
     res.status(500).json({ message: error.message });
   }
 };
@@ -148,6 +184,25 @@ export const updateProduct = async (req, res) => {
     if ('code' in req.body) {
       req.body.code = req.body.code?.trim() || null;
     }
+    if ('barcode' in req.body) {
+      req.body.barcode = req.body.barcode?.trim() || null;
+    }
+    delete req.body.id;
+    blankNumbersToNull(req.body);
+
+    // The form sends cost and margin together → price follows them. A price
+    // sent on its own (e.g. the shop-sticker editor) is a manual price, so it
+    // takes the product off margin pricing rather than being overwritten.
+    if ('marginPercent' in req.body || 'costPrice' in req.body) {
+      const fromMargin = priceFromMargin(
+        'costPrice' in req.body ? req.body.costPrice : product.costPrice,
+        'marginPercent' in req.body ? req.body.marginPercent : product.marginPercent,
+        req.body.price,
+      );
+      if (fromMargin != null) req.body.price = fromMargin;
+    } else if ('price' in req.body && product.marginPercent != null) {
+      req.body.marginPercent = null;
+    }
 
     await product.update(req.body);
 
@@ -157,6 +212,7 @@ export const updateProduct = async (req, res) => {
     await product.reload();
     res.json({ ...product.toJSON(), stockSync });
   } catch (error) {
+    if (duplicateCodeMessage(error)) return res.status(400).json({ message: duplicateCodeMessage(error) });
     res.status(500).json({ message: error.message });
   }
 };

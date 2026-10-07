@@ -29,6 +29,7 @@ export default function PosLogin() {
   const [pin, setPin] = useState('');
   const [openingCash, setOpeningCash] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [pinError, setPinError] = useState('');
   const pinRef = useRef(null);
 
   useEffect(() => {
@@ -48,6 +49,8 @@ export default function PosLogin() {
         }
         locs = Array.from(seen.values());
       }
+      // Deactivated stores can't be logged into (server rejects them).
+      locs = locs.filter((l) => l.active !== false);
       setLocations(locs);
       setCashiers(cashRes.data);
       if (locationId && locs.find((l) => l.id === locationId)) {
@@ -77,6 +80,7 @@ export default function PosLogin() {
   const pickCashier = (c) => {
     setCashier(c);
     setPin('');
+    setPinError('');
     setStep('pin');
     setTimeout(() => pinRef.current?.focus(), 50);
   };
@@ -95,7 +99,9 @@ export default function PosLogin() {
       if (status === 409 && detail?.requires === 'openingCash') {
         setStep('opening');
       } else {
-        toast.error(detail?.message || 'Login failed');
+        const msg = status === 401 ? 'Wrong PIN — please try again' : (detail?.message || 'Login failed');
+        toast.error(msg);
+        setPinError(msg);
         setPin('');
         pinRef.current?.focus();
       }
@@ -158,11 +164,12 @@ export default function PosLogin() {
                 pattern="\d*"
                 autoComplete="off"
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setPinError(''); }}
                 placeholder="••••"
                 className="pos-pin-input"
                 autoFocus
               />
+              {pinError && <p className="pos-error" role="alert">{pinError}</p>}
               <button type="submit" className="pos-btn-primary" disabled={submitting || pin.length < 4}>
                 {submitting ? 'Checking…' : 'Sign in'}
               </button>
@@ -283,6 +290,7 @@ export default function PosLogin() {
           margin-bottom: 1rem;
         }
         .pos-label { font-size: 0.9rem; color: #cbd5e1; }
+        .pos-error { color: #f87171; font-size: 0.95rem; font-weight: 600; text-align: center; margin: -0.25rem 0 1rem; }
         .pos-btn-primary {
           width: 100%;
           background: #c4784a;

@@ -6,9 +6,10 @@
  * scratch by searching products. Stock is validated server-side at
  * the chosen Location.
  */
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../api/axios';
+import ProductSearchPicker from './ProductSearchPicker';
 
 export default function PurchaseReturnModals({
   prForm, setPrForm, prDetail, setPrDetail,
@@ -34,7 +35,6 @@ export default function PurchaseReturnModals({
 }
 
 function PrEditor({ form, setForm, suppliers, locations, products, currency, onSaved }) {
-  const [search, setSearch] = useState('');
   const [poList, setPoList] = useState([]);
   const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(3)}`;
 
@@ -46,13 +46,20 @@ function PrEditor({ form, setForm, suppliers, locations, products, currency, onS
       .catch(() => {});
   }, [form.supplierId]);
 
-  const searchHits = useMemo(() => {
-    if (!search.trim()) return [];
-    const q = search.toLowerCase();
-    return (products || []).filter((p) =>
-      p.name?.toLowerCase().includes(q) || p.code?.toLowerCase().includes(q)
-    ).slice(0, 8);
-  }, [search, products]);
+  // Keyboard flow as on the PO editor: pick in search → that line's Qty takes
+  // focus (selected) → Tab to cost → Enter returns to search.
+  const searchRef = useRef(null);
+  const qtyRefs = useRef([]);
+  const focusLine = useRef(null);
+  useEffect(() => {
+    if (focusLine.current == null) return;
+    qtyRefs.current[focusLine.current]?.focus();
+    qtyRefs.current[focusLine.current]?.select();
+    focusLine.current = null;
+  }, [form.items]);
+  const onLineKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); searchRef.current?.focus(); }
+  };
 
   const loadFromPo = (poId) => {
     if (!poId) { setForm({ ...form, purchaseOrderId: '' }); return; }
@@ -65,24 +72,26 @@ function PrEditor({ form, setForm, suppliers, locations, products, currency, onS
     });
   };
 
-  const addProductLine = (p, variantIndex = null) => {
+  const addProductLine = (p, variantIndex = null, { scanned } = {}) => {
     const variant = variantIndex != null && Array.isArray(p.variants) ? p.variants[variantIndex] : null;
     const name = p.name + (variant ? ` (${Object.values(variant.options || {}).join('/')})` : '');
     const existing = (form.items || []).findIndex((l) => l.productId === p.id && (l.variantIndex ?? null) === (variantIndex ?? null));
+    // A scan stays in the search box for the next scan instead of jumping to Qty.
+    if (!scanned) focusLine.current = existing >= 0 ? existing : (form.items || []).length;
     if (existing >= 0) {
       const next = [...form.items];
-      next[existing] = { ...next[existing], quantity: (next[existing].quantity || 0) + 1 };
+      next[existing] = { ...next[existing], quantity: (parseInt(next[existing].quantity, 10) || 0) + 1 };
       setForm({ ...form, items: next });
     } else {
       setForm({
         ...form,
         items: [...(form.items || []), {
           productId: p.id, variantIndex, name,
-          quantity: 1, unitCost: parseFloat(variant?.price ?? p.price) || 0,
+          // Goods go back at what they cost us, not their retail price.
+          quantity: 1, unitCost: parseFloat(p.costPrice) > 0 ? parseFloat(p.costPrice) : '',
         }],
       });
     }
-    setSearch('');
   };
 
   const setLine = (i, patch) => {
@@ -97,7 +106,8 @@ function PrEditor({ form, setForm, suppliers, locations, products, currency, onS
   const submit = async (e) => {
     e.preventDefault();
     if (!form.supplierId || !form.locationId) { toast.error('Pick supplier + location'); return; }
-    const items = (form.items || []).filter((l) => (l.quantity || 0) > 0);
+    // Line fields hold the raw typed text while editing; parse here.
+    const items = (form.items || []).filter((l) => (parseInt(l.quantity, 10) || 0) > 0);
     if (items.length === 0) { toast.error('Add at least one item with qty'); return; }
     try {
       await api.post('/purchase-returns', {
@@ -106,7 +116,7 @@ function PrEditor({ form, setForm, suppliers, locations, products, currency, onS
         purchaseOrderId: form.purchaseOrderId || null,
         items: items.map((l) => ({
           productId: l.productId, variantIndex: l.variantIndex,
-          name: l.name, quantity: l.quantity, unitCost: l.unitCost,
+          name: l.name, quantity: parseInt(l.quantity, 10), unitCost: parseFloat(l.unitCost) || 0,
         })),
         refundMethod: form.refundMethod,
         reason: form.reason,
@@ -145,47 +155,27 @@ function PrEditor({ form, setForm, suppliers, locations, products, currency, onS
           </div>
         </div>
 
-        <div style={{ background: 'var(--bg-warm, #f5f1e8)', padding: '0.75rem', borderRadius: 8, marginBottom: '0.75rem' }}>
-          <label style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Add items</label>
-          <input
-            placeholder="Search products by name or code…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: '100%' }}
-          />
-          {searchHits.length > 0 && (
-            <div style={{ background: 'white', border: '1px solid var(--border-light)', borderRadius: 6, marginTop: 6, maxHeight: 200, overflowY: 'auto' }}>
-              {searchHits.map((p) => {
-                if (Array.isArray(p.variants) && p.variants.length > 0) {
-                  return p.variants.map((v, vi) => (
-                    <div key={`${p.id}-${vi}`} style={hitRow} onClick={() => addProductLine(p, vi)}>
-                      <span>{p.name} <span style={{ color: 'var(--text-light)' }}>({Object.values(v.options || {}).join('/')})</span></span>
-                      <span style={{ color: 'var(--text-light)', fontSize: 12 }}>{fmt(v.price ?? p.price)}</span>
-                    </div>
-                  ));
-                }
-                return (
-                  <div key={p.id} style={hitRow} onClick={() => addProductLine(p)}>
-                    <span>{p.name}</span>
-                    <span style={{ color: 'var(--text-light)', fontSize: 12 }}>{fmt(p.price)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <ProductSearchPicker
+          ref={searchRef}
+          products={products}
+          currency={currency}
+          onPick={addProductLine}
+          hint="↑ ↓ to choose · Enter to add · type the qty, Tab to cost · Enter to come back here"
+        />
 
         <div className="admin-table-wrap" style={{ marginBottom: '0.75rem' }}>
-          <table className="admin-table">
-            <thead><tr><th>Item</th><th style={{ width: 80 }}>Qty</th><th style={{ width: 110 }}>Unit cost</th><th style={{ textAlign: 'right', width: 110 }}>Refund</th><th style={{ width: 40 }}></th></tr></thead>
+          <table className="admin-table po-lines">
+            <thead><tr><th>Item</th><th style={{ width: 96 }}>Qty</th><th style={{ width: 110 }}>Unit cost</th><th style={{ textAlign: 'right', width: 110 }}>Refund</th><th style={{ width: 40 }}></th></tr></thead>
             <tbody>
               {(form.items || []).length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-light)' }}>No items</td></tr>}
               {(form.items || []).map((l, i) => (
                 <tr key={i}>
                   <td>{l.name}</td>
-                  <td><input type="number" min={0} value={l.quantity} onChange={(e) => setLine(i, { quantity: parseInt(e.target.value, 10) || 0 })} style={{ width: '100%' }} /></td>
-                  <td><input type="number" step="0.001" value={l.unitCost} onChange={(e) => setLine(i, { unitCost: parseFloat(e.target.value) || 0 })} style={{ width: '100%' }} /></td>
-                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt((l.unitCost || 0) * (l.quantity || 0))}</td>
+                  <td><input ref={(el) => { qtyRefs.current[i] = el; }} type="number" min={0} inputMode="numeric" value={l.quantity}
+                    onChange={(e) => setLine(i, { quantity: e.target.value })} onKeyDown={onLineKey} style={{ width: '100%' }} /></td>
+                  <td><input type="number" step="0.001" inputMode="decimal" value={l.unitCost}
+                    onChange={(e) => setLine(i, { unitCost: e.target.value })} onKeyDown={onLineKey} style={{ width: '100%' }} /></td>
+                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt((parseFloat(l.unitCost) || 0) * (parseInt(l.quantity, 10) || 0))}</td>
                   <td><button type="button" className="icon-btn" onClick={() => removeLine(i)}>×</button></td>
                 </tr>
               ))}
@@ -256,6 +246,7 @@ function PrDetail({ row, currency, isAdmin, onClose, onCancel }) {
           <strong>Total refunded</strong><strong>{fmt(row.totalAmount)}</strong>
         </div>
         <div className="form-actions" style={{ marginTop: '1rem' }}>
+          <button className="btn btn-secondary" onClick={() => window.open(`${api.defaults.baseURL}/purchase-returns/${row.id}/pdf`, '_blank')}>Print / PDF</button>
           {isAdmin && row.status === 'completed' && <button className="btn btn-secondary" onClick={onCancel}>Cancel return</button>}
           <button className="btn btn-primary" onClick={onClose}>Close</button>
         </div>
@@ -263,8 +254,3 @@ function PrDetail({ row, currency, isAdmin, onClose, onCancel }) {
     </div>
   );
 }
-
-const hitRow = {
-  display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.75rem',
-  cursor: 'pointer', borderBottom: '1px solid var(--border-light)',
-};

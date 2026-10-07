@@ -11,6 +11,7 @@ import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { HiPlus, HiPencil, HiTrash } from 'react-icons/hi';
 import api from '../../api/axios';
+import { localDate } from '../../lib/utils';
 
 export default function FinanceTabs(props) {
   const { tab } = props;
@@ -177,7 +178,7 @@ function ExpensesTab({
           </button>
           <button className="btn btn-primary" onClick={() => setExpenseForm({
             expenseCategoryId: '', locationId: '', cashAccountId: '', amount: '', paymentMethod: 'cash',
-            description: '', reference: '', expenseDate: new Date().toISOString().slice(0, 10), notes: '',
+            description: '', reference: '', expenseDate: localDate(), notes: '',
           })}><HiPlus /> Add Expense</button>
         </div>
       </div>
@@ -370,7 +371,7 @@ function CashTransfersTab({ currency, isAdmin, cashAccounts, cashTransfers, setC
     <div className="admin-section">
       <div className="admin-section-header">
         <h2>Cash Transfers</h2>
-        <button className="btn btn-primary" onClick={() => setCashTransferForm({ fromAccountId: '', toAccountId: '', amount: '', transferDate: new Date().toISOString().slice(0, 10), notes: '' })}>
+        <button className="btn btn-primary" onClick={() => setCashTransferForm({ fromAccountId: '', toAccountId: '', amount: '', transferDate: localDate(), notes: '' })}>
           <HiPlus /> New Transfer
         </button>
       </div>
@@ -584,12 +585,12 @@ function DaybookTab({ currency, cashAccounts, daybook, daybookFilter, setDaybook
 function PnlTab({ currency, locations, pnl, pnlFilter, setPnlFilter }) {
   const setRange = (kind) => {
     const today = new Date();
-    const iso = (d) => d.toISOString().slice(0, 10);
+    const iso = localDate;
     if (kind === 'today') setPnlFilter({ ...pnlFilter, from: iso(today), to: iso(today) });
     if (kind === '7d') { const d = new Date(today); d.setDate(d.getDate() - 6); setPnlFilter({ ...pnlFilter, from: iso(d), to: iso(today) }); }
     if (kind === '30d') { const d = new Date(today); d.setDate(d.getDate() - 29); setPnlFilter({ ...pnlFilter, from: iso(d), to: iso(today) }); }
-    if (kind === 'mtd') setPnlFilter({ ...pnlFilter, from: iso(new Date(today.getFullYear(), today.getMonth(), 1)), to: iso(today) });
-    if (kind === 'ytd') setPnlFilter({ ...pnlFilter, from: iso(new Date(today.getFullYear(), 0, 1)), to: iso(today) });
+    if (kind === 'mtd') setPnlFilter({ ...pnlFilter, from: `${iso(today).slice(0, 8)}01`, to: iso(today) });
+    if (kind === 'ytd') setPnlFilter({ ...pnlFilter, from: `${iso(today).slice(0, 5)}01-01`, to: iso(today) });
   };
 
   return (
@@ -797,8 +798,8 @@ const dlbl = { display: 'block', fontSize: 12, marginBottom: 4 };
 
 function filterParams(f) {
   const p = {};
-  if (f.from) p.from = new Date(f.from + 'T00:00:00').toISOString();
-  if (f.to) p.to = new Date(f.to + 'T23:59:59.999').toISOString();
+  if (f.from) p.from = f.from;
+  if (f.to) p.to = f.to;
   if (f.categoryId) p.expenseCategoryId = f.categoryId;
   if (f.locationId) p.locationId = f.locationId;
   return p;

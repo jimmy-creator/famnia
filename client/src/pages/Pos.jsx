@@ -18,9 +18,11 @@ import toast from 'react-hot-toast';
 import {
   HiShoppingCart, HiClock, HiReply, HiChartBar,
   HiLogout, HiOutlineLogout, HiUserCircle, HiCash, HiCreditCard,
-  HiSearch, HiX, HiPrinter, HiArrowLeft, HiTag,
+  HiSearch, HiX, HiPrinter, HiArrowLeft, HiTag, HiInbox,
 } from 'react-icons/hi';
+import { isSupported as usbSupported, isEnabled as printerEnabled, kickDrawer } from '../lib/thermalPrinter';
 import api from '../api/axios';
+import { beep, errorTone } from '../lib/sounds';
 import { CurrencySymbol } from '../utils/currency';
 import PosReceipt from '../components/PosReceipt';
 import PosReportReceipt from '../components/PosReportReceipt';
@@ -29,7 +31,6 @@ import PosReturnReceipt from '../components/PosReturnReceipt';
 import PosCustomerPicker from '../components/PosCustomerPicker';
 import PosDiscountModal from '../components/PosDiscountModal';
 import PosLineDiscountModal from '../components/PosLineDiscountModal';
-import PosPriceOverrideModal from '../components/PosPriceOverrideModal';
 import PosManagerOverride from '../components/PosManagerOverride';
 import PosRecentSales from '../components/PosRecentSales';
 import PosSplitPayment from '../components/PosSplitPayment';
@@ -38,6 +39,12 @@ import PosBillEditor from '../components/PosBillEditor';
 import PosLabelPrint from '../components/PosLabelPrint';
 
 const CURRENCY = import.meta.env.VITE_CURRENCY_CODE || 'KWD';
+// Card button sub-options — which network the terminal charged.
+const CARD_TYPES = [
+  { value: 'mastercard', label: 'Mastercard' },
+  { value: 'visa', label: 'Visa' },
+];
+const HELD_KEY = 'pos-held-bills';
 
 // Small live clock for the POS top bar — purely cosmetic.
 function PosClock() {
@@ -89,6 +96,14 @@ export default function Pos() {
   const [searching, setSearching] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(0);
   const [cart, setCart] = useState([]);            // {productId, variantIndex, name, price, quantity, stockAtLocation}
+  // Held bills: [{ id, cart, linkedCustomer, discount }]. Kept in the browser
+  // so a refresh doesn't lose a waiting customer's bill.
+  const [held, setHeld] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(HELD_KEY)) || []; } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(HELD_KEY, JSON.stringify(held)); } catch { /* storage blocked — held bills just won't survive a refresh */ }
+  }, [held]);
   const [variantPicker, setVariantPicker] = useState(null);  // product-search-result with hasVariants
   const [linkedCustomer, setLinkedCustomer] = useState(null);   // null = walk-in
   const [discount, setDiscount] = useState(null);                // { manual?, coupon? } | null
@@ -100,10 +115,12 @@ export default function Pos() {
   const [browseCat, setBrowseCat] = useState(null);
   const [browseProducts, setBrowseProducts] = useState([]);
   const [browseLoading, setBrowseLoading] = useState(false);
-  // Per-line discount / per-sale price override — index into cart, or null.
+  // Per-line discount — index into cart, or null.
   const [lineDiscountFor, setLineDiscountFor] = useState(null);
-  const [priceOverrideFor, setPriceOverrideFor] = useState(null);
   const [discountOpen, setDiscountOpen] = useState(false);
+  const [priceEdit, setPriceEdit] = useState(null);              // { idx, value } while a cart price is being edited
+  const [qtyEdit, setQtyEdit] = useState(null);                  // { idx, value } while a cart quantity is being typed
+  const qtyCancelRef = useRef(false);                            // Esc pressed: the blur that follows must not commit
   const [pendingOverride, setPendingOverride] = useState(null);  // { reason, retry } | null
   const [recentOpen, setRecentOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
@@ -115,15 +132,24 @@ export default function Pos() {
   const [cartOpen, setCartOpen] = useState(false);
   const [editBill, setEditBill] = useState(null);   // orderNumber | null
   const [payOpen, setPayOpen] = useState(null);    // 'cash' | 'card' | null
+  const [cardType, setCardType] = useState(null);  // CARD_TYPES value, card payments only
   const [tendered, setTendered] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [receipt, setReceipt] = useState(null);
+  // A reprint from Recent sales previews first instead of printing on open.
+  const [receiptReprint, setReceiptReprint] = useState(false);
   const [closeForm, setCloseForm] = useState(null);
   const [report, setReport] = useState(null);   // X or Z report payload
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnReceipt, setReturnReceipt] = useState(null);
+  // Bumped after a sale/return so any on-screen search results re-fetch
+  // their stock counts instead of showing the pre-sale numbers.
+  const [stockVersion, setStockVersion] = useState(0);
 
   const searchRef = useRef(null);
+  const cartListRef = useRef(null);
+  const scrollToLine = useRef(null);                             // cart line key to bring into view after the next render
+  const lastAddedRef = useRef(null);                             // cart line key a typed quantity applies to
   const debounceRef = useRef(null);
 
   useEffect(() => {
@@ -136,23 +162,41 @@ export default function Pos() {
   // Keep the scanner-input focused — bounce focus back if the user clicks elsewhere
   // (unless a modal is open).
   useEffect(() => {
-    if (variantPicker || payOpen || receipt || closeForm || report || returnOpen || returnReceipt || discountOpen || pendingOverride || recentOpen || splitOpen || printerOpen || editBill || lineDiscountFor != null || priceOverrideFor != null || labelPrintOpen) return;
+    if (variantPicker || payOpen || receipt || closeForm || report || returnOpen || returnReceipt || discountOpen || pendingOverride || recentOpen || splitOpen || printerOpen || editBill || lineDiscountFor != null || labelPrintOpen) return;
     const interval = setInterval(() => {
       if (document.activeElement !== searchRef.current && !document.activeElement?.matches?.('input, textarea, button')) {
         searchRef.current?.focus();
       }
     }, 1500);
     return () => clearInterval(interval);
-  }, [variantPicker, payOpen, receipt, closeForm, report, returnOpen, returnReceipt, discountOpen, pendingOverride, recentOpen, splitOpen, printerOpen, editBill, lineDiscountFor, priceOverrideFor, labelPrintOpen]);
+  }, [variantPicker, payOpen, receipt, closeForm, report, returnOpen, returnReceipt, discountOpen, pendingOverride, recentOpen, splitOpen, printerOpen, editBill, lineDiscountFor, labelPrintOpen]);
 
+  // The query the current `results` belong to. A scanner types the code
+  // and hits Enter within a few ms — well inside the debounce — so Enter
+  // must not trust results that are empty or left over from a partial code.
+  // Bring the line just added/scanned into view, so a long cart never
+  // hides what the cashier just rang up.
+  useEffect(() => {
+    const k = scrollToLine.current;
+    if (!k) return;
+    scrollToLine.current = null;
+    cartListRef.current?.querySelector(`[data-line="${k}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [cart]);
+
+  const latestQueryRef = useRef('');
   const runSearch = useCallback(async (q) => {
-    if (!q.trim()) { setResults([]); return; }
+    latestQueryRef.current = q;
+    if (!q.trim()) { setResults([]); return []; }
     setSearching(true);
     try {
       const { data } = await api.get('/pos/products', { params: { q } });
+      // Drop responses for a query that has since been replaced.
+      if (latestQueryRef.current !== q) return null;
       setResults(data);
+      return data;
     } catch (err) {
       console.error(err);
+      return null;
     } finally {
       setSearching(false);
     }
@@ -163,7 +207,7 @@ export default function Pos() {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => runSearch(query), 250);
     return () => clearTimeout(debounceRef.current);
-  }, [query, runSearch]);
+  }, [query, runSearch, stockVersion]);
 
   // Reset highlight when results change.
   useEffect(() => { setHighlightIdx(0); }, [results]);
@@ -197,19 +241,25 @@ export default function Pos() {
     }
     if (item.stockAtLocation < 1) {
       toast.error('Out of stock at this location');
+      errorTone();
       return;
     }
+    const key = `${item.productId}:${item.variantIndex ?? 'b'}`;
+    const inCart = cart.find((c) => `${c.productId}:${c.variantIndex ?? 'b'}` === key);
+    if (inCart && inCart.quantity + 1 > item.stockAtLocation) {
+      toast.error(`Only ${item.stockAtLocation} in stock`);
+      errorTone();
+      return;
+    }
+    beep();
+    scrollToLine.current = key;
+    lastAddedRef.current = key;
     setCart((prev) => {
-      const key = `${item.productId}:${item.variantIndex ?? 'b'}`;
       const idx = prev.findIndex((c) => `${c.productId}:${c.variantIndex ?? 'b'}` === key);
       if (idx >= 0) {
+        if (prev[idx].quantity + 1 > item.stockAtLocation) return prev;
         const next = [...prev];
-        const newQty = next[idx].quantity + 1;
-        if (newQty > item.stockAtLocation) {
-          toast.error(`Only ${item.stockAtLocation} in stock`);
-          return prev;
-        }
-        next[idx] = { ...next[idx], quantity: newQty };
+        next[idx] = { ...next[idx], quantity: next[idx].quantity + 1 };
         return next;
       }
       return [...prev, {
@@ -217,6 +267,7 @@ export default function Pos() {
         variantIndex: item.variantIndex,
         name: item.name,
         price: item.price,
+        listPrice: item.price,
         quantity: 1,
         stockAtLocation: item.stockAtLocation,
       }];
@@ -251,18 +302,73 @@ export default function Pos() {
   };
   const removeLine = (idx) => setCart((prev) => prev.filter((_, i) => i !== idx));
 
-  // A per-sale price override wins over the catalogue price.
-  const unitOf = (c) => (c.priceOverride != null ? c.priceOverride : c.price);
+  // Hold the current bill (customer still deciding) and ring up others;
+  // picking a held bill swaps it with whatever is on screen.
+  const holdBill = () => {
+    if (cart.length === 0) return;
+    setHeld((h) => [...h, { id: Date.now(), cart, linkedCustomer, discount }]);
+    setCart([]);
+    setLinkedCustomer(null);
+    setDiscount(null);
+    lastAddedRef.current = null;
+    searchRef.current?.focus();
+  };
+  const resumeBill = (id) => {
+    const bill = held.find((b) => b.id === id);
+    if (!bill) return;
+    setHeld((h) => [
+      ...h.filter((b) => b.id !== id),
+      ...(cart.length > 0 ? [{ id: Date.now(), cart, linkedCustomer, discount }] : []),
+    ]);
+    setCart(bill.cart);
+    setLinkedCustomer(bill.linkedCustomer);
+    setDiscount(bill.discount);
+    lastAddedRef.current = null;   // a typed qty must not hit a line of the swapped-in bill
+    searchRef.current?.focus();
+  };
+  const dropBill = (id) => setHeld((h) => h.filter((b) => b.id !== id));
+
+  // Special price for this customer. Cuts below list count toward the
+  // manager-override discount threshold on the server.
+  const commitPrice = () => {
+    if (!priceEdit) return;
+    const p = parseFloat(priceEdit.value);
+    if (!(p >= 0)) {
+      toast.error('Enter a valid price');
+    } else {
+      setCart((prev) => prev.map((c, i) => (i === priceEdit.idx ? { ...c, price: +p.toFixed(3) } : c)));
+    }
+    setPriceEdit(null);
+    searchRef.current?.focus();
+  };
+
+  // Typed quantity: blank/0 keeps the old value, over-stock caps at stock.
+  const commitQty = () => {
+    if (qtyCancelRef.current) { qtyCancelRef.current = false; setQtyEdit(null); return; }
+    if (!qtyEdit) return;
+    const q = parseInt(qtyEdit.value, 10);
+    const line = cart[qtyEdit.idx];
+    if (!(q >= 1)) {
+      toast.error('Enter a quantity of at least 1');
+    } else if (line) {
+      if (q > line.stockAtLocation) toast.error(`Only ${line.stockAtLocation} in stock`);
+      setQty(qtyEdit.idx, q);
+    }
+    setQtyEdit(null);
+  };
+
+  // A line's price is what's charged — the catalogue price unless the
+  // cashier edited it (commitPrice). Line discounts come off that.
   const lineOffOf = (c) => {
     if (!c.lineDiscount) return 0;
-    const gross = unitOf(c) * c.quantity;
+    const gross = c.price * c.quantity;
     const v = parseFloat(c.lineDiscount.value) || 0;
     const calc = c.lineDiscount.kind === 'percentage' ? (gross * v) / 100 : v * c.quantity;
     return +Math.min(calc, gross).toFixed(3);
   };
 
   const cartCount = cart.reduce((n, c) => n + c.quantity, 0);
-  const subTotal = cart.reduce((s, c) => s + unitOf(c) * c.quantity, 0);
+  const subTotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
   const lineOffTotal = +cart.reduce((s, c) => s + lineOffOf(c), 0).toFixed(3);
   const afterLines = +Math.max(0, subTotal - lineOffTotal).toFixed(3);
   // Mirror the server's waterfall: lines → manual bill discount → coupon.
@@ -285,7 +391,7 @@ export default function Pos() {
   // Enter on a single result -> add. Enter with multiple -> add the
   // highlighted row. Arrows move the highlight. Escape clears the
   // query so the cashier can re-scan.
-  const onSearchKey = (e) => {
+  const onSearchKey = async (e) => {
     if (e.key === 'Escape') {
       setQuery('');
       setResults([]);
@@ -303,9 +409,43 @@ export default function Pos() {
     }
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    if (results.length === 1) addToCart(results[0]);
-    else if (results.length > 1) addToCart(results[Math.min(highlightIdx, results.length - 1)]);
-    else if (results.length === 0 && query.trim()) toast.error('No match');
+    // A short number typed in the scan box sets the quantity of the item
+    // just added (scan → 6 → Enter = 6 of it), so the cashier never leaves
+    // the box. Barcodes are longer than 4 digits; a number that is exactly a
+    // product code still adds that product.
+    const typed = query.trim();
+    const lastIdx = lastAddedRef.current
+      ? cart.findIndex((c) => `${c.productId}:${c.variantIndex ?? 'b'}` === lastAddedRef.current)
+      : -1;
+    if (/^\d{1,4}$/.test(typed) && lastIdx >= 0) {
+      clearTimeout(debounceRef.current);
+      const found = await runSearch(typed);
+      const isCode = (found || []).some((r) => String(r.code || '').toLowerCase() === typed.toLowerCase());
+      if (!isCode) {
+        setQuery('');
+        setResults([]);
+        const n = parseInt(typed, 10);
+        const line = cart[lastIdx];
+        if (n < 1) { toast.error('Enter a quantity of at least 1'); errorTone(); return; }
+        if (n > line.stockAtLocation) { toast.error(`Only ${line.stockAtLocation} in stock`); errorTone(); }
+        else beep();
+        setQty(lastIdx, n);
+        scrollToLine.current = lastAddedRef.current;
+        return;
+      }
+    }
+    let list = results;
+    let pick = highlightIdx;
+    if (latestQueryRef.current !== query || searching) {
+      // Results aren't for what's in the box yet (fresh scan) — search now.
+      clearTimeout(debounceRef.current);
+      list = await runSearch(query);
+      if (!list) return;
+      pick = 0;   // exact code/barcode matches come back first
+    }
+    if (list.length === 1) addToCart(list[0]);
+    else if (list.length > 1) addToCart(list[Math.min(pick, list.length - 1)]);
+    else if (query.trim()) { toast.error('No match'); errorTone(); }
   };
 
   const postSale = async (paymentPayload, managerOverride) => {
@@ -314,8 +454,8 @@ export default function Pos() {
         productId: c.productId,
         variantIndex: c.variantIndex,
         quantity: c.quantity,
+        price: c.price !== c.listPrice ? c.price : undefined,
         lineDiscount: c.lineDiscount || undefined,
-        priceOverride: c.priceOverride ?? undefined,
       })),
       userId: linkedCustomer?.id || undefined,
       couponCode: discount?.coupon?.code || undefined,
@@ -326,6 +466,7 @@ export default function Pos() {
     };
     const { data } = await api.post('/pos/sale', body);
     setReceipt(data);
+    setStockVersion((v) => v + 1);
     setCart([]);
     setLinkedCustomer(null);
     setDiscount(null);
@@ -343,6 +484,7 @@ export default function Pos() {
       await postSale({
         method: payOpen,
         amountTendered: payOpen === 'cash' ? parseFloat(tendered) : total,
+        cardType: payOpen === 'card' ? cardType : undefined,
       });
     } catch (err) {
       if (err.response?.data?.requires === 'manager_override') {
@@ -351,6 +493,7 @@ export default function Pos() {
           retry: (override) => postSale({
             method: payOpen,
             amountTendered: payOpen === 'cash' ? parseFloat(tendered) : total,
+            cardType: payOpen === 'card' ? cardType : undefined,
           }, override),
         });
       } else {
@@ -385,6 +528,21 @@ export default function Pos() {
     navigate(`${STAFF_BASE}/login`);
   };
 
+  // No-sale drawer open: kick via the receipt printer, then log it.
+  const openDrawer = async () => {
+    if (!usbSupported() || !printerEnabled('receipt')) {
+      toast.error('Receipt printer not set up — pair it under Printer');
+      return;
+    }
+    try {
+      await kickDrawer();
+    } catch (err) {
+      toast.error(`Drawer did not open: ${err.message}`);
+      return;
+    }
+    api.post('/pos/drawer-open').catch(() => {});
+  };
+
   const openXReport = async () => {
     try {
       const { data } = await api.get('/reports/x');
@@ -408,7 +566,13 @@ export default function Pos() {
       setCloseForm(null);
       if (zData) {
         // Overlay merges the freshly closed counts.
-        setReport({ ...zData, closingCash: data.session.closingCash, variance: data.variance, type: 'Z' });
+        // zData.session was fetched before the close, so take closedAt from the
+        // close response (falling back to now) or the Z-report shows "Closed: —".
+        setReport({
+          ...zData,
+          session: { ...zData.session, closedAt: data.session?.closedAt || new Date().toISOString() },
+          closingCash: data.session.closingCash, variance: data.variance, type: 'Z',
+        });
       } else {
         navigate(`${STAFF_BASE}/login`);
       }
@@ -445,6 +609,9 @@ export default function Pos() {
         </button>
         <button className="rail-btn" onClick={() => setLabelPrintOpen(true)} title="Print barcode labels">
           <HiTag size={22} /><span>Labels</span>
+        </button>
+        <button className="rail-btn" onClick={openDrawer} title="Open cash drawer (no sale)">
+          <HiInbox size={22} /><span>Drawer</span>
         </button>
         <div className="rail-spacer" />
         <button className="rail-btn" onClick={() => setPrinterOpen(true)} title="Printer">
@@ -560,6 +727,7 @@ export default function Pos() {
                         <div>Scan a barcode or type a product name</div>
                         <div style={{ fontSize: 12, marginTop: 8, color: 'var(--pos-text-3)' }}>
                           Press <kbd className="kbd-inline">↵</kbd> to add · <kbd className="kbd-inline">Esc</kbd> to clear
+                          <br />After adding, type a quantity + <kbd className="kbd-inline">↵</kbd> to change it
                         </div>
                       </div>
                     )}
@@ -601,41 +769,98 @@ export default function Pos() {
           </button>
           <div className="cart-header">
             <h2>Cart</h2>
-            {cart.length > 0 && <button className="link-btn" onClick={() => setCart([])}>Clear</button>}
+            {cart.length > 0 && (
+              <span style={{ display: 'flex', gap: '0.9rem' }}>
+                <button className="link-btn" onClick={holdBill} title="Put this bill aside and start another">Hold</button>
+                <button className="link-btn" onClick={() => setCart([])}>Clear</button>
+              </span>
+            )}
           </div>
+          {held.length > 0 && (
+            <div className="held-bills">
+              {held.map((b, n) => (
+                <span key={b.id} className="held-bill">
+                  <button onClick={() => resumeBill(b.id)} title={cart.length > 0 ? 'Switch to this bill (the current one is held)' : 'Resume this bill'}>
+                    {b.linkedCustomer?.name || `Bill ${n + 1}`} · {b.cart.reduce((s, c) => s + c.quantity, 0)} items · {fmt(b.cart.reduce((s, c) => s + c.price * c.quantity, 0))}
+                  </button>
+                  <button className="held-bill-x" onClick={() => dropBill(b.id)} aria-label="Discard held bill" title="Discard">×</button>
+                </span>
+              ))}
+            </div>
+          )}
 
-          <div className="cart-list">
+          <div className="cart-list" ref={cartListRef}>
             {cart.length === 0 && <div className="cart-empty">No items yet</div>}
             {cart.map((c, i) => (
-              <div key={i} className="cart-line">
+              <div key={i} className="cart-line" data-line={`${c.productId}:${c.variantIndex ?? 'b'}`}>
                 <div className="cart-line-info">
                   <div className="cart-line-name">{c.name}</div>
-                  <div className="cart-line-price">
-                    {c.priceOverride != null ? (
-                      <>
-                        <s>{fmt(c.price)}</s> <strong>{fmt(c.priceOverride)}</strong> ea
-                      </>
-                    ) : `${fmt(c.price)} ea`}
-                    {c.lineDiscount && (
-                      <span className="line-off">
-                        {' '}−{c.lineDiscount.kind === 'percentage'
-                          ? `${c.lineDiscount.value}%`
-                          : fmt(c.lineDiscount.value)}
-                      </span>
-                    )}
-                  </div>
+                  {priceEdit?.idx === i ? (
+                    <input
+                      className="cart-line-price-input"
+                      type="number" min="0" step="0.001" autoFocus
+                      value={priceEdit.value}
+                      onChange={(e) => setPriceEdit({ idx: i, value: e.target.value })}
+                      onBlur={commitPrice}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitPrice();
+                        if (e.key === 'Escape') { setPriceEdit(null); searchRef.current?.focus(); }
+                      }}
+                    />
+                  ) : (
+                    <button
+                      className="cart-line-price"
+                      title="Edit price"
+                      onClick={() => setPriceEdit({ idx: i, value: String(c.price) })}
+                    >
+                      {c.price !== c.listPrice && <s>{fmt(c.listPrice)}</s>} {fmt(c.price)} ea ✎
+                    </button>
+                  )}
+                  {c.lineDiscount && (
+                    <span className="line-off">
+                      −{c.lineDiscount.kind === 'percentage'
+                        ? `${c.lineDiscount.value}%`
+                        : fmt(c.lineDiscount.value)}
+                    </span>
+                  )}
                   <div className="cart-line-actions">
                     <button onClick={() => setLineDiscountFor(i)}>% off</button>
-                    <button onClick={() => setPriceOverrideFor(i)}>Price</button>
                   </div>
                 </div>
                 <div className="cart-line-controls">
                   <button onClick={() => setQty(i, c.quantity - 1)}>−</button>
-                  <span>{c.quantity}</span>
-                  <button onClick={() => setQty(i, c.quantity + 1)}>+</button>
+                  <input
+                    className="cart-line-qty"
+                    type="text" inputMode="numeric" maxLength={String(c.stockAtLocation).length}
+                    aria-label={`Quantity of ${c.name}`}
+                    value={qtyEdit?.idx === i ? qtyEdit.value : c.quantity}
+                    onFocus={(e) => { setQtyEdit({ idx: i, value: String(c.quantity) }); e.target.select(); }}
+                    // Digits only (a number input took "1e9"), and never more
+                    // than is in stock — the box stops at the stock figure.
+                    onChange={(e) => {
+                      let value = e.target.value.replace(/\D/g, '');
+                      if (value && parseInt(value, 10) > c.stockAtLocation) {
+                        value = String(c.stockAtLocation);
+                        toast.error(`Only ${c.stockAtLocation} in stock`, { id: 'pos-qty-stock' });
+                      }
+                      setQtyEdit({ idx: i, value });
+                    }}
+                    onBlur={commitQty}
+                    // Leaving the box is what commits (onBlur), so Enter just
+                    // hands focus back to the scanner; Esc flags the blur that
+                    // follows to drop the typed value instead.
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') searchRef.current?.focus();
+                      if (e.key === 'Escape') { qtyCancelRef.current = true; searchRef.current?.focus(); }
+                    }}
+                  />
+                  <button onClick={() => {
+                    if (c.quantity >= c.stockAtLocation) toast.error(`Only ${c.stockAtLocation} in stock`, { id: 'pos-qty-stock' });
+                    else setQty(i, c.quantity + 1);
+                  }}>+</button>
                   <button onClick={() => removeLine(i)} className="cart-remove">✕</button>
                 </div>
-                <div className="cart-line-total">{fmt(unitOf(c) * c.quantity - lineOffOf(c))}</div>
+                <div className="cart-line-total">{fmt(c.price * c.quantity - lineOffOf(c))}</div>
               </div>
             ))}
           </div>
@@ -692,7 +917,7 @@ export default function Pos() {
             </button>
             <button
               disabled={cart.length === 0}
-              onClick={() => setPayOpen('card')}
+              onClick={() => { setPayOpen('card'); setCardType(null); }}
               className="pay-btn pay-btn-card">
               <HiCreditCard size={22} /> Card
             </button>
@@ -772,22 +997,35 @@ export default function Pos() {
                   Change: <strong>{fmt(Math.max(0, cashChange))}</strong>
                 </div>
                 <div className="quick-cash">
-                  {[total, Math.ceil(total), Math.ceil(total / 5) * 5, Math.ceil(total / 10) * 10].map((v, i) => (
-                    <button key={i} onClick={() => setTendered(v.toFixed(3))}>{fmt(v)}</button>
+                  {/* Round totals make several suggestions equal — show each amount once. */}
+                  {[...new Set([total, Math.ceil(total), Math.ceil(total / 5) * 5, Math.ceil(total / 10) * 10].map((v) => v.toFixed(3)))].map((v) => (
+                    <button key={v} onClick={() => setTendered(v)}>{fmt(v)}</button>
                   ))}
                 </div>
               </>
             )}
             {payOpen === 'card' && (
+              <div className="card-types">
+                {CARD_TYPES.map((c) => (
+                  <button key={c.value} onClick={() => setCardType(c.value)}
+                    className={cardType === c.value ? 'active' : ''}>
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {payOpen === 'card' && (
               <p style={{ color: '#94a3b8', fontSize: 14 }}>
-                Charge the customer on the card terminal, then confirm below.
+                {!cardType
+                  ? 'Choose the card type above.'
+                  : 'Charge the customer on the card terminal, then confirm below.'}
               </p>
             )}
             <div className="modal-actions">
               <button onClick={() => setPayOpen(null)} disabled={submitting} className="modal-btn modal-btn-secondary">Cancel</button>
               <button
                 onClick={submitSale}
-                disabled={submitting || (payOpen === 'cash' && cashChange < 0)}
+                disabled={submitting || (payOpen === 'cash' && cashChange < 0) || (payOpen === 'card' && !cardType)}
                 className="modal-btn modal-btn-primary">
                 {submitting ? 'Processing…' : 'Confirm'}
               </button>
@@ -828,13 +1066,18 @@ export default function Pos() {
       {/* ─── Receipt overlay ──────────────────── */}
       {/* PosReceipt renders its own overlay via a body portal (print isolation). */}
       {receipt && (
-        <PosReceipt payload={receipt} currency={CURRENCY} onClose={() => setReceipt(null)} />
+        <PosReceipt
+          payload={receipt}
+          currency={CURRENCY}
+          autoPrint={!receiptReprint}
+          onClose={() => { setReceipt(null); setReceiptReprint(false); }}
+        />
       )}
 
       {/* ─── X/Z report overlay ───────────────── */}
       {/* PosReportReceipt renders its own overlay via a body portal (print isolation). */}
       {report && (
-        <PosReportReceipt report={report} currency={CURRENCY} onClose={closeReport} />
+        <PosReportReceipt report={report} currency={CURRENCY} onClose={closeReport} autoPrint={report.type === 'Z'} />
       )}
 
       {/* ─── Printer settings ─────────────────── */}
@@ -860,7 +1103,7 @@ export default function Pos() {
           onClose={() => setRecentOpen(false)}
           onNeedOverride={(req) => setPendingOverride(req)}
           onEdit={(orderNumber) => { setRecentOpen(false); setEditBill(orderNumber); }}
-          onPrint={(payload) => { setRecentOpen(false); setReceipt(payload); }}
+          onPrint={(payload) => { setRecentOpen(false); setReceiptReprint(true); setReceipt(payload); }}
         />
       )}
 
@@ -920,23 +1163,12 @@ export default function Pos() {
         <PosLabelPrint currency={CURRENCY} onClose={() => setLabelPrintOpen(false)} />
       )}
 
-      {priceOverrideFor != null && cart[priceOverrideFor] && (
-        <PosPriceOverrideModal
-          line={cart[priceOverrideFor]}
-          currency={CURRENCY}
-          onApply={(p) => setCart((prev) => prev.map((c, i) => (
-            i === priceOverrideFor ? { ...c, priceOverride: p } : c
-          )))}
-          onClose={() => setPriceOverrideFor(null)}
-        />
-      )}
-
       {/* ─── Return flow + receipt ────────────── */}
       {returnOpen && (
         <PosReturnModal
           currency={CURRENCY}
           onClose={() => setReturnOpen(false)}
-          onComplete={(data) => { setReturnOpen(false); setReturnReceipt(data); }}
+          onComplete={(data) => { setReturnOpen(false); setReturnReceipt(data); setStockVersion((v) => v + 1); }}
           onNeedOverride={(req) => setPendingOverride({
             reason: req.reason,
             retry: async (override) => {
@@ -969,10 +1201,14 @@ export default function Pos() {
           --pos-warn: #fbbf24;
           --pos-danger: #ef4444;
 
-          min-height: 100vh; background: var(--pos-bg); color: var(--pos-text);
+          /* Exactly the window's height: the cart and the results list scroll
+             inside their panels. With min-height a long cart grew the whole
+             page instead, so the cart itself never scrolled. */
+          height: 100vh; height: 100dvh; overflow: hidden;
+          background: var(--pos-bg); color: var(--pos-text);
           display: grid;
           grid-template-columns: 88px 1fr;
-          grid-template-rows: 56px 1fr;
+          grid-template-rows: 56px minmax(0, 1fr);
           grid-template-areas: "rail topbar" "rail grid";
           font-family: -apple-system, 'SF Pro Text', 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
           font-feature-settings: 'tnum' 1;
@@ -1064,7 +1300,7 @@ export default function Pos() {
           }
           .rail-brand { display: none; }
           .rail-spacer { display: none; }
-          /* min-width:0 so all eight actions share the width evenly — at
+          /* min-width:0 so all nine actions share the width evenly — at
              56px the last one (Exit) fell off the edge behind a scroll. */
           .rail-btn { width: auto; min-width: 0; flex: 1 1 0; font-size: 9.5px; padding: 6px 1px; }
           .rail-btn span { white-space: nowrap; }
@@ -1299,7 +1535,28 @@ export default function Pos() {
         .link-btn { background: transparent; border: none; color: var(--pos-accent); cursor: pointer; font-size: 0.82rem; padding: 0; font-family: inherit; }
         .link-btn:hover { color: #f08d6c; text-decoration: underline; }
 
-        .cart-list { flex: 1; overflow-y: auto; min-height: 100px; margin: 0 -0.25rem; padding: 0 0.25rem; }
+        .held-bills { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: -0.25rem 0 0.75rem; flex-shrink: 0; }
+        .held-bill { display: inline-flex; align-items: center; background: var(--pos-accent-soft); border-radius: 100px; }
+        .held-bill button {
+          background: transparent; border: none; color: var(--pos-accent); cursor: pointer;
+          font-family: inherit; font-size: 0.78rem; font-weight: 600; padding: 0.3rem 0.2rem 0.3rem 0.7rem;
+        }
+        .held-bill .held-bill-x { padding: 0.3rem 0.6rem 0.3rem 0.3rem; font-size: 0.95rem; line-height: 1; }
+        .held-bill button:hover { text-decoration: underline; }
+        .cart-header, .cart-customer, .cart-totals { flex-shrink: 0; }
+        .cart-list {
+          flex: 1; overflow-y: auto; min-height: 100px; margin: 0 -0.25rem; padding: 0 0.5rem 0 0.25rem;
+          overscroll-behavior: contain;
+          scrollbar-gutter: stable;
+        }
+        /* Always-visible scrollbar, so it's obvious there's more cart below. */
+        .cart-list, .results-list { scrollbar-width: auto; scrollbar-color: rgba(255,255,255,0.32) var(--pos-elevated); }
+        .cart-list::-webkit-scrollbar, .results-list::-webkit-scrollbar { width: 10px; }
+        .cart-list::-webkit-scrollbar-track, .results-list::-webkit-scrollbar-track { background: var(--pos-elevated); border-radius: 5px; }
+        .cart-list::-webkit-scrollbar-thumb, .results-list::-webkit-scrollbar-thumb {
+          background: rgba(255,255,255,0.32); border-radius: 5px; border: 2px solid var(--pos-elevated);
+        }
+        .cart-list::-webkit-scrollbar-thumb:hover, .results-list::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
         .cart-empty { padding: 3rem 0; text-align: center; color: var(--pos-text-3); font-size: 0.85rem; }
         .cart-line {
           display: grid; grid-template-columns: 1fr auto auto; gap: 0.6rem;
@@ -1308,10 +1565,7 @@ export default function Pos() {
         }
         .cart-line:last-child { border-bottom: none; }
         .cart-line-name { font-size: 0.88rem; font-weight: 500; line-height: 1.25; }
-        .cart-line-price { font-size: 0.72rem; color: var(--pos-text-2); margin-top: 2px; }
-        .cart-line-price s { opacity: 0.55; }
-        .cart-line-price strong { color: var(--pos-accent); }
-        .line-off { color: var(--pos-warn); }
+        .line-off { color: var(--pos-warn); font-size: 0.72rem; margin-left: 0.4rem; }
         .cart-line-actions { display: flex; gap: 0.3rem; margin-top: 4px; }
         .cart-line-actions button {
           background: transparent; color: var(--pos-text-3);
@@ -1319,6 +1573,17 @@ export default function Pos() {
           padding: 0.1rem 0.35rem; font-size: 0.68rem; cursor: pointer;
         }
         .cart-line-actions button:hover { color: var(--pos-text); border-color: var(--pos-border-strong); }
+        .cart-line-price {
+          font-size: 0.72rem; color: var(--pos-text-2); margin-top: 2px;
+          background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
+        }
+        .cart-line-price:hover { color: var(--pos-accent); }
+        .cart-line-price s { color: var(--pos-text-3); }
+        .cart-line-price-input {
+          width: 90px; margin-top: 2px; padding: 2px 6px; font-size: 0.8rem;
+          border: 1px solid var(--pos-accent); border-radius: 6px;
+          background: var(--pos-elevated); color: var(--pos-text); font-family: inherit;
+        }
         .cart-line-controls { display: flex; align-items: center; gap: 4px; }
         .cart-line-controls button {
           width: 28px; height: 28px;
@@ -1328,7 +1593,14 @@ export default function Pos() {
           font-family: inherit; font-size: 14px; display: grid; place-items: center;
         }
         .cart-line-controls button:hover { background: var(--pos-accent-soft); border-color: var(--pos-accent); color: var(--pos-accent); }
-        .cart-line-controls span { min-width: 24px; text-align: center; font-size: 0.9rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+        .cart-line-qty {
+          width: 44px; height: 28px; padding: 0 4px; text-align: center;
+          font-size: 0.9rem; font-weight: 500; font-variant-numeric: tabular-nums; font-family: inherit;
+          border: 1px solid transparent; border-radius: 8px;
+          background: transparent; color: var(--pos-text);
+        }
+        .cart-line-qty:hover { border-color: var(--pos-border-strong); }
+        .cart-line-qty:focus { outline: none; border-color: var(--pos-accent); background: var(--pos-elevated); }
         .cart-remove { color: var(--pos-danger) !important; border-color: rgba(239,68,68,0.3) !important; }
         .cart-remove:hover { background: rgba(239,68,68,0.12) !important; border-color: var(--pos-danger) !important; }
         .cart-line-total { font-size: 0.9rem; font-weight: 600; min-width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
@@ -1421,6 +1693,13 @@ export default function Pos() {
           color: #cbd5e1; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 0.85rem;
         }
         .quick-cash button:hover { background: #334155; }
+        .card-types { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin: 0.75rem 0; }
+        .card-types button {
+          padding: 0.8rem 0.5rem; background: #0f172a; border: 1px solid #334155;
+          color: #cbd5e1; border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 0.95rem; font-weight: 600;
+        }
+        .card-types button:hover { background: #334155; }
+        .card-types button.active { background: var(--pos-card); border-color: var(--pos-card); color: #fff; }
 
         .modal-actions { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
         .modal-btn {

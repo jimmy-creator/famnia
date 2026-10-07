@@ -22,6 +22,14 @@ const Product = sequelize.define('Product', {
     allowNull: true,
     unique: 'product_code_unique',
   },
+  barcode: {
+    // Printed/scannable code (EAN-13, UPC…) — often the manufacturer's, so it
+    // is kept separate from the internal SKU in `code`. POS and stock counts
+    // match a scan against either.
+    type: DataTypes.STRING,
+    allowNull: true,
+    unique: 'product_barcode_unique',
+  },
   description: {
     type: DataTypes.TEXT,
     allowNull: true,
@@ -52,6 +60,13 @@ const Product = sequelize.define('Product', {
   // changes later.
   costPrice: {
     type: DataTypes.DECIMAL(10, 3),
+    allowNull: true,
+  },
+  // Markup on cost, in %. When set, price = costPrice × (1 + marginPercent/100):
+  // recomputed on save and whenever a received PO brings a new landed cost.
+  // A price typed by hand (without the margin) clears it.
+  marginPercent: {
+    type: DataTypes.DECIMAL(6, 2),
     allowNull: true,
   },
   category: {
@@ -129,9 +144,26 @@ const Product = sequelize.define('Product', {
     defaultValue: null,
   },
   variants: {
-    // e.g. [{ options: {Size:"M",Color:"Red"}, sku:"SKU-M-RED", price:null, stock:10 }]
+    // e.g. [{ options: {Size:"M",Color:"Red"}, sku:"SKU-M-RED", barcode:"6281234567890", price:null, stock:10 }]
     type: DataTypes.JSON,
     defaultValue: null,
+  },
+  reorderLevel: {
+    // Product-wide reorder point. ProductStock.reorderThreshold overrides
+    // this per location when set; this is the fallback for the whole catalogue.
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  reorderQty: {
+    // Suggested quantity to order when stock falls to reorderLevel.
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  preferredSupplierId: {
+    // Default supplier used when auto-drafting a purchase order from the
+    // reorder report.
+    type: DataTypes.INTEGER,
+    allowNull: true,
   },
 });
 

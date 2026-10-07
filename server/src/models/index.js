@@ -30,6 +30,7 @@ import Counter from './Counter.js';
 import FixedAsset from './FixedAsset.js';
 import DepreciationEntry from './DepreciationEntry.js';
 import CapitalEntry from './CapitalEntry.js';
+import Wastage from './Wastage.js';
 import sequelize from '../config/database.js';
 
 // ── MariaDB JSON-column fix ──────────────────────────────────────
@@ -38,6 +39,9 @@ import sequelize from '../config/database.js';
 // parsed values — which makes `product.images[0]` return "[" and crashes the
 // admin edit form. Parse any JSON-typed attribute that came back as a string
 // after every query. No-op on MySQL, where values arrive already parsed.
+// Included associations are walked too: afterFind only fires for the top-level
+// model, so a PO's PurchaseReceipts.items stayed a string and the PO view
+// crashed calling .reduce() on it.
 sequelize.addHook('afterFind', (result) => {
   if (!result) return;
   const parseRow = (row) => {
@@ -49,6 +53,11 @@ sequelize.addHook('afterFind', (result) => {
       if (typeof v === 'string') {
         try { row.setDataValue(key, JSON.parse(v)); } catch { /* leave raw */ }
       }
+    }
+    for (const key of Object.keys(row.constructor.associations || {})) {
+      const inc = row.dataValues[key];
+      if (Array.isArray(inc)) inc.forEach(parseRow);
+      else if (inc) parseRow(inc);
     }
   };
   const rows = Array.isArray(result) ? result : (result.rows && Array.isArray(result.rows) ? result.rows : [result]);
@@ -182,6 +191,18 @@ StockCount.belongsTo(Expense, { as: 'shrinkageExpense', foreignKey: 'shrinkageEx
 StockCount.hasMany(StockCountLine, { as: 'lines', foreignKey: 'stockCountId', onDelete: 'CASCADE' });
 StockCountLine.belongsTo(StockCount, { foreignKey: 'stockCountId' });
 StockCountLine.belongsTo(Product, { foreignKey: 'productId' });
+
+// A product's default supplier, used by the reorder report to draft POs.
+Product.belongsTo(Supplier, { as: 'preferredSupplier', foreignKey: 'preferredSupplierId' });
+
+// ── Wastage / spoilage ──────────────────────────────────────────
+Product.hasMany(Wastage, { foreignKey: 'productId' });
+Wastage.belongsTo(Product, { foreignKey: 'productId' });
+Location.hasMany(Wastage, { foreignKey: 'locationId' });
+Wastage.belongsTo(Location, { foreignKey: 'locationId' });
+Wastage.belongsTo(Expense, { foreignKey: 'expenseId' });
+Wastage.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
+Wastage.belongsTo(User, { as: 'approver', foreignKey: 'managerOverrideBy' });
 
 // ── Keep Product.stock in sync with SUM(ProductStock.quantity) ───
 // Called explicitly by routes after they mutate ProductStock (and after
@@ -380,6 +401,7 @@ export {
   StockCount, StockCountLine,
   Counter,
   FixedAsset, DepreciationEntry, CapitalEntry,
+  Wastage,
 };
 
 // ── Activity log + manager-override helpers ─────────────────────

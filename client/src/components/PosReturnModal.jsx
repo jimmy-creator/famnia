@@ -2,9 +2,11 @@
  * POS Return modal.
  *
  * Flow:
- *  1. Cashier types/scans an order number.
+ *  1. Cashier types/scans an order number — or picks "No receipt", scans the
+ *     items straight in, and they are refunded at today's selling price.
  *  2. Order loads with each line's max-returnable quantity (original − already
- *     returned). Cashier picks quantities, chooses "return to stock" or not.
+ *     returned). Cashier scans the items being handed back (or sets
+ *     quantities by hand), chooses "return to stock" or not.
  *  3. Cashier picks refund method (cash / card / store credit), optional reason.
  *  4. Submit -> creates SalesReturn server-side -> parent shows a printable
  *     return receipt.
@@ -21,6 +23,9 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookup, setLookup] = useState(null);          // { order, returnedSoFar }
   const [lines, setLines] = useState([]);              // [{...orderItem, returnQty, returnToStock, maxReturnable, key}]
+  // No-receipt return: no order to pick from, items are scanned in and
+  // refunded at today's selling price (the server prices them).
+  const [noReceipt, setNoReceipt] = useState(false);
   const [refundMethod, setRefundMethod] = useState('cash');
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
@@ -63,6 +68,42 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
     }
   };
 
+  const startNoReceipt = () => {
+    setLookup(null);
+    setLines([]);
+    setNoReceipt(true);
+    setStep('pick');
+  };
+
+  // No-receipt: resolve a scanned barcode through the till's own product
+  // search (product code or variant SKU) and add it as a new line.
+  const addScannedProduct = async (raw) => {
+    const code = raw.toUpperCase();
+    try {
+      const { data } = await api.get('/pos/products', { params: { q: raw } });
+      const exact = data.filter((r) => (r.code || '').toUpperCase() === code);
+      const hit = exact[0] || (data.length === 1 ? data[0] : null);
+      if (!hit) {
+        toast.error(data.length > 1 ? `${data.length} products match "${raw}" — scan the barcode` : `${raw} not found`);
+        return;
+      }
+      if (hit.hasVariants) {
+        toast.error(`${hit.name} comes in options — scan that option's own barcode`);
+        return;
+      }
+      const k = `${hit.productId}:${hit.variantIndex ?? 'b'}`;
+      setLines((prev) => [...prev, {
+        productId: hit.productId, variantIndex: hit.variantIndex ?? null,
+        name: hit.name, sku: hit.code, price: hit.price,
+        returnQty: 1, maxReturnable: Infinity, alreadyReturned: 0,
+        returnToStock: true, _key: k,
+      }]);
+      toast.success(`${hit.name} × 1`, { id: 'return-scan' });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Lookup failed');
+    }
+  };
+
   const setLineQty = (k, q) => {
     setLines((prev) => prev.map((l) => {
       if (l._key !== k) return l;
@@ -70,6 +111,33 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
       return { ...l, returnQty: clamped };
     }));
   };
+  // Scanning an item on the pick step adds one of it to the return. A line
+  // matches on the barcode the till sold it under (its snapshot SKU / product
+  // code, or the variant SKU) or the `P<id>` fallback printed on labels for
+  // products with no code.
+  const [scanCode, setScanCode] = useState('');
+  const scanItem = (e) => {
+    e.preventDefault();
+    const raw = scanCode.trim();
+    const code = raw.toUpperCase();
+    setScanCode('');
+    if (!code) return;
+    const matches = lines.filter((l) => [l.sku, l.variant?.sku, `P${l.productId}`]
+      .some((c) => c && String(c).toUpperCase() === code));
+    if (matches.length === 0) {
+      if (noReceipt) addScannedProduct(raw);
+      else toast.error(`${code} is not on this order`);
+      return;
+    }
+    const line = matches.find((l) => l.returnQty < l.maxReturnable);
+    if (!line) {
+      toast.error(`All of ${matches[0].name} already picked or returned`);
+      return;
+    }
+    setLineQty(line._key, line.returnQty + 1);
+    toast.success(`${line.name} × ${line.returnQty + 1}`, { id: 'return-scan' });
+  };
+
   const toggleToStock = (k) => {
     setLines((prev) => prev.map((l) => l._key === k ? { ...l, returnToStock: !l.returnToStock } : l));
   };
@@ -92,7 +160,8 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
         returnToStock: l.returnToStock,
       }));
     const { data } = await api.post('/returns', {
-      orderId: lookup.order.id,
+      // Omitted for a no-receipt return — the server prices items itself.
+      orderId: lookup?.order.id,
       items,
       refundMethod,
       reason: reason || undefined,
@@ -141,6 +210,9 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
               autoFocus
             />
             <div className="modal-actions">
+              <button type="button" onClick={startNoReceipt} className="modal-btn modal-btn-secondary">
+                No receipt — scan items
+              </button>
               <button type="submit" disabled={lookupBusy || !orderNumber.trim()} className="modal-btn modal-btn-primary">
                 {lookupBusy ? 'Searching…' : 'Find order'}
               </button>
@@ -148,21 +220,46 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
           </form>
         )}
 
-        {step === 'pick' && lookup && (
+        {step === 'pick' && (lookup || noReceipt) && (
           <>
-            <div style={{ background: '#0f172a', padding: '0.75rem 1rem', borderRadius: 8, margin: '1rem 0', fontSize: 13 }}>
-              <div><strong>{lookup.order.orderNumber}</strong></div>
-              <div style={{ color: '#94a3b8' }}>
-                Total {fmt(lookup.order.totalAmount)} · {(lookup.order.items || []).length} items · paid {lookup.order.paymentMethod}
-              </div>
-              {lookup.priorReturns > 0 && (
-                <div style={{ color: '#fbbf24', fontSize: 12, marginTop: 4 }}>
-                  {lookup.priorReturns} prior return{lookup.priorReturns > 1 ? 's' : ''} on this order
+            {lookup ? (
+              <div style={{ background: '#0f172a', padding: '0.75rem 1rem', borderRadius: 8, margin: '1rem 0', fontSize: 13 }}>
+                <div><strong>{lookup.order.orderNumber}</strong></div>
+                <div style={{ color: '#94a3b8' }}>
+                  Total {fmt(lookup.order.totalAmount)} · {(lookup.order.items || []).length} items · paid {lookup.order.paymentMethod}
                 </div>
-              )}
-            </div>
+                {lookup.priorReturns > 0 && (
+                  <div style={{ color: '#fbbf24', fontSize: 12, marginTop: 4 }}>
+                    {lookup.priorReturns} prior return{lookup.priorReturns > 1 ? 's' : ''} on this order
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ background: '#0f172a', padding: '0.75rem 1rem', borderRadius: 8, margin: '1rem 0', fontSize: 13 }}>
+                <div><strong>No receipt</strong></div>
+                <div style={{ color: '#94a3b8' }}>
+                  Scan each item the customer is returning. Refunded at today&apos;s selling price.
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={scanItem} style={{ marginBottom: '0.75rem' }}>
+              <label className="modal-label">Scan item to return</label>
+              <input
+                ref={inputRef}
+                className="modal-input"
+                placeholder="Scan barcode — each scan adds one"
+                value={scanCode}
+                onChange={(e) => setScanCode(e.target.value)}
+              />
+            </form>
 
             <div style={{ maxHeight: '50vh', overflowY: 'auto', borderTop: '1px solid #334155' }}>
+              {lines.length === 0 && (
+                <div style={{ padding: '1rem 0', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                  No items yet — scan the first one
+                </div>
+              )}
               {lines.map((l) => {
                 const isExhausted = l.maxReturnable < 1;
                 return (
@@ -176,7 +273,8 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
                     <div>
                       <div style={{ fontSize: 14 }}>{l.name}</div>
                       <div style={{ fontSize: 12, color: '#94a3b8' }}>
-                        {fmt(l.price)} ea · sold {l.quantity}
+                        {fmt(l.price)} ea
+                        {!noReceipt && ` · sold ${l.quantity}`}
                         {l.alreadyReturned > 0 && ` · returned ${l.alreadyReturned}`}
                       </div>
                       {!isExhausted && (
@@ -196,7 +294,7 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
                         disabled={isExhausted || l.returnQty <= 0}
                         style={qtyBtn}>−</button>
                       <input
-                        type="number" min={0} max={l.maxReturnable}
+                        type="number" min={0} max={Number.isFinite(l.maxReturnable) ? l.maxReturnable : undefined}
                         value={l.returnQty}
                         onChange={(e) => setLineQty(l._key, e.target.value)}
                         disabled={isExhausted}
@@ -206,7 +304,9 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
                         onClick={() => setLineQty(l._key, l.returnQty + 1)}
                         disabled={isExhausted || l.returnQty >= l.maxReturnable}
                         style={qtyBtn}>+</button>
-                      <span style={{ fontSize: 10, color: '#64748b', marginLeft: 4 }}>/{l.maxReturnable}</span>
+                      {Number.isFinite(l.maxReturnable) && (
+                        <span style={{ fontSize: 10, color: '#64748b', marginLeft: 4 }}>/{l.maxReturnable}</span>
+                      )}
                     </div>
                     <div style={{ minWidth: 70, textAlign: 'right', fontSize: 14, fontWeight: 600 }}>
                       {l.returnQty > 0 ? fmt(l.price * l.returnQty) : '—'}
@@ -222,7 +322,7 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
             </div>
 
             <div className="modal-actions">
-              <button onClick={() => setStep('lookup')} className="modal-btn modal-btn-secondary">Back</button>
+              <button onClick={() => { setStep('lookup'); setNoReceipt(false); }} className="modal-btn modal-btn-secondary">Back</button>
               <button onClick={goToPay} disabled={refundTotal <= 0} className="modal-btn modal-btn-primary">
                 Next: refund method
               </button>

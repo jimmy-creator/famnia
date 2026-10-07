@@ -4,6 +4,7 @@
  *   GET    /api/purchase-orders                 list with filters
  *   POST   /api/purchase-orders                 create (draft|sent)
  *   GET    /api/purchase-orders/:id             detail + receipts + payments
+ *   GET    /api/purchase-orders/:id/pdf         printable PO for the supplier
  *   PUT    /api/purchase-orders/:id             update (only when draft/sent)
  *   POST   /api/purchase-orders/:id/send        mark sent
  *   POST   /api/purchase-orders/:id/cancel      cancel (only if nothing received)
@@ -32,6 +33,9 @@ import {
   recomputeProductStock, writeCashTxn,
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
+import { rangeStart, rangeEnd } from '../utils/dates.js';
+import { generatePurchaseOrderPdf } from '../services/purchaseDocs.js';
+import { priceFromMargin } from '../utils/pricing.js';
 
 const router = Router();
 
@@ -50,8 +54,8 @@ router.get('/', protect, async (req, res) => {
     if (req.query.status) where.status = req.query.status;
     if (req.query.paymentStatus) where.paymentStatus = req.query.paymentStatus;
     if (req.query.from || req.query.to) {
-      const from = req.query.from ? new Date(req.query.from) : new Date('1970-01-01');
-      const to = req.query.to ? new Date(req.query.to) : new Date('2999-12-31');
+      const from = req.query.from ? rangeStart(req.query.from) : new Date('1970-01-01');
+      const to = req.query.to ? rangeEnd(req.query.to) : new Date('2999-12-31');
       where.createdAt = { [Op.between]: [from, to] };
     }
     const rows = await PurchaseOrder.findAll({
@@ -86,6 +90,32 @@ router.get('/:id', protect, async (req, res) => {
     });
     if (!po) return res.status(404).json({ message: 'PO not found' });
     res.json(po);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── PDF (opens in the browser to print or save) ───────────────────
+router.get('/:id/pdf', protect, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    const po = await PurchaseOrder.findByPk(req.params.id, {
+      include: [
+        { model: Supplier },
+        { model: Location, attributes: ['id', 'name', 'code', 'address'] },
+        { model: User, as: 'creator', attributes: ['id', 'name'] },
+      ],
+    });
+    if (!po) return res.status(404).json({ message: 'PO not found' });
+    const pdf = await generatePurchaseOrderPdf(po.toJSON());
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${po.poNumber}.pdf"`,
+      'Content-Length': pdf.length,
+    });
+    res.send(pdf);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -144,7 +174,9 @@ function applyLandedCost(items, shippingCost = 0) {
     const qty = it.orderedQty > 0 ? it.orderedQty : 1;
     it.shippingShare = +lineShipping.toFixed(3);
     it.landedLineTotal = +landedTotal.toFixed(3);
-    it.landedUnitCost = +(landedTotal / qty).toFixed(3);
+    // 6dp to match Product.costPrice DECIMAL(12,6): raw materials are costed
+    // per gram, and rounding their landed cost to 3dp zeroed it.
+    it.landedUnitCost = +(landedTotal / qty).toFixed(6);
   }
   return items;
 }
@@ -166,6 +198,9 @@ router.post('/', protect, async (req, res) => {
     // Enrich names from Product table if not supplied.
     const productIds = [...new Set(normalized.map((i) => i.productId))];
     const products = await Product.findAll({ where: { id: productIds }, attributes: ['id', 'name'] });
+    if (products.length !== productIds.length) {
+      return res.status(400).json({ message: 'One or more products on this PO do not exist' });
+    }
     const nameMap = new Map(products.map((p) => [p.id, p.name]));
     for (const it of normalized) {
       if (!it.name) it.name = nameMap.get(it.productId) || `Product #${it.productId}`;
@@ -207,6 +242,10 @@ router.put('/:id', protect, async (req, res) => {
     const updates = {};
     if (items) {
       const normalized = normalizeItems(items);
+      const ids = [...new Set(normalized.map((i) => i.productId))];
+      if (await Product.count({ where: { id: ids } }) !== ids.length) {
+        return res.status(400).json({ message: 'One or more products on this PO do not exist' });
+      }
       const totals = computeTotals(normalized, shippingCost, discount);
       applyLandedCost(normalized, shippingCost);
       Object.assign(updates, { items: normalized, ...totals });
@@ -231,6 +270,16 @@ router.put('/:id', protect, async (req, res) => {
     if (expectedDate !== undefined) updates.expectedDate = expectedDate || null;
     if (shippingCost !== undefined) updates.shippingCost = parseFloat(shippingCost) || 0;
     if (discount !== undefined) updates.discount = parseFloat(discount) || 0;
+    // "Save & send" from the editor sends a draft; a sent PO never goes back to draft.
+    if (req.body.status === 'sent' && po.status === 'draft') updates.status = 'sent';
+    // Payments may already exist against a draft/sent PO — keep them consistent.
+    if (updates.totalAmount !== undefined) {
+      const paid = parseFloat(po.amountPaid) || 0;
+      if (updates.totalAmount < paid) {
+        return res.status(400).json({ message: `New total ${updates.totalAmount.toFixed(3)} is below the ${paid.toFixed(3)} already paid` });
+      }
+      updates.paymentStatus = paid >= updates.totalAmount && paid > 0 ? 'paid' : (paid > 0 ? 'partial' : 'unpaid');
+    }
     await po.update(updates);
     res.json(po);
   } catch (err) {
@@ -336,7 +385,8 @@ router.post('/:id/receive', protect, async (req, res) => {
 
     // Increment ProductStock at the PO's location AND update each
     // product's costPrice to the latest received cost (simple last-in
-    // pricing — admin can override manually on the product page).
+    // pricing — admin can override manually on the product page), and its
+    // selling price when the product has a margin %.
     for (const g of grnItems) {
       const existing = await ProductStock.findOne({
         where: { productId: g.productId, variantIndex: g.variantIndex, locationId: po.locationId },
@@ -358,7 +408,10 @@ router.post('/:id/receive', protect, async (req, res) => {
       const cost = parseFloat(g.landedUnitCost ?? g.unitCost) || 0;
       if (cost > 0) {
         if (g.variantIndex == null) {
-          await Product.update({ costPrice: cost }, { where: { id: g.productId }, transaction: t });
+          // A product on margin pricing is repriced from the new landed cost.
+          const prod = await Product.findByPk(g.productId, { attributes: ['id', 'marginPercent'], transaction: t });
+          const price = priceFromMargin(cost, prod?.marginPercent);
+          await Product.update({ costPrice: cost, ...(price != null && { price }) }, { where: { id: g.productId }, transaction: t });
         } else {
           // Write to the variant, not the whole product. Receiving one
           // variant used to overwrite costPrice for every variant, and
@@ -374,6 +427,10 @@ router.post('/:id/receive', protect, async (req, res) => {
           }
         }
       }
+      // A product with no supplier yet is linked to the one it came from.
+      await Product.update({ preferredSupplierId: po.supplierId }, {
+        where: { id: g.productId, preferredSupplierId: null }, transaction: t,
+      });
     }
 
     // Persist GRN.

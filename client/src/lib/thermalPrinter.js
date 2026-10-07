@@ -25,7 +25,7 @@
  *   printSale(payload, ccy, kick)  -> receipt
  *   printReturn(payload, ccy)      -> receipt
  *   printReport(report, ccy)       -> receipt
- *   printLabels(labels, opts)      -> barcode
+ *   printLabelImages(canvases)     -> barcode
  *   kickDrawer()                   -> receipt
  *
  *  kind ∈ 'receipt' | 'barcode'
@@ -154,14 +154,36 @@ function clearFingerprint(kind) {
 }
 
 // ── Device handling ────────────────────────────────────────────────
+// USB classes Chrome refuses to claim over WebUSB (audio, HID, mass
+// storage, smart card, video, A/V, wireless). Composite POS devices often
+// put one of these first, so interface 0 can't be assumed to be the printer.
+const PROTECTED_CLASSES = new Set([0x01, 0x03, 0x08, 0x0b, 0x0e, 0x10, 0xe0]);
+
 async function pickEndpoint(device) {
   if (!device.opened) await device.open();
   if (device.configuration === null) await device.selectConfiguration(1);
-  const iface = device.configuration.interfaces[0];
-  await device.claimInterface(iface.interfaceNumber);
-  const alt = iface.alternate || iface.alternates[0];
-  const out = alt.endpoints.find((e) => e.direction === 'out');
-  if (!out) throw new Error('Printer has no OUT endpoint');
+  // Prefer the printer class (0x07), then any other claimable interface
+  // with an OUT endpoint (vendor-specific 0xFF on most cheap printers).
+  const candidates = [];
+  for (const iface of device.configuration.interfaces) {
+    for (const alt of iface.alternates) {
+      if (PROTECTED_CLASSES.has(alt.interfaceClass)) continue;
+      const out = alt.endpoints.find((e) => e.direction === 'out');
+      if (out) candidates.push({ iface, alt, out });
+    }
+  }
+  candidates.sort((a, b) => (b.alt.interfaceClass === 0x07) - (a.alt.interfaceClass === 0x07));
+  const pick = candidates[0];
+  if (!pick) {
+    const classes = device.configuration.interfaces
+      .map((i) => '0x' + i.alternates[0].interfaceClass.toString(16).padStart(2, '0')).join(', ');
+    throw new Error(`"${device.productName || 'This device'}" has no printer interface the browser can use (classes: ${classes}). Check you picked the printer, not the screen or scanner.`);
+  }
+  const { iface, alt, out } = pick;
+  if (!iface.claimed) await device.claimInterface(iface.interfaceNumber);
+  if (iface.alternate?.alternateSetting !== alt.alternateSetting) {
+    await device.selectAlternateInterface(iface.interfaceNumber, alt.alternateSetting);
+  }
   return { device, endpoint: out.endpointNumber, interface: iface.interfaceNumber };
 }
 
@@ -201,9 +223,12 @@ export async function requestDevice(kind) {
     // Older browsers reject `exclusionFilters` — retry without.
     return navigator.usb.requestDevice({ filters: [] });
   });
+  // Only remember the device once we've actually claimed a printer
+  // interface on it, so a wrong pick doesn't leave a broken pairing.
+  const handle = await pickEndpoint(device);
   setFingerprint(kind, device);
   setEnabled(kind, true);
-  return pickEndpoint(device);
+  return handle;
 }
 
 export async function forget(kind) {
@@ -232,8 +257,32 @@ async function send(kind, bytes) {
 // ── Receipt templates ──────────────────────────────────────────────
 const fmt = (currency, n) => `${currency} ${(parseFloat(n) || 0).toFixed(3)}`;
 
-function buildSale(payload, currency = 'KWD', logo = null) {
-  const { order, change, amountTendered, location, cashier } = payload;
+// Store header for receipts, X/Z reports and barcode labels. A POS
+// location's own address/phone win when set; these fill in for locations
+// that don't have them. Blank values are simply not printed.
+export const RECEIPT_STORE = {
+  name: STORE_NAME,
+  logo: LOGO_URL,
+  address: '',
+  phone: '+974 6654 3343',
+  email: 'info@femnia.com',
+};
+
+// Logo + location + contacts, shared by sale/return receipts and X/Z reports.
+async function printStoreHeader(enc, cols, location) {
+  const logo = await loadLogo();
+  addLogo(enc, logo, cols);
+  // The logo is a monogram, so the store name is always spelled out.
+  enc.align('center').bold(true).size('normal').line(location?.name || RECEIPT_STORE.name).bold(false);
+  const address = location?.address || RECEIPT_STORE.address;
+  const phone = location?.phone || RECEIPT_STORE.phone;
+  if (address) enc.line(address);
+  if (phone) enc.line(`Tel: ${phone}`);
+  if (RECEIPT_STORE.email) enc.line(RECEIPT_STORE.email);
+}
+
+async function buildSale(payload, currency = 'KWD') {
+  const { order, change, amountTendered, cardType, location, cashier } = payload;
   const breakdown = Array.isArray(order.paymentBreakdown) ? order.paymentBreakdown : null;
   const cols = getColumns('receipt');
   const loc = getReceiptLocale();
@@ -243,10 +292,7 @@ function buildSale(payload, currency = 'KWD', logo = null) {
   const enc = newEncoder(cols);
 
   enc.initialize();
-  addLogo(enc, logo, cols);
-  enc.align('center').bold(true).size('normal').line(location?.name || STORE_NAME).bold(false);
-  if (location?.address) enc.align('center').line(location.address);
-  if (location?.phone) enc.align('center').line(`Tel: ${location.phone}`);
+  await printStoreHeader(enc, cols, location);
   enc.rule();
   enc.align('left')
     .line(`Receipt: ${order.orderNumber}`)
@@ -269,7 +315,7 @@ function buildSale(payload, currency = 'KWD', logo = null) {
     if (loc === 'bi' && it.nameAr && it.nameAr !== it.name) {
       enc.line(`  ${it.nameAr}`);
     }
-    const sku = it.sku || it.variant?.sku || null;
+    const sku = it.barcode || it.sku || it.variant?.sku || null;
     enc.line(`  ${sku ? `${sku} · ` : ''}${it.quantity} x ${fmt(currency, it.price)}`);
   }
   enc.rule();
@@ -306,7 +352,7 @@ function buildSale(payload, currency = 'KWD', logo = null) {
     }
   } else {
     const method = order.paymentMethod === 'pos_cash' ? 'Cash'
-      : 'Card';
+      : (cardType || 'Card');
     enc.table(
       [{ width: colW, marginRight: 1 }, { width: cols - colW - 1, align: 'right' }],
       [[`Paid (${method})`, fmt(currency, amountTendered ?? order.totalAmount)]]
@@ -319,26 +365,29 @@ function buildSale(payload, currency = 'KWD', logo = null) {
     }
   }
 
-  enc.rule().align('center').line('Thank you for shopping with us!').newline().newline();
+  enc.rule().align('center').line('Thank you for shopping with us!');
+  if (order.orderNumber) {
+    enc.barcode(order.orderNumber, 'code128', { height: 60, text: false }).line(order.orderNumber);
+  }
+  enc.newline().newline();
   enc.cut('partial');
   return enc.encode();
 }
 
-function buildReturn(payload, currency = 'KWD', logo = null) {
+async function buildReturn(payload, currency = 'KWD') {
   const sr = payload.salesReturn;
   const cols = getColumns('receipt');
   const loc = getReceiptLocale();
   currency = pickCurrency(currency, loc);
   const enc = newEncoder(cols);
   enc.initialize();
-  addLogo(enc, logo, cols);
-  enc.align('center').bold(true).line('RETURN RECEIPT').bold(false);
-  if (sr.Location?.name) enc.line(sr.Location.name);
-  if (sr.Location?.phone) enc.line(`Tel: ${sr.Location.phone}`);
+  await printStoreHeader(enc, cols, sr.Location);
   enc.rule()
+    .align('center').bold(true).line('RETURN RECEIPT').bold(false)
+    .rule()
     .align('left')
     .line(`Return #: ${sr.returnNumber}`)
-    .line(`Original: ${payload.order?.orderNumber || ''}`)
+    .line(`Original: ${payload.order?.orderNumber || 'No receipt'}`)
     .line(`Date: ${new Date(sr.createdAt || Date.now()).toLocaleString()}`)
     .line(`Cashier: ${sr.processor?.name || '—'}`);
   if (sr.reason) enc.line(`Reason: ${sr.reason}`);
@@ -354,7 +403,7 @@ function buildReturn(payload, currency = 'KWD', logo = null) {
     if (loc === 'bi' && it.nameAr && it.nameAr !== it.name) {
       enc.line(`  ${it.nameAr}`);
     }
-    const sku = it.sku || it.variant?.sku || null;
+    const sku = it.barcode || it.sku || it.variant?.sku || null;
     enc.line(`  ${sku ? `${sku} · ` : ''}${it.quantity} x ${fmt(currency, it.price)}`);
   }
   enc.rule();
@@ -376,12 +425,13 @@ function buildReturn(payload, currency = 'KWD', logo = null) {
   return enc.encode();
 }
 
-function buildReport(report, currency = 'KWD') {
+async function buildReport(report, currency = 'KWD') {
   const cols = getColumns('receipt');
   const loc = getReceiptLocale();
   currency = pickCurrency(currency, loc);
   const enc = newEncoder(cols);
-  const t = report.type === 'Z' ? 'Z-REPORT' : 'X-REPORT';
+  const isDay = report.type === 'DAY';   // end-of-day, all shifts
+  const t = isDay ? 'DAILY REPORT' : report.type === 'Z' ? 'Z-REPORT' : 'X-REPORT';
   const session = report.session || {};
   const opened = session.openedAt ? new Date(session.openedAt).toLocaleString() : '—';
   const closed = session.closedAt ? new Date(session.closedAt).toLocaleString() : '—';
@@ -391,17 +441,23 @@ function buildReport(report, currency = 'KWD') {
     [[l, r]]
   );
 
-  enc.initialize().align('center').bold(true).line(t).bold(false);
-  if (report.location?.name) enc.line(report.location.name);
-  if (report.location?.phone) enc.line(`Tel: ${report.location.phone}`);
-  enc.rule().align('left')
-    .line(`Cashier: ${report.cashier?.name || '—'}`)
-    .line(`Opened: ${opened}`);
-  if (report.type === 'Z') enc.line(`Closed: ${closed}`);
+  enc.initialize();
+  await printStoreHeader(enc, cols, report.location);
+  enc.rule()
+    .align('center').bold(true).line(t).bold(false)
+    .rule().align('left');
+  if (isDay) {
+    enc.line(`Date: ${new Date(report.dayStart || report.date).toLocaleDateString()}`)
+      .line(`Location: ${report.location?.name || 'All locations'}`);
+  } else {
+    enc.line(`Cashier: ${report.cashier?.name || '—'}`).line(`Opened: ${opened}`);
+    if (report.type === 'Z') enc.line(`Closed: ${closed}`);
+  }
   enc.rule();
   row('Orders', String(report.orderCount));
   row('Cash sales', fmt(currency, report.cashSales));
   row('Card sales', fmt(currency, report.cardSales));
+  if (report.otherSales > 0) row('Other', fmt(currency, report.otherSales));
   if (report.cashRefunds > 0 || report.cardRefunds > 0) {
     row('Cash refunds', `-${fmt(currency, report.cashRefunds)}`);
     row('Card refunds', `-${fmt(currency, report.cardRefunds)}`);
@@ -409,6 +465,21 @@ function buildReport(report, currency = 'KWD') {
   enc.bold(true);
   row('NET SALES', fmt(currency, report.netSales));
   enc.bold(false).rule();
+  if (isDay) {
+    const hm = (d) => (d ? new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '..');
+    enc.bold(true).line(`SHIFTS (${(report.shifts || []).length})`).bold(false);
+    for (const s of report.shifts || []) {
+      row(`${s.cashier} ${hm(s.openedAt)}-${s.status === 'open' ? 'open' : hm(s.closedAt)}`,
+        s.variance != null ? `${s.variance >= 0 ? '+' : ''}${fmt(currency, s.variance)}` : '-');
+    }
+    if ((report.shifts || []).length) {
+      enc.bold(true);
+      row('TOTAL VARIANCE', `${report.totalVariance >= 0 ? '+' : ''}${fmt(currency, report.totalVariance)}`);
+      enc.bold(false);
+    }
+    enc.rule().align('center').line('-- END OF DAY --').newline().newline().cut('partial');
+    return enc.encode();
+  }
   row('Opening cash', fmt(currency, report.openingCash));
   row('+ Cash sales', fmt(currency, report.cashSales));
   row('- Cash refunds', fmt(currency, report.cashRefunds));
@@ -448,18 +519,16 @@ export async function testPrint(kind) {
 }
 
 export async function printSale(payload, currency, openDrawer = false) {
-  const logo = await loadLogo();
-  await send('receipt', buildSale(payload, currency, logo));
+  await send('receipt', await buildSale(payload, currency));
   if (openDrawer) await kickDrawer();
 }
 
 export async function printReturn(payload, currency) {
-  const logo = await loadLogo();
-  await send('receipt', buildReturn(payload, currency, logo));
+  await send('receipt', await buildReturn(payload, currency));
 }
 
 export async function printReport(report, currency) {
-  await send('receipt', buildReport(report, currency));
+  await send('receipt', await buildReport(report, currency));
 }
 
 // Cash drawer pulse via the receipt printer.
@@ -470,30 +539,16 @@ export async function kickDrawer() {
   await send('receipt', bytes);
 }
 
-// Barcode-label printer entrypoint.
-export async function printLabels(labels, { currency = 'KWD' } = {}) {
-  const cols = getColumns('barcode');
-  const enc = newEncoder(cols);
+// Barcode-label printer entrypoint. Each label arrives already drawn on a
+// canvas at the printer's resolution (see BarcodeLabels.drawLabelCanvas), so
+// the layout matches the label size and Arabic is shaped by the browser
+// instead of depending on the printer's code page.
+export async function printLabelImages(canvases) {
+  const enc = newEncoder(getColumns('barcode'));
   enc.initialize();
-  for (const label of labels) {
-    const show = label.show || { name: true, barcode: true, sku: true, price: true };
-    enc.initialize();
-    if (show.name && label.name) {
-      enc.align('center').bold(true).line(label.name).bold(false);
-    }
-    if (show.barcode && (label.code || label.productId)) {
-      const value = label.code || `P${label.productId}`;
-      enc.align('center').barcode(value, 'code128', { height: 60, text: false });
-    }
-    if (show.sku && label.code) {
-      enc.align('center').size('small').line(label.code).size('normal');
-    }
-    if (show.price && label.price != null) {
-      enc.align('center').bold(true)
-        .line(`${currency} ${(parseFloat(label.price) || 0).toFixed(3)}`)
-        .bold(false);
-    }
-    enc.newline().cut('partial');
+  for (const canvas of canvases) {
+    enc.align('center').image(canvas, canvas.width, canvas.height, 'threshold', 160);
+    enc.cut('partial');
   }
   await send('barcode', enc.encode());
 }

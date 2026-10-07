@@ -87,7 +87,9 @@ router.get('/:slug/related', async (req, res) => {
     });
     if (!product) return res.json([]);
 
+    const { PUBLIC_PRODUCT_ATTRIBUTES } = await import('../utils/pricing.js');
     const related = await Product.findAll({
+      attributes: PUBLIC_PRODUCT_ATTRIBUTES,
       where: {
         active: true,
         hideOnline: false,

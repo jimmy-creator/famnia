@@ -4,7 +4,11 @@
  *   GET /api/reports/cashier-sales   admin: per-cashier breakdown over date range
  *   GET /api/reports/location-sales  admin: per-location breakdown + top items
  *   GET /api/reports/x               cashier: snapshot of current open shift
- *   GET /api/reports/z/:sessionId    admin or owner: closed-shift report
+ *   GET /api/reports/day?date=&locationId=
+ *                                    admin: end-of-day report — every in-store
+ *                                    sale that day, across all shifts/cashiers
+ *   GET /api/reports/z/:sessionId    admin or owner: the shift's report — Z once
+ *                                    it's closed, a live X while it's still open
  *
  * All money sums are computed in JS from Order.totalAmount so we can split
  * by paymentMethod without a separate group-by SQL pass per cashier.
@@ -12,7 +16,9 @@
 import { Router } from 'express';
 import { Op } from 'sequelize';
 import { Order, User, CashierSession, Location, SalesReturn } from '../models/index.js';
-import { protect, admin, protectCashier } from '../middleware/auth.js';
+import { protect, requirePermission, protectCashier } from '../middleware/auth.js';
+import { rangeStart, rangeEnd } from '../utils/dates.js';
+import { rollup } from '../utils/posTotals.js';
 
 const router = Router();
 
@@ -22,53 +28,19 @@ function parseRange(q) {
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000 - 1);
-  const from = q.from ? new Date(q.from) : startOfDay;
-  const to = q.to ? new Date(q.to) : endOfDay;
+  const from = q.from ? rangeStart(q.from) : startOfDay;
+  const to = q.to ? rangeEnd(q.to) : endOfDay;
   return { from, to };
 }
 
-const isCash = (pm) => pm === 'pos_cash' || pm === 'cash';
-const isCard = (pm) => pm === 'pos_card' || pm === 'card';
+// Staff reading POS figures need the analytics permission; admins always pass.
+const canSeeReports = (user) =>
+  user.role === 'admin' || (user.role === 'staff' && (user.permissions || []).includes('analytics'));
 
-// Refunds are attributed to the refundMethod (= the actual money-out path
-// from today's drawer), NOT to the original order's paymentMethod, since a
-// customer can pay cash today and refund onto a card tomorrow.
-function rollup(orders, returns = []) {
-  let totalSales = 0, cashSales = 0, cardSales = 0;
-  for (const o of orders) {
-    const amt = parseFloat(o.totalAmount || 0);
-    totalSales += amt;
-    // Split-payment orders carry per-tender amounts in paymentBreakdown.
-    // Single-tender orders fall back to paymentMethod-based bucketing.
-    if (Array.isArray(o.paymentBreakdown) && o.paymentBreakdown.length > 0) {
-      for (const tn of o.paymentBreakdown) {
-        const tAmt = parseFloat(tn.amount || 0);
-        if (tn.method === 'cash') cashSales += tAmt;
-        else if (tn.method === 'card') cardSales += tAmt;
-      }
-    } else if (isCash(o.paymentMethod)) cashSales += amt;
-    else if (isCard(o.paymentMethod)) cardSales += amt;
-  }
-  let cashRefunds = 0, cardRefunds = 0, returnCount = 0;
-  for (const r of returns) {
-    if (r.status === 'cancelled') continue;
-    const amt = parseFloat(r.refundAmount || 0);
-    returnCount += 1;
-    if (r.refundMethod === 'cash') cashRefunds += amt;
-    else if (r.refundMethod === 'card') cardRefunds += amt;
-  }
-  const round = (n) => +n.toFixed(3);
-  return {
-    orderCount: orders.length,
-    totalSales: round(totalSales),
-    cashSales: round(cashSales),
-    cardSales: round(cardSales),
-    returnCount,
-    cashRefunds: round(cashRefunds),
-    cardRefunds: round(cardRefunds),
-    netSales: round(totalSales - cashRefunds - cardRefunds),
-  };
-}
+// Every order query here must carry paymentBreakdown — without it a split
+// sale can't be bucketed and its cash leg silently drops out of the drawer.
+const ORDER_ATTRS = ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod',
+  'paymentBreakdown', 'items', 'createdAt'];
 
 function topItems(orders, n = 5) {
   const map = new Map();   // name → { qty, revenue }
@@ -89,7 +61,7 @@ function topItems(orders, n = 5) {
 
 // ─── 1. Cashier sales (admin) ──────────────────────────────────────
 // Optional filters: cashierId, locationId
-router.get('/cashier-sales', protect, admin, async (req, res) => {
+router.get('/cashier-sales', protect, requirePermission('analytics'), async (req, res) => {
   try {
     const { from, to } = parseRange(req.query);
     const where = {
@@ -100,8 +72,7 @@ router.get('/cashier-sales', protect, admin, async (req, res) => {
 
     const orders = await Order.findAll({
       where,
-      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items',
-                   'cashierSessionId', 'locationId', 'createdAt'],
+      attributes: [...ORDER_ATTRS, 'cashierSessionId', 'locationId'],
       include: [{
         model: CashierSession,
         attributes: ['id', 'userId', 'locationId', 'openedAt', 'closedAt', 'status'],
@@ -177,7 +148,7 @@ router.get('/cashier-sales', protect, admin, async (req, res) => {
 });
 
 // ─── 2. Location sales (admin) ─────────────────────────────────────
-router.get('/location-sales', protect, admin, async (req, res) => {
+router.get('/location-sales', protect, requirePermission('analytics'), async (req, res) => {
   try {
     const { from, to } = parseRange(req.query);
     const where = {
@@ -188,7 +159,7 @@ router.get('/location-sales', protect, admin, async (req, res) => {
 
     const orders = await Order.findAll({
       where,
-      attributes: ['id', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items', 'locationId', 'createdAt'],
+      attributes: [...ORDER_ATTRS, 'locationId'],
     });
 
     const returns = await SalesReturn.findAll({ where });
@@ -232,6 +203,66 @@ router.get('/location-sales', protect, admin, async (req, res) => {
   }
 });
 
+// ─── Daily report (all shifts) ─────────────────────────────────────
+// One store-local day: every in-store order (POS and aggregator orders
+// keyed in at the till — not web orders), whether or not it belongs to a
+// shift, so imported old-POS days report too. Plus each shift opened that
+// day with its drawer result.
+router.get('/day', protect, async (req, res) => {
+  try {
+    if (!canSeeReports(req.user)) return res.status(403).json({ message: 'Forbidden' });
+    const date = req.query.date || null;
+    const { from, to } = parseRange({ from: date, to: date });
+    const locationId = req.query.locationId ? parseInt(req.query.locationId, 10) : null;
+    const where = { createdAt: { [Op.between]: [from, to] }, channel: { [Op.ne]: 'web' }, orderStatus: { [Op.ne]: 'cancelled' } };
+    if (locationId) where.locationId = locationId;
+    const orders = await Order.findAll({ where, attributes: ORDER_ATTRS, order: [['createdAt', 'ASC']] });
+    const retWhere = { createdAt: { [Op.between]: [from, to] } };
+    if (locationId) retWhere.locationId = locationId;
+    const returns = await SalesReturn.findAll({ where: retWhere });
+    const totals = rollup(orders, returns);
+    // Anything the drawer/terminal lines don't cover — so the lines add up.
+    const otherSales = +(totals.totalSales - totals.cashSales - totals.cardSales).toFixed(3);
+
+    const shiftWhere = { openedAt: { [Op.between]: [from, to] } };
+    if (locationId) shiftWhere.locationId = locationId;
+    const sessions = await CashierSession.findAll({
+      where: shiftWhere,
+      include: [{ model: User, attributes: ['id', 'name'] }],
+      order: [['openedAt', 'ASC']],
+    });
+    const shifts = sessions.map((s) => ({
+      id: s.id,
+      cashier: s.User?.name || `User #${s.userId}`,
+      openedAt: s.openedAt,
+      closedAt: s.closedAt,
+      status: s.status,
+      openingCash: parseFloat(s.openingCash) || 0,
+      closingCash: s.closingCash != null ? parseFloat(s.closingCash) : null,
+      variance: s.cashVariance != null ? parseFloat(s.cashVariance) : null,
+    }));
+    const location = locationId
+      ? await Location.findByPk(locationId, { attributes: ['id', 'name', 'code', 'address', 'phone'] })
+      : null;
+
+    res.json({
+      type: 'DAY',
+      date: date || from.toISOString(),
+      dayStart: from,
+      location,
+      generatedAt: new Date(),
+      ...totals,
+      otherSales,
+      shifts,
+      totalVariance: +shifts.reduce((s, x) => s + (x.variance || 0), 0).toFixed(3),
+      topItems: topItems(orders, 10),
+    });
+  } catch (err) {
+    console.error('[reports/day]', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // ─── 3. X-report (mid-shift, no reset) ─────────────────────────────
 router.get('/x', protectCashier, async (req, res) => {
   try {
@@ -245,7 +276,7 @@ router.get('/x', protectCashier, async (req, res) => {
 
     const orders = await Order.findAll({
       where: { cashierSessionId: session.id },
-      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items', 'createdAt'],
+      attributes: ORDER_ATTRS,
       order: [['createdAt', 'DESC']],
     });
     const returns = await SalesReturn.findAll({
@@ -286,13 +317,16 @@ router.get('/z/:sessionId', protect, async (req, res) => {
       ],
     });
     if (!session) return res.status(404).json({ message: 'Shift not found' });
-    if (req.user.role === 'cashier' && session.userId !== req.user.id) {
+    // A cashier may read their own shift; anyone else needs report access
+    // (this used to be open to any logged-in account, customers included).
+    const ownShift = req.user.role === 'cashier' && session.userId === req.user.id;
+    if (!ownShift && !canSeeReports(req.user)) {
       return res.status(403).json({ message: 'Not your shift' });
     }
 
     const orders = await Order.findAll({
       where: { cashierSessionId: session.id },
-      attributes: ['id', 'orderNumber', 'totalAmount', 'refundAmount', 'paymentMethod', 'paymentBreakdown', 'items', 'createdAt'],
+      attributes: ORDER_ATTRS,
       order: [['createdAt', 'DESC']],
     });
     const returns = await SalesReturn.findAll({
@@ -302,8 +336,26 @@ router.get('/z/:sessionId', protect, async (req, res) => {
 
     const totals = rollup(orders, returns);
     const openingCash = parseFloat(session.openingCash) || 0;
-    const closingCash = parseFloat(session.closingCash) || 0;
     const expectedCash = +(openingCash + totals.cashSales - totals.cashRefunds).toFixed(3);
+
+    // Still open (viewed from the ERP): there's no count yet, so it's an
+    // X-report — same shape as GET /x — not a Z with a fake 0 closing.
+    if (session.status === 'open') {
+      return res.json({
+        type: 'X',
+        session: session.toJSON(),
+        cashier: session.User,
+        location: session.Location,
+        generatedAt: new Date(),
+        openingCash,
+        expectedCash,
+        ...totals,
+        topItems: topItems(orders, 5),
+        recentOrders: orders.slice(0, 10),
+        recentReturns: returns.slice(0, 10),
+      });
+    }
+    const closingCash = parseFloat(session.closingCash) || 0;
     const variance = +(closingCash - expectedCash).toFixed(3);
 
     res.json({

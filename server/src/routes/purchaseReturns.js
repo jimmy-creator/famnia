@@ -4,6 +4,7 @@
  *   GET    /api/purchase-returns               list with filters
  *   POST   /api/purchase-returns               create (decrements stock)
  *   GET    /api/purchase-returns/:id           detail
+ *   GET    /api/purchase-returns/:id/pdf       printable return note for the supplier
  *   POST   /api/purchase-returns/:id/cancel    admin reversal
  *
  * On create:
@@ -24,6 +25,9 @@ import {
   ProductStock, recomputeProductStock, CashAccount, writeCashTxn,
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
+import { rangeStart, rangeEnd } from '../utils/dates.js';
+import { lineKey, parseVariantIndex, totalsByKey } from '../utils/lines.js';
+import { generatePurchaseReturnPdf } from '../services/purchaseDocs.js';
 
 const router = Router();
 
@@ -40,8 +44,8 @@ router.get('/', protect, async (req, res) => {
     if (req.query.locationId) where.locationId = parseInt(req.query.locationId, 10);
     if (req.query.refundMethod) where.refundMethod = req.query.refundMethod;
     if (req.query.from || req.query.to) {
-      const from = req.query.from ? new Date(req.query.from) : new Date('1970-01-01');
-      const to = req.query.to ? new Date(req.query.to) : new Date('2999-12-31');
+      const from = req.query.from ? rangeStart(req.query.from) : new Date('1970-01-01');
+      const to = req.query.to ? rangeEnd(req.query.to) : new Date('2999-12-31');
       where.createdAt = { [Op.between]: [from, to] };
     }
     const rows = await PurchaseReturn.findAll({
@@ -78,6 +82,33 @@ router.get('/:id', protect, async (req, res) => {
   }
 });
 
+// PDF (opens in the browser to print or save) — goes with the stock to the supplier.
+router.get('/:id/pdf', protect, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    const row = await PurchaseReturn.findByPk(req.params.id, {
+      include: [
+        { model: Supplier },
+        { model: Location, attributes: ['id', 'name', 'code', 'address'] },
+        { model: PurchaseOrder, attributes: ['id', 'poNumber'] },
+        { model: User, as: 'creator', attributes: ['id', 'name'] },
+      ],
+    });
+    if (!row) return res.status(404).json({ message: 'Return not found' });
+    const pdf = await generatePurchaseReturnPdf(row.toJSON());
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${row.returnNumber}.pdf"`,
+      'Content-Length': pdf.length,
+    });
+    res.send(pdf);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.post('/', protect, async (req, res) => {
   if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
     return res.status(403).json({ message: 'Forbidden' });
@@ -102,9 +133,16 @@ router.post('/', protect, async (req, res) => {
     const lines = [];
     let total = 0;
     const productIds = new Set();
+    // Stock is checked against the combined quantity per product, so the
+    // same item on two lines can't each pass and drive stock negative.
+    const needed = totalsByKey(items.map((it) => ({
+      productId: parseInt(it.productId, 10),
+      variantIndex: parseVariantIndex(it.variantIndex),
+      quantity: it.quantity,
+    })));
     for (const it of items) {
       const productId = parseInt(it.productId, 10);
-      const vIdx = it.variantIndex == null || it.variantIndex === '' ? null : parseInt(it.variantIndex, 10);
+      const vIdx = parseVariantIndex(it.variantIndex);
       const qty = parseInt(it.quantity, 10);
       const unitCost = parseFloat(it.unitCost) || 0;
       if (!productId || !qty || qty < 1) {
@@ -116,9 +154,10 @@ router.post('/', protect, async (req, res) => {
         transaction: t,
       });
       const have = stock?.quantity || 0;
-      if (have < qty) {
+      const need = needed.get(lineKey(productId, vIdx));
+      if (have < need) {
         await t.rollback();
-        return res.status(400).json({ message: `Not enough stock at this location — have ${have}, need ${qty}` });
+        return res.status(400).json({ message: `Not enough stock at this location — have ${have}, need ${need}` });
       }
       const refundAmount = +(unitCost * qty).toFixed(3);
       total += refundAmount;

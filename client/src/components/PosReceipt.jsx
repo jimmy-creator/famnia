@@ -7,35 +7,57 @@
  */
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { isEnabled, printSale, getReceiptLocale } from '../lib/thermalPrinter';
+import JsBarcode from 'jsbarcode';
+import { isEnabled, printSale, getReceiptLocale, RECEIPT_STORE } from '../lib/thermalPrinter';
 
-const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
-
-export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
-  const { order, change, amountTendered, location, cashier } = payload;
+// autoPrint=false shows the receipt without firing the printer — used for
+// reprints from Recent sales, where printing is a deliberate click. Only a
+// fresh sale (autoPrint) opens the cash drawer.
+export default function PosReceipt({ payload, currency = 'KWD', onClose, autoPrint = true }) {
+  const { order, change, amountTendered, cardType, location, cashier } = payload;
   const printedRef = useRef(false);
+  const barcodeRef = useRef(null);
+  const logoRef = useRef(null);
+
+  const print = async (openDrawer = false) => {
+    if (isEnabled('receipt')) {
+      try {
+        await printSale(payload, currency, openDrawer);
+        onClose?.();
+        return;
+      } catch (err) {
+        console.warn('[thermal] direct print failed, falling back:', err.message);
+      }
+    }
+    // Don't print before the logo has loaded, or the header comes out blank.
+    const logo = logoRef.current;
+    if (logo && !logo.complete) {
+      await new Promise((resolve) => { logo.onload = resolve; logo.onerror = resolve; });
+    }
+    setTimeout(() => window.print(), 200);
+  };
+
+  // Receipt number as Code128 so the Return screen can scan it back in.
+  // Drawn synchronously on mount, before the print effect below fires.
+  useEffect(() => {
+    if (!barcodeRef.current || !order.orderNumber) return;
+    try {
+      JsBarcode(barcodeRef.current, order.orderNumber, {
+        format: 'CODE128', displayValue: false, height: 40, margin: 0,
+      });
+    } catch {
+      /* invalid value — render empty */
+    }
+  }, [order.orderNumber]);
 
   useEffect(() => {
     // Print exactly once. React 18 StrictMode runs mount effects twice in dev,
     // which sent the thermal printer two jobs → an extra copy. A ref guard is
     // the right tool here (a cleanup-based flag would suppress onClose, since
     // StrictMode's cleanup fires before the printSale await resolves).
-    if (printedRef.current) return;
+    if (!autoPrint || printedRef.current) return;
     printedRef.current = true;
-    (async () => {
-      if (isEnabled('receipt')) {
-        try {
-          const openDrawer = payload.order.paymentMethod === 'pos_cash'
-            || payload.order.paymentMethod === 'pos_split';
-          await printSale(payload, currency, openDrawer);
-          onClose?.();
-          return;
-        } catch (err) {
-          console.warn('[thermal] direct print failed, falling back:', err.message);
-        }
-      }
-      setTimeout(() => window.print(), 200);
-    })();
+    print(payload.order.paymentMethod === 'pos_cash' || payload.order.paymentMethod === 'pos_split');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -47,7 +69,7 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
   const pickName = (it) => (receiptLoc === 'ar' && it.nameAr) ? it.nameAr : it.name;
   const when = order.createdAt ? new Date(order.createdAt).toLocaleString() : '';
   const breakdown = Array.isArray(order.paymentBreakdown) ? order.paymentBreakdown : null;
-  const methodLabel = (pm) => (pm === 'pos_cash' ? 'Cash' : 'Card');
+  const methodLabel = (pm) => (pm === 'pos_cash' ? 'Cash' : cardType || 'Card');
   const method = breakdown ? 'Split' : methodLabel(order.paymentMethod);
   const tenderLabel = (m) => (m === 'cash' ? 'Cash' : 'Card');
 
@@ -62,28 +84,31 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
         .pos-receipt-overlay {
           position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100;
           display: grid; place-items: center; padding: 1rem;
+          /* Scroll a receipt taller than the viewport so the buttons stay reachable. */
+          overflow-y: auto;
         }
         @media print {
           body > #root { display: none !important; }
           .pos-receipt-overlay {
             position: static !important; background: none !important;
             display: block !important; padding: 0 !important; z-index: auto !important;
+            overflow: visible !important;
           }
           #pos-receipt {
             margin: 0 !important;
-            width: 80mm !important;
-            padding: 4mm !important;
+            width: 72mm !important;
+            padding: 2mm !important;
             box-shadow: none !important;
             background: white !important;
             color: black !important;
             font-family: 'Courier New', monospace !important;
-            font-size: 11pt !important;
+            font-size: 10pt !important;
           }
           #pos-receipt .no-print { display: none !important; }
           @page { size: 80mm auto; margin: 0; }
         }
         #pos-receipt {
-          width: 80mm;
+          width: 72mm;
           margin: 24px auto;
           padding: 16px;
           background: white;
@@ -93,16 +118,22 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
           line-height: 1.4;
           box-shadow: 0 4px 24px rgba(0,0,0,0.3);
         }
+        #pos-receipt .logo { display: block; width: 60%; height: auto; margin: 0 auto 6px; }
         #pos-receipt h2 { font-size: 16px; margin: 0; text-align: center; }
-        #pos-receipt .logo { display: block; width: 26mm; margin: 0 auto 6px; }
-        @media print { #pos-receipt .logo { width: 26mm; } }
         #pos-receipt .meta { font-size: 11px; text-align: center; margin: 4px 0 8px; }
         #pos-receipt hr { border: none; border-top: 1px dashed #444; margin: 8px 0; }
         #pos-receipt table { width: 100%; border-collapse: collapse; }
         #pos-receipt td { padding: 2px 0; vertical-align: top; }
-        #pos-receipt .right { text-align: right; }
+        #pos-receipt, #pos-receipt * { box-sizing: border-box; }
+        /* Long SKUs/emails wrap instead of pushing the amount column off the paper. */
+        #pos-receipt { overflow-wrap: anywhere; }
+        #pos-receipt .right { text-align: right; white-space: nowrap; padding-left: 6px; }
         #pos-receipt .total-row { font-weight: bold; font-size: 14px; }
-        #pos-receipt .actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+        #pos-receipt .actions {
+          display: flex; gap: 8px; justify-content: center; margin-top: 16px;
+          /* Pinned to the bottom of the scrolling overlay so Close is always on screen. */
+          position: sticky; bottom: 0; background: white; padding: 8px 0;
+        }
         #pos-receipt .actions button {
           padding: 8px 16px; border: 1px solid #444; background: white;
           font-family: inherit; cursor: pointer;
@@ -114,13 +145,14 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
             encoder's raster image support. onError hides it rather than
             leaving a broken-image icon on a customer's receipt. */}
         <img
-          className="logo" src="/images/femnia-logo.webp" alt=""
+          ref={logoRef} className="logo" src={RECEIPT_STORE.logo} alt=""
           onError={(e) => { e.currentTarget.style.display = 'none'; }}
         />
-        <h2>{location?.name || STORE_NAME}</h2>
+        <h2>{location?.name || RECEIPT_STORE.name}</h2>
         <div className="meta">
-          {location?.address && <div>{location.address}</div>}
-          {location?.phone && <div>Tel: {location.phone}</div>}
+          {(location?.address || RECEIPT_STORE.address) && <div>{location?.address || RECEIPT_STORE.address}</div>}
+          {(location?.phone || RECEIPT_STORE.phone) && <div>Tel: {location?.phone || RECEIPT_STORE.phone}</div>}
+          {RECEIPT_STORE.email && <div>{RECEIPT_STORE.email}</div>}
         </div>
         <hr />
         <div style={{ fontSize: 11 }}>
@@ -135,7 +167,7 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
         <table>
           <tbody>
             {(order.items || []).map((it, i) => {
-              const sku = it.sku || it.variant?.sku || null;
+              const sku = it.barcode || it.sku || it.variant?.sku || null;
               const dispName = pickName(it);
               return (
                 <tr key={i}>
@@ -201,9 +233,17 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose }) {
         <div style={{ textAlign: 'center', fontSize: 11 }}>
           Thank you for shopping with us!
         </div>
+        {order.orderNumber && (
+          <div style={{ marginTop: 8, textAlign: 'center' }}>
+            <svg ref={barcodeRef} style={{ width: '100%', height: 'auto', display: 'block' }} />
+            <div style={{ fontSize: 10 }}>{order.orderNumber}</div>
+          </div>
+        )}
 
         <div className="actions no-print">
-          <button onClick={() => window.print()}>Print again</button>
+          {autoPrint
+            ? <button onClick={() => window.print()}>Print again</button>
+            : <button onClick={() => print()}>Print</button>}
           <button onClick={onClose}>Close</button>
         </div>
       </div>
