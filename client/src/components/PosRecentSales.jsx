@@ -9,12 +9,29 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { HiPrinter } from 'react-icons/hi';
 import api from '../api/axios';
+import { plural } from '../lib/utils';
+import { CURRENCY_DECIMALS } from '../utils/currency';
 
 export default function PosRecentSales({ currency = 'KWD', onClose, onNeedOverride, onEdit, onPrint }) {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
+
+  // 'pos_split' carries its tenders in paymentBreakdown; showing it as
+  // "Card" (and promising a card refund on void) misreported the cash part.
+  const tenders = (s) => (s.paymentMethod === 'pos_split' && Array.isArray(s.paymentBreakdown)
+    ? s.paymentBreakdown
+    : [{ method: s.paymentMethod === 'pos_cash' ? 'cash' : 'card', amount: s.totalAmount }]);
+  const methodLabel = (s) => (s.paymentMethod === 'pos_split' ? 'Cash + Card' : s.paymentMethod === 'pos_cash' ? 'Cash' : 'Card');
+  const refundText = (s, remaining) => {
+    const t = tenders(s);
+    if (t.length > 1 && !(parseFloat(s.refundAmount) > 0)) {
+      return `Refund ${t.map((x) => `${fmt(x.amount)} ${x.method === 'cash' ? 'in cash' : 'to card'}`).join(' + ')}`;
+    }
+    if (t.length > 1) return `Refund the remaining ${fmt(remaining)} across cash and card`;
+    return `Refund ${fmt(remaining)} ${t[0].method === 'cash' ? 'in cash' : 'to card'}`;
+  };
 
   const load = async () => {
     setLoading(true);
@@ -69,7 +86,7 @@ export default function PosRecentSales({ currency = 'KWD', onClose, onNeedOverri
           <div style={{ marginTop: '0.75rem', maxHeight: '60vh', overflowY: 'auto' }}>
             {sales.map((s) => {
               const fullyVoid = parseFloat(s.refundAmount || 0) >= parseFloat(s.totalAmount);
-              const remaining = +(parseFloat(s.totalAmount) - parseFloat(s.refundAmount || 0)).toFixed(3);
+              const remaining = +(parseFloat(s.totalAmount) - parseFloat(s.refundAmount || 0)).toFixed(CURRENCY_DECIMALS);
               return (
                 <div key={s.id} style={{
                   display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0.75rem',
@@ -80,7 +97,7 @@ export default function PosRecentSales({ currency = 'KWD', onClose, onNeedOverri
                   <div>
                     <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#94a3b8' }}>{s.orderNumber}</div>
                     <div style={{ fontSize: 13 }}>
-                      {(s.items || []).length} items · {new Date(s.createdAt).toLocaleTimeString()} · {s.paymentMethod === 'pos_cash' ? 'Cash' : 'Card'}
+                      {plural((s.items || []).length, 'item')} · {new Date(s.createdAt).toLocaleTimeString()} · {methodLabel(s)}
                     </div>
                     {s.shippingAddress?.fullName && s.shippingAddress.fullName !== 'Walk-in' && (
                       <div style={{ fontSize: 12, color: '#cbd5e1' }}>{s.shippingAddress.fullName}</div>
@@ -128,7 +145,7 @@ export default function PosRecentSales({ currency = 'KWD', onClose, onNeedOverri
                     {!fullyVoid && (
                       <button
                         onClick={() => {
-                          if (!confirm(`Void sale ${s.orderNumber}? Refund ${fmt(remaining)} ${s.paymentMethod === 'pos_cash' ? 'in cash' : 'to card'}, return all items to stock.`)) return;
+                          if (!confirm(`Void sale ${s.orderNumber}? ${refundText(s, remaining)}, return all items to stock.`)) return;
                           startVoid(s);
                         }}
                         style={{

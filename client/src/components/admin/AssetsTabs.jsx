@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { HiPlus, HiTrash } from 'react-icons/hi';
 import api from '../../api/axios';
+import { CURRENCY_DECIMALS, PRICE_STEP } from '../../utils/currency';
 
 export default function AssetsTabs(props) {
   const { tab } = props;
@@ -26,7 +27,7 @@ const dlbl = { fontSize: '0.72rem', color: 'var(--text-light)', display: 'block'
 // Sign goes BEFORE the currency code — "−QAR350.000", not "QAR-350.000".
 const money = (c, n) => {
   const v = parseFloat(n) || 0;
-  return `${v < 0 ? '−' : ''}${c}${Math.abs(v).toFixed(3)}`;
+  return `${v < 0 ? '−' : ''}${c}${Math.abs(v).toFixed(CURRENCY_DECIMALS)}`;
 };
 const err = (e) => toast.error(e.response?.data?.message || e.message);
 
@@ -254,11 +255,11 @@ function FixedAssetsTab({ currency, isAdmin, locations = [], cashAccounts = [] }
             </div>
             <div className="form-row">
               <div className="form-group"><label>Cost ({currency}) *</label>
-                <input type="number" step="0.001" required value={form.cost}
+                <input type="number" step={PRICE_STEP} required value={form.cost}
                   onChange={(e) => setForm({ ...form, cost: e.target.value })} />
               </div>
               <div className="form-group"><label>Salvage value ({currency})</label>
-                <input type="number" step="0.001" value={form.salvageValue}
+                <input type="number" step={PRICE_STEP} value={form.salvageValue}
                   onChange={(e) => setForm({ ...form, salvageValue: e.target.value })} />
               </div>
               <div className="form-group"><label>Depreciation %/year</label>
@@ -319,7 +320,7 @@ function DisposeModal({ asset, currency, cashAccounts, onClose, onDone }) {
     proceeds: '', cashAccountId: '', notes: '', writeOff: false,
   });
   const nbv = parseFloat(asset.netBookValue) || 0;
-  const gainLoss = +((parseFloat(f.proceeds) || 0) - nbv).toFixed(3);
+  const gainLoss = +((parseFloat(f.proceeds) || 0) - nbv).toFixed(CURRENCY_DECIMALS);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -345,7 +346,7 @@ function DisposeModal({ asset, currency, cashAccounts, onClose, onDone }) {
               onChange={(e) => setF({ ...f, disposalDate: e.target.value })} />
           </div>
           <div className="form-group"><label>Proceeds ({currency})</label>
-            <input type="number" step="0.001" value={f.proceeds}
+            <input type="number" step={PRICE_STEP} value={f.proceeds}
               onChange={(e) => setF({ ...f, proceeds: e.target.value })} />
           </div>
         </div>
@@ -543,7 +544,7 @@ function CapitalTab({ currency, isAdmin, cashAccounts = [] }) {
             <h3>{form.type === 'contribution' ? 'Record capital contribution' : 'Record owner drawing'}</h3>
             <div className="form-row">
               <div className="form-group"><label>Amount ({currency}) *</label>
-                <input type="number" step="0.001" required value={form.amount}
+                <input type="number" step={PRICE_STEP} required value={form.amount}
                   onChange={(e) => setForm({ ...form, amount: e.target.value })} />
               </div>
               <div className="form-group"><label>Date *</label>

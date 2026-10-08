@@ -12,6 +12,7 @@ import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../api/axios';
 import ProductSearchPicker from './ProductSearchPicker';
+import { CURRENCY_DECIMALS, PRICE_STEP } from '../../utils/currency';
 
 export default function PoModals({
   poForm, setPoForm, poDetail, setPoDetail,
@@ -43,7 +44,7 @@ export default function PoModals({
             setPoDetail(null);
           }}
           onReceive={() => setReceiveForm({ poId: poDetail.id, items: (poDetail.items || []).map((it) => ({ ...it, receiveQty: (it.orderedQty || 0) - (it.receivedQty || 0) })) })}
-          onPay={() => setPayForm({ poId: poDetail.id, amount: +((parseFloat(poDetail.totalAmount) - parseFloat(poDetail.amountPaid || 0)).toFixed(3)), paymentMethod: 'cash', reference: '', notes: '' })}
+          onPay={() => setPayForm({ poId: poDetail.id, amount: +((parseFloat(poDetail.totalAmount) - parseFloat(poDetail.amountPaid || 0)).toFixed(CURRENCY_DECIMALS)), paymentMethod: 'cash', reference: '', notes: '' })}
           onSend={async () => {
             try { await api.post(`/purchase-orders/${poDetail.id}/send`); toast.success('Marked sent'); setPoDetail(null); refresh(); }
             catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
@@ -69,7 +70,7 @@ export default function PoModals({
 
 // ─── PO Editor (new / edit) ────────────────────────────────────────
 function PoEditor({ form, setForm, suppliers, locations, products, currency, onSaved }) {
-  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
 
   // Keyboard flow, no mouse needed: pick in search (ProductSearchPicker) →
   // the line's Qty takes focus, selected so typing replaces it → Tab on to
@@ -171,7 +172,7 @@ function PoEditor({ form, setForm, suppliers, locations, products, currency, onS
 
   const subtotal = (form.items || []).reduce((s, l) => s + (parseFloat(l.unitCost) || 0) * (parseInt(l.orderedQty, 10) || 0), 0);
   const taxAmount = (form.items || []).reduce((s, l) => s + (parseFloat(l.unitCost) || 0) * (parseInt(l.orderedQty, 10) || 0) * ((parseFloat(l.taxRate) || 0) / 100), 0);
-  const total = +(subtotal + taxAmount + (parseFloat(form.shippingCost) || 0) - (parseFloat(form.discount) || 0)).toFixed(3);
+  const total = +(subtotal + taxAmount + (parseFloat(form.shippingCost) || 0) - (parseFloat(form.discount) || 0)).toFixed(CURRENCY_DECIMALS);
   const totalQty = (form.items || []).reduce((s, l) => s + (parseInt(l.orderedQty, 10) || 0), 0);
 
   const submit = async (e, statusOverride) => {
@@ -326,10 +327,10 @@ function PoEditor({ form, setForm, suppliers, locations, products, currency, onS
 
         <div className="form-row">
           <div className="form-group"><label>Shipping cost</label>
-            <input type="number" step="0.001" value={form.shippingCost} onChange={(e) => setForm({ ...form, shippingCost: e.target.value })} />
+            <input type="number" step={PRICE_STEP} value={form.shippingCost} onChange={(e) => setForm({ ...form, shippingCost: e.target.value })} />
           </div>
           <div className="form-group"><label>Discount</label>
-            <input type="number" step="0.001" value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} />
+            <input type="number" step={PRICE_STEP} value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} />
           </div>
         </div>
 
@@ -360,8 +361,8 @@ function PoEditor({ form, setForm, suppliers, locations, products, currency, onS
 
 // ─── PO Detail ─────────────────────────────────────────────────────
 function PoDetail({ po, currency, onClose, onEdit, onReceive, onPay, onSend, onCancel }) {
-  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(3)}`;
-  const outstanding = +((parseFloat(po.totalAmount) || 0) - (parseFloat(po.amountPaid) || 0)).toFixed(3);
+  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
+  const outstanding = +((parseFloat(po.totalAmount) || 0) - (parseFloat(po.amountPaid) || 0)).toFixed(CURRENCY_DECIMALS);
   const editable = po.status === 'draft' || po.status === 'sent' || po.status === 'partial';
   const fullyReceived = (po.items || []).every((i) => (i.receivedQty || 0) >= (i.orderedQty || 0));
 
@@ -460,7 +461,7 @@ function PoDetail({ po, currency, onClose, onEdit, onReceive, onPay, onSend, onC
 
 // ─── Receive (GRN) ─────────────────────────────────────────────────
 function ReceiveModal({ form, setForm, currency, onDone }) {
-  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
   const setLine = (i, q) => {
     const next = [...form.items];
     const line = next[i];
@@ -577,7 +578,7 @@ function PayModal({ form, setForm, currency, onDone }) {
       <div className="admin-form" style={{ maxWidth: 480 }}>
         <h3>Record Payment</h3>
         <div className="form-group"><label>Amount ({currency})</label>
-          <input type="number" step="0.001" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required />
+          <input type="number" step={PRICE_STEP} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required />
         </div>
         <div className="form-group"><label>Method</label>
           <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
@@ -587,7 +588,7 @@ function PayModal({ form, setForm, currency, onDone }) {
         <div className="form-group"><label>Pay from account</label>
           <select value={form.cashAccountId || ''} onChange={(e) => setForm({ ...form, cashAccountId: e.target.value })}>
             <option value="">— Don't move cash (manual reconcile) —</option>
-            {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({currency}{parseFloat(a.balance || 0).toFixed(3)})</option>)}
+            {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({currency}{parseFloat(a.balance || 0).toFixed(CURRENCY_DECIMALS)})</option>)}
           </select>
         </div>
         <div className="form-group"><label>Reference</label>

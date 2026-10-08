@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 import { HiPlus, HiPencil, HiTrash } from 'react-icons/hi';
 import api from '../../api/axios';
 import { localDate } from '../../lib/utils';
-import { CURRENCY } from '../../utils/currency';
+import { CURRENCY, CURRENCY_DECIMALS, PRICE_STEP } from '../../utils/currency';
 import PoModals from './PoModals';
 import PurchaseReturnModals from './PurchaseReturnModals';
 
@@ -191,7 +191,7 @@ export default function ErpPurchasing({ tab, locations, products, isAdmin, onPro
                   ever accrues and there is nothing for terms to govern. */}
               <div className="form-row">
                 <div className="form-group"><label>Opening balance ({CURRENCY})</label>
-                  <input type="number" step="0.001" value={supplierForm.openingBalance} onChange={(e) => setSupplierForm({ ...supplierForm, openingBalance: e.target.value })} />
+                  <input type="number" step={PRICE_STEP} value={supplierForm.openingBalance} onChange={(e) => setSupplierForm({ ...supplierForm, openingBalance: e.target.value })} />
                 </div>
               </div>
               <div className="form-group"><label>Notes</label><textarea rows={2} value={supplierForm.notes || ''} onChange={(e) => setSupplierForm({ ...supplierForm, notes: e.target.value })} /></div>
@@ -211,8 +211,8 @@ export default function ErpPurchasing({ tab, locations, products, isAdmin, onPro
             <div className="admin-form" style={{ maxWidth: 760 }}>
               <h3>{supplierDetail.supplier.name} — Statement</h3>
               <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', fontSize: '0.88rem' }}>
-                <div><span style={{ color: 'var(--text-light)' }}>Opening</span> <strong>{CURRENCY}{parseFloat(supplierDetail.openingBalance).toFixed(3)}</strong></div>
-                <div><span style={{ color: 'var(--text-light)' }}>Closing</span> <strong style={{ color: supplierDetail.closingBalance > 0 ? 'var(--danger)' : 'var(--success)' }}>{CURRENCY}{parseFloat(supplierDetail.closingBalance).toFixed(3)}</strong></div>
+                <div><span style={{ color: 'var(--text-light)' }}>Opening</span> <strong>{CURRENCY}{parseFloat(supplierDetail.openingBalance).toFixed(CURRENCY_DECIMALS)}</strong></div>
+                <div><span style={{ color: 'var(--text-light)' }}>Closing</span> <strong style={{ color: supplierDetail.closingBalance > 0 ? 'var(--danger)' : 'var(--success)' }}>{CURRENCY}{parseFloat(supplierDetail.closingBalance).toFixed(CURRENCY_DECIMALS)}</strong></div>
               </div>
               <div className="admin-table-wrap">
                 <table className="admin-table">
@@ -224,9 +224,9 @@ export default function ErpPurchasing({ tab, locations, products, isAdmin, onPro
                         <td style={{ fontSize: '0.82rem' }}>{new Date(e.date).toLocaleDateString()}</td>
                         <td style={{ textTransform: 'capitalize' }}>{e.type}</td>
                         <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{e.ref}</td>
-                        <td style={{ textAlign: 'right' }}>{e.debit > 0 ? `${CURRENCY}${e.debit.toFixed(3)}` : ''}</td>
-                        <td style={{ textAlign: 'right' }}>{e.credit > 0 ? `${CURRENCY}${e.credit.toFixed(3)}` : ''}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{CURRENCY}{e.balance.toFixed(3)}</td>
+                        <td style={{ textAlign: 'right' }}>{e.debit > 0 ? `${CURRENCY}${e.debit.toFixed(CURRENCY_DECIMALS)}` : ''}</td>
+                        <td style={{ textAlign: 'right' }}>{e.credit > 0 ? `${CURRENCY}${e.credit.toFixed(CURRENCY_DECIMALS)}` : ''}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{CURRENCY}{e.balance.toFixed(CURRENCY_DECIMALS)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -285,8 +285,8 @@ export default function ErpPurchasing({ tab, locations, products, isAdmin, onPro
                   <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{p.poNumber}</td>
                   <td>{p.Supplier?.name || '—'}</td>
                   <td>{p.Location?.name || '—'}</td>
-                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{CURRENCY}{parseFloat(p.totalAmount).toFixed(3)}</td>
-                  <td style={{ textAlign: 'right' }}>{CURRENCY}{parseFloat(p.amountPaid || 0).toFixed(3)}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{CURRENCY}{parseFloat(p.totalAmount).toFixed(CURRENCY_DECIMALS)}</td>
+                  <td style={{ textAlign: 'right' }}>{CURRENCY}{parseFloat(p.amountPaid || 0).toFixed(CURRENCY_DECIMALS)}</td>
                   <td>
                     <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: '100px', textTransform: 'uppercase',
                       background: p.status === 'received' ? 'rgba(90,138,106,0.15)' : p.status === 'cancelled' ? 'rgba(220,38,38,0.15)' : 'rgba(196,120,74,0.15)',
@@ -366,7 +366,7 @@ export default function ErpPurchasing({ tab, locations, products, isAdmin, onPro
                   <td>{r.Supplier?.name || '—'}</td>
                   <td>{r.Location?.name || '—'}</td>
                   <td style={{ textTransform: 'capitalize' }}>{r.refundMethod.replace('_', ' ')}</td>
-                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{CURRENCY}{parseFloat(r.totalAmount).toFixed(3)}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{CURRENCY}{parseFloat(r.totalAmount).toFixed(CURRENCY_DECIMALS)}</td>
                   <td>
                     <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: '100px', textTransform: 'uppercase',
                       background: r.status === 'completed' ? 'rgba(90,138,106,0.15)' : 'rgba(220,38,38,0.15)',

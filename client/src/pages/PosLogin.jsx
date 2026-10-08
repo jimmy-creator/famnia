@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
-import { CurrencySymbol } from '../utils/currency';
+import { CurrencySymbol, CURRENCY_DECIMALS, PRICE_STEP } from '../utils/currency';
 import { STAFF_BASE } from '../App';
 
 /**
@@ -188,10 +188,10 @@ export default function PosLogin() {
               <label className="pos-label">
                 Opening cash (<CurrencySymbol />)
                 <input
-                  type="number" step="0.001" min={0}
+                  type="number" step={PRICE_STEP} min={0}
                   value={openingCash}
                   onChange={(e) => setOpeningCash(e.target.value)}
-                  placeholder="0.000"
+                  placeholder={(0).toFixed(CURRENCY_DECIMALS)}
                   className="pos-cash-input"
                   autoFocus
                 />

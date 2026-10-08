@@ -31,6 +31,7 @@ const REFUND_AMOUNT_THRESHOLD = 50;    // KWD — over this needs manager approv
 import { protect, requirePermission } from '../middleware/auth.js';
 import { refundValuer } from '../utils/refund.js';
 import { rangeStart, rangeEnd } from '../utils/dates.js';
+import { dp } from '../utils/money.js';
 
 const router = Router();
 
@@ -235,7 +236,7 @@ router.post('/', authEither, async (req, res) => {
           await t.rollback();
           return res.status(400).json({ message: `Product ${productId} not found` });
         }
-        const lineRefund = +(line.price * qty).toFixed(3);
+        const lineRefund = +(line.price * qty).toFixed(dp());
         refundTotal += lineRefund;
         returnedItems.push({
           productId, variantIndex: vIdx,
@@ -273,7 +274,7 @@ router.post('/', authEither, async (req, res) => {
         nameAr: original.nameAr || null,
         sku: original.sku || original.variant?.sku || null,
         barcode: original.barcode || null,
-        price: +(lineRefund / qty).toFixed(3),   // net unit price, so the receipt's qty × price adds up
+        price: +(lineRefund / qty).toFixed(dp()),   // net unit price, so the receipt's qty × price adds up
         listPrice: parseFloat(original.price) || 0,
         // Carry the original line's COGS snapshot so the P&L can credit it
         // back. Without it refundCogs stays 0: the goods return to stock
@@ -286,7 +287,7 @@ router.post('/', authEither, async (req, res) => {
       });
       if (returnToStock) stockBumps.push({ productId, variantIndex: vIdx, qty });
     }
-    refundTotal = +refundTotal.toFixed(3);
+    refundTotal = +refundTotal.toFixed(dp());
 
     // Manager-override gate for refunds over the threshold. Cashier
     // initiated only — admin-initiated returns assume admin auth.
@@ -347,7 +348,7 @@ router.post('/', authEither, async (req, res) => {
     // Bump Order.refundAmount additively so the order history shows total
     // refunded against this order.
     if (order) {
-      const newRefundAmount = +((parseFloat(order.refundAmount) || 0) + refundTotal).toFixed(3);
+      const newRefundAmount = +((parseFloat(order.refundAmount) || 0) + refundTotal).toFixed(dp());
       await order.update({ refundAmount: newRefundAmount }, { transaction: t });
     }
 
@@ -497,7 +498,7 @@ router.post('/:id/cancel', protect, requirePermission('orders'), async (req, res
       }
     }
     if (order) {
-      const newRefund = Math.max(0, +((parseFloat(order.refundAmount) || 0) - parseFloat(sr.refundAmount || 0)).toFixed(3));
+      const newRefund = Math.max(0, +((parseFloat(order.refundAmount) || 0) - parseFloat(sr.refundAmount || 0)).toFixed(dp()));
       await order.update({ refundAmount: newRefund }, { transaction: t });
     }
     // Put the refunded money back: a +amount entry against each ledger row

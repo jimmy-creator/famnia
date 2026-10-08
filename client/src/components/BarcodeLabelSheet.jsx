@@ -10,6 +10,7 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import JsBarcode from 'jsbarcode';
+import { CURRENCY_DECIMALS } from '../utils/currency';
 
 export const LABEL_SIZES = [
   { id: 'small', label: '40 × 25 mm', width: 40, height: 25, barcodeH: 26, fontPt: 8 },
@@ -89,7 +90,7 @@ export function Label({ product, size, show, currency }) {
       )}
       {show.price && (
         <div className="bc-price" style={{ fontSize: `${size.fontPt + 2}pt`, fontWeight: 800, marginTop: '0.4mm' }}>
-          {currency} {(parseFloat(product.price) || 0).toFixed(3)}
+          {currency} {(parseFloat(product.price) || 0).toFixed(CURRENCY_DECIMALS)}
         </div>
       )}
     </div>

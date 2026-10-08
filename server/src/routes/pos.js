@@ -29,6 +29,7 @@ import { refundValuer } from '../utils/refund.js';
 import { nextInvoiceNumber } from '../services/invoiceSequence.js';
 import { mergeLines, parseVariantIndex } from '../utils/lines.js';
 import { rollup, saleTenders, splitRefund } from '../utils/posTotals.js';
+import { dp } from '../utils/money.js';
 
 const router = Router();
 
@@ -302,7 +303,7 @@ router.get('/recent-sales', protectCashier, async (req, res) => {
     const rows = await Order.findAll({
       where: { cashierSessionId: req.cashierSessionId },
       attributes: ['id', 'orderNumber', 'totalAmount', 'discount', 'paymentMethod',
-                   'items', 'shippingAddress', 'createdAt', 'refundAmount'],
+                   'paymentBreakdown', 'items', 'shippingAddress', 'createdAt', 'refundAmount'],
       order: [['createdAt', 'DESC']],
       limit: parseInt(req.query.limit, 10) || 25,
     });
@@ -365,7 +366,7 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
       return res.status(403).json({ message: 'Can only void sales from your current shift' });
     }
     const alreadyRefunded = parseFloat(order.refundAmount || 0);
-    const remaining = +(parseFloat(order.totalAmount) - alreadyRefunded).toFixed(3);
+    const remaining = +(parseFloat(order.totalAmount) - alreadyRefunded).toFixed(dp());
     if (remaining <= 0) {
       await t.rollback();
       return res.status(400).json({ message: 'Sale already fully refunded' });
@@ -424,7 +425,7 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
         nameAr: it.nameAr || null,
         sku: it.sku || it.variant?.sku || null,
         barcode: it.barcode || null,
-        price: +(lineRefund / remainingQty).toFixed(3),   // net unit price, so qty × price adds up
+        price: +(lineRefund / remainingQty).toFixed(dp()),   // net unit price, so qty × price adds up
         listPrice: parseFloat(it.price) || 0,
         costPrice: parseFloat(it.costPrice) || 0,   // COGS snapshot, so the P&L can credit it back
         quantity: remainingQty,
@@ -433,7 +434,7 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
       });
       productIds.add(it.productId);
     }
-    refundTotal = +Math.min(refundTotal, remaining).toFixed(3);
+    refundTotal = +Math.min(refundTotal, remaining).toFixed(dp());
     if (refundTotal <= 0) {
       await t.rollback();
       return res.status(400).json({ message: 'Nothing to void' });
@@ -478,7 +479,7 @@ router.post('/sales/:id/void', protectCashier, async (req, res) => {
 
     // Bump Order.refundAmount + write ledger entry if drawer/card account.
     await order.update({
-      refundAmount: +(alreadyRefunded + refundTotal).toFixed(3),
+      refundAmount: +(alreadyRefunded + refundTotal).toFixed(dp()),
     }, { transaction: t });
 
     for (const leg of refundLegs) {
@@ -633,7 +634,7 @@ router.post('/sales/:id/append', protectCashier, async (req, res) => {
         appendedAt: new Date().toISOString(),
       });
     }
-    delta = +delta.toFixed(3);
+    delta = +delta.toFixed(dp());
 
     // Resolve new tender(s) — same shape as /sale's payment.
     let newTenders = [];
@@ -645,7 +646,7 @@ router.post('/sales/:id/append', protectCashier, async (req, res) => {
       if (newTenders.some((tn) => !Number.isFinite(tn.amount) || tn.amount <= 0)) {
         throw new Error('Each split tender must be a positive amount');
       }
-      const sum = +newTenders.reduce((s, tn) => s + (tn.amount || 0), 0).toFixed(3);
+      const sum = +newTenders.reduce((s, tn) => s + (tn.amount || 0), 0).toFixed(dp());
       if (sum !== delta) throw new Error(`Tenders sum to ${sum} but added line total is ${delta}`);
     } else if (payment?.method && ['cash', 'card'].includes(payment.method)) {
       const tendered = payment.amountTendered != null ? parseFloat(payment.amountTendered) : delta;
@@ -663,7 +664,7 @@ router.post('/sales/:id/append', protectCashier, async (req, res) => {
 
     // Update Order — append items, bump total, merge tenders.
     const updatedItems = [...(order.items || []), ...newLines];
-    const newTotal = +((parseFloat(order.totalAmount) || 0) + delta).toFixed(3);
+    const newTotal = +((parseFloat(order.totalAmount) || 0) + delta).toFixed(dp());
     const priorBreakdown = Array.isArray(order.paymentBreakdown) ? order.paymentBreakdown : null;
     let mergedBreakdown;
     if (priorBreakdown) {
@@ -766,7 +767,7 @@ async function validateCoupon({ code, subtotal, items, userId, transaction = nul
   if (coupon.endDate && now > new Date(coupon.endDate)) throw new Error('Coupon has expired');
   if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) throw new Error('Coupon usage limit reached');
   if (subtotal < parseFloat(coupon.minOrderAmount || 0)) {
-    throw new Error(`Minimum order ${parseFloat(coupon.minOrderAmount).toFixed(3)} required`);
+    throw new Error(`Minimum order ${parseFloat(coupon.minOrderAmount).toFixed(dp())} required`);
   }
   if (userId && coupon.perUserLimit) {
     const used = await Order.count({ where: { userId, couponCode: coupon.code }, transaction });
@@ -792,7 +793,7 @@ async function validateCoupon({ code, subtotal, items, userId, transaction = nul
     discount = parseFloat(coupon.value);
   }
   discount = Math.min(discount, subtotal);
-  discount = +discount.toFixed(3);
+  discount = +discount.toFixed(dp());
   return { coupon, discount };
 }
 
@@ -983,7 +984,7 @@ router.post('/sale', protectCashier, async (req, res) => {
       // price is untouched. Stored as the line's `price` so every downstream
       // reader (receipt, returns, reports) sees what was actually charged,
       // with `listPrice` kept for the audit trail.
-      const unitPrice = it.price != null ? +it.price.toFixed(3) : listPrice;
+      const unitPrice = it.price != null ? +it.price.toFixed(dp()) : listPrice;
       listSubTotal += listPrice * qty;
       const repriced = unitPrice !== listPrice;
       if (repriced) {
@@ -1002,7 +1003,7 @@ router.post('/sale', protectCashier, async (req, res) => {
       if (ld && parseFloat(ld.value) > 0) {
         const v = parseFloat(ld.value);
         lineOff = ld.kind === 'percentage' ? (lineGross * v) / 100 : v * qty;
-        lineOff = +Math.min(lineOff, lineGross).toFixed(3);
+        lineOff = +Math.min(lineOff, lineGross).toFixed(dp());
         lineOffTotal += lineOff;
       }
       const variantSuffix = variant ? ` (${Object.values(variant.options || {}).join('/')})` : '';
@@ -1046,8 +1047,8 @@ router.post('/sale', protectCashier, async (req, res) => {
     // capped at 0 in case both stack heavily.
     // Discount waterfall: per-line discounts first, then the manual bill
     // discount on what's left, then any coupon on top of that.
-    lineOffTotal = +lineOffTotal.toFixed(3);
-    const afterLines = +Math.max(0, subTotal - lineOffTotal).toFixed(3);
+    lineOffTotal = +lineOffTotal.toFixed(dp());
+    const afterLines = +Math.max(0, subTotal - lineOffTotal).toFixed(dp());
     let manualOff = 0;
     let manualPct = 0;
     if (manualDiscount && parseFloat(manualDiscount.value) > 0) {
@@ -1089,7 +1090,7 @@ router.post('/sale', protectCashier, async (req, res) => {
     if (couponCode) {
       const result = await validateCoupon({
         code: couponCode,
-        subtotal: +Math.max(0, afterLines - manualOff).toFixed(3),
+        subtotal: +Math.max(0, afterLines - manualOff).toFixed(dp()),
         items: orderItems,
         userId: linkedUser?.id,
         transaction: t,
@@ -1100,13 +1101,13 @@ router.post('/sale', protectCashier, async (req, res) => {
     // order.discount is the FULL discount including per-line ones — the
     // refund valuer subtracts the line discounts back out to work out the
     // order-level slice, so this must not exclude them.
-    const totalDiscount = +(lineOffTotal + manualOff + couponOff).toFixed(3);
+    const totalDiscount = +(lineOffTotal + manualOff + couponOff).toFixed(dp());
     // Delivery is charged on top of the discounted goods and is not
     // discountable — a coupon shouldn't erode the courier fee. Folding it
     // into totalAmount here means every tender check below, the ledger
     // posting and the P&L all pick it up without further changes.
-    const goodsTotal = +(Math.max(0, subTotal - totalDiscount)).toFixed(3);
-    const totalAmount = +(goodsTotal + deliveryCharge).toFixed(3);
+    const goodsTotal = +(Math.max(0, subTotal - totalDiscount)).toFixed(dp());
+    const totalAmount = +(goodsTotal + deliveryCharge).toFixed(dp());
 
     const orderNumber = await nextInvoiceNumber(t);
 
@@ -1122,7 +1123,7 @@ router.post('/sale', protectCashier, async (req, res) => {
       amountTendered = payment.amountTendered != null
         ? parseFloat(payment.amountTendered)
         : totalAmount;
-      change = +(amountTendered - totalAmount).toFixed(3);
+      change = +(amountTendered - totalAmount).toFixed(dp());
       if (single.method === 'cash') {
         if (amountTendered < totalAmount) throw new Error('Amount tendered is less than total');
         single.amount = totalAmount;       // retained, not tendered
@@ -1132,7 +1133,7 @@ router.post('/sale', protectCashier, async (req, res) => {
         single.amount = totalAmount;
       }
     } else {
-      const sum = +tenders.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0).toFixed(3);
+      const sum = +tenders.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0).toFixed(dp());
       if (sum !== totalAmount) {
         throw new Error(`Split tenders sum to ${sum} but total is ${totalAmount}`);
       }
@@ -1199,7 +1200,7 @@ router.post('/sale', protectCashier, async (req, res) => {
         // Price overrides are worth auditing on their own — they change
         // what was charged without leaving a discount trail.
         repricedLines: repricedLines || undefined,
-        repriceDelta: repricedLines ? +repriceDelta.toFixed(3) : undefined,
+        repriceDelta: repricedLines ? +repriceDelta.toFixed(dp()) : undefined,
       },
       managerOverrideBy: managerUser?.id || null,
       reason: managerUser ? (managerOverride?.reason || `Discount ${manualPct.toFixed(1)}%`) : null,
@@ -1297,7 +1298,7 @@ router.get('/shift-summary', protectCashier, async (req, res) => {
     // ignore refunds and split tenders, so it disagreed with them.
     const summary = rollup(orders, returns);
     summary.openingCash = parseFloat(session.openingCash) || 0;
-    summary.expectedCash = +(summary.openingCash + summary.cashSales - summary.cashRefunds).toFixed(3);
+    summary.expectedCash = +(summary.openingCash + summary.cashSales - summary.cashRefunds).toFixed(dp());
     res.json({ session, summary, recentOrders: orders.slice(0, 20) });
   } catch (err) {
     res.status(500).json({ message: err.message });

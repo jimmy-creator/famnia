@@ -1,3 +1,5 @@
+import { dp } from './money.js';
+
 /**
  * Shared money arithmetic for POS shifts — the X-report, Z-report, shift
  * close and shift summary must all agree on what went through the drawer,
@@ -6,7 +8,7 @@
  * Tenders are cash and card only (see CLAUDE.md — no KNET, no store credit).
  */
 
-const round3 = (n) => +n.toFixed(3);
+const round3 = (n) => +n.toFixed(dp());
 
 const SINGLE_METHOD = { pos_cash: 'cash', cash: 'cash', pos_card: 'card', card: 'card' };
 

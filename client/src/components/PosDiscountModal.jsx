@@ -13,6 +13,7 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
+import { CURRENCY_DECIMALS, PRICE_STEP } from '../utils/currency';
 
 export default function PosDiscountModal({
   subtotal, cartItems, customer, currency = 'KWD',
@@ -28,14 +29,14 @@ export default function PosDiscountModal({
   const [appliedCoupon, setAppliedCoupon] = useState(current?.coupon || null);
   const [busy, setBusy] = useState(false);
 
-  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
 
   // Live preview of the manual amount
   const manualPreview = (() => {
     const v = parseFloat(value) || 0;
     if (v <= 0) return 0;
     const calc = kind === 'percentage' ? (subtotal * v) / 100 : v;
-    return +Math.min(calc, subtotal).toFixed(3);
+    return +Math.min(calc, subtotal).toFixed(CURRENCY_DECIMALS);
   })();
 
   const applyManual = () => {
@@ -133,7 +134,7 @@ export default function PosDiscountModal({
 
             <label className="modal-label">Amount {kind === 'percentage' ? '(%)' : `(${currency})`}</label>
             <input
-              type="number" step={kind === 'percentage' ? '0.1' : '0.001'} min="0"
+              type="number" step={kind === 'percentage' ? '0.1' : PRICE_STEP} min="0"
               max={kind === 'percentage' ? 100 : subtotal}
               value={value}
               onChange={(e) => setValue(e.target.value)}

@@ -31,6 +31,7 @@
  *  kind ∈ 'receipt' | 'barcode'
  */
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
+import { CURRENCY_DECIMALS } from '../utils/currency';
 
 const KINDS = ['receipt', 'barcode'];
 const DEFAULTS = { receipt: 48, barcode: 32 };
@@ -255,7 +256,7 @@ async function send(kind, bytes) {
 }
 
 // ── Receipt templates ──────────────────────────────────────────────
-const fmt = (currency, n) => `${currency} ${(parseFloat(n) || 0).toFixed(3)}`;
+const fmt = (currency, n) => `${currency} ${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
 
 // Store header for receipts, X/Z reports and barcode labels. A POS
 // location's own address/phone win when set; these fill in for locations

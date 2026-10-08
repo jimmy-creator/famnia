@@ -564,6 +564,14 @@
     box-shadow: var(--erp-shadow);
   }
   .erp-ui .admin-table table { font-size: .8125rem; }
+  /* Most ERP screens put the class on the <table> itself, inside a wrap.
+     The base `.admin-table table` width rule never matches that, so the
+     table shrank to its content and the wrap's card showed an empty band
+     beside it — and both got the card border. One card: the wrap. */
+  .erp-ui table.admin-table { width: 100%; font-size: .8125rem; }
+  .erp-ui .admin-table-wrap > table.admin-table {
+    border: 0; border-radius: 0; box-shadow: none; background: transparent;
+  }
   .erp-ui .admin-table thead { background: var(--erp-raised); }
   .erp-ui .admin-table th {
     height: 2.625rem;

@@ -19,7 +19,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/axios';
-import { CURRENCY } from '../utils/currency';
+import { CURRENCY, CURRENCY_DECIMALS } from '../utils/currency';
 import { cn, localDate } from '@/lib/utils';
 import {
   Menu, LogOut, ShoppingBag, LayoutGrid, Boxes, Truck,
@@ -278,7 +278,7 @@ export default function Erp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, user?.id, user?.role]);
 
-  const money = (n) => `${CURRENCY}${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`;
+  const money = (n) => `${CURRENCY}${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: CURRENCY_DECIMALS, maximumFractionDigits: CURRENCY_DECIMALS })}`;
 
   const tiles = (() => {
     if (!overview) return [];

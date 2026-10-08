@@ -32,6 +32,11 @@
  *     channel != 'web') and show as website sales in the channel split.
  *     Orders rung up in a shift (cashierSessionId set) are re-tagged 'pos'.
  *
+ *  6. Product.stock and variants[].stock re-derived from ProductStock.
+ *     Before recomputeProductStock() rolled up variants too, per-size stock
+ *     on the product went stale as soon as the ERP moved stock, so the
+ *     storefront size picker showed the wrong sizes as available.
+ *
  * CashAccount rows are NOT created here — finance.js seeds a drawer, card
  * terminal, petty cash and bank account automatically on
  * the next boot, once a Location exists.
@@ -40,6 +45,7 @@ import { Op } from 'sequelize';
 import sequelize from '../config/database.js';   // also runs dotenv.config()
 import {
   Location, Product, ProductStock, ExpenseCategory, User, Order,
+  recomputeProductStock,
 } from '../models/index.js';
 
 const STORE_NAME = process.env.STORE_NAME || 'Femnia Fashion';
@@ -175,6 +181,13 @@ async function backfillPosChannel() {
   console.log(`✓ Order channel: ${n} till sale(s) re-tagged from 'web' to 'pos'`);
 }
 
+// ── 6. Re-derive Product.stock + variants[].stock from ProductStock ──
+async function rollUpStock() {
+  const products = await Product.findAll({ attributes: ['id'] });
+  for (const p of products) await recomputeProductStock(p.id);
+  console.log(`✓ Stock rollup: ${products.length} product(s) re-derived from per-location stock`);
+}
+
 async function main() {
   if (process.env.FEATURE_MULTILOC !== 'true') {
     console.warn('⚠  FEATURE_MULTILOC is not "true" in server/.env — the ERP will stay');
@@ -191,6 +204,7 @@ async function main() {
   await ensureExpenseCategories();
   await ensureCashier(loc.id);
   await backfillPosChannel();
+  await rollUpStock();
 
   console.log('\nERP bootstrap complete. Restart the server to auto-seed cash accounts.');
 }

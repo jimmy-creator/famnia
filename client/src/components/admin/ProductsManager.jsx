@@ -12,7 +12,7 @@ import { HiPhotograph, HiX, HiTrash } from 'react-icons/hi';
 import { Plus, Pencil, Trash2, Eye, EyeOff } from 'lucide-react';
 import api from '../../api/axios';
 import ProductImage from '../ProductImage';
-import { CURRENCY, PRICE_STEP, formatPrice } from '../../utils/currency';
+import { CURRENCY, PRICE_STEP, formatPrice, CURRENCY_DECIMALS } from '../../utils/currency';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -433,7 +433,7 @@ export default function ProductsManager() {
   const marginPrice = (cost, margin) => {
     const c = parseFloat(cost);
     const m = parseFloat(margin);
-    return c > 0 && Number.isFinite(m) ? (c * (1 + m / 100)).toFixed(3) : null;
+    return c > 0 && Number.isFinite(m) ? (c * (1 + m / 100)).toFixed(CURRENCY_DECIMALS) : null;
   };
   const priceMargin = (cost, price) => {
     const c = parseFloat(cost);

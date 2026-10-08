@@ -22,8 +22,9 @@ import {
 } from 'react-icons/hi';
 import { isSupported as usbSupported, isEnabled as printerEnabled, kickDrawer } from '../lib/thermalPrinter';
 import api from '../api/axios';
+import { plural } from '../lib/utils';
 import { beep, errorTone } from '../lib/sounds';
-import { CurrencySymbol } from '../utils/currency';
+import { CurrencySymbol, CURRENCY_DECIMALS, PRICE_STEP } from '../utils/currency';
 import PosReceipt from '../components/PosReceipt';
 import PosReportReceipt from '../components/PosReportReceipt';
 import PosReturnModal from '../components/PosReturnModal';
@@ -67,9 +68,14 @@ function monogram(name = '') {
 }
 
 function ProductTile({ p, onPick, fmt }) {
-  const out = !p.hasVariants && p.stockAtLocation < 1;
+  // A sized product shows its stock summed over the sizes here — the old
+  // badge was the size count, styled like a stock figure, and read as one.
+  const stock = p.hasVariants
+    ? (p.variants || []).reduce((s, v) => s + (v.stockAtLocation || 0), 0)
+    : p.stockAtLocation;
+  const out = stock < 1;
   return (
-    <button className="prod-tile" onClick={() => onPick(p)} disabled={out}>
+    <button className="prod-tile" onClick={() => onPick(p)} disabled={!p.hasVariants && out}>
       <div className="prod-thumb">
         {p.image
           ? <img src={p.image} alt="" loading="lazy" />
@@ -78,9 +84,7 @@ function ProductTile({ p, onPick, fmt }) {
       <div className="prod-name">{p.name}</div>
       <div className="prod-foot">
         <span className="prod-price">{fmt(p.price)}</span>
-        {p.hasVariants
-          ? <span className="badge">{p.variants.length}</span>
-          : <span className={out ? 'stock-out' : 'stock-ok'}>{p.stockAtLocation}</span>}
+        <span className={out ? 'stock-out' : 'stock-ok'} title={p.hasVariants ? `${p.variants.length} sizes` : undefined}>{stock}</span>
       </div>
     </button>
   );
@@ -336,7 +340,7 @@ export default function Pos() {
     if (!(p >= 0)) {
       toast.error('Enter a valid price');
     } else {
-      setCart((prev) => prev.map((c, i) => (i === priceEdit.idx ? { ...c, price: +p.toFixed(3) } : c)));
+      setCart((prev) => prev.map((c, i) => (i === priceEdit.idx ? { ...c, price: +p.toFixed(CURRENCY_DECIMALS) } : c)));
     }
     setPriceEdit(null);
     searchRef.current?.focus();
@@ -364,13 +368,13 @@ export default function Pos() {
     const gross = c.price * c.quantity;
     const v = parseFloat(c.lineDiscount.value) || 0;
     const calc = c.lineDiscount.kind === 'percentage' ? (gross * v) / 100 : v * c.quantity;
-    return +Math.min(calc, gross).toFixed(3);
+    return +Math.min(calc, gross).toFixed(CURRENCY_DECIMALS);
   };
 
   const cartCount = cart.reduce((n, c) => n + c.quantity, 0);
   const subTotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
-  const lineOffTotal = +cart.reduce((s, c) => s + lineOffOf(c), 0).toFixed(3);
-  const afterLines = +Math.max(0, subTotal - lineOffTotal).toFixed(3);
+  const lineOffTotal = +cart.reduce((s, c) => s + lineOffOf(c), 0).toFixed(CURRENCY_DECIMALS);
+  const afterLines = +Math.max(0, subTotal - lineOffTotal).toFixed(CURRENCY_DECIMALS);
   // Mirror the server's waterfall: lines → manual bill discount → coupon.
   // The coupon amount comes from the preview call; the server re-validates
   // and recomputes everything on commit.
@@ -378,14 +382,14 @@ export default function Pos() {
     if (!discount?.manual) return 0;
     const v = parseFloat(discount.manual.value) || 0;
     const calc = discount.manual.kind === 'percentage' ? (afterLines * v) / 100 : v;
-    return +Math.min(calc, afterLines).toFixed(3);
+    return +Math.min(calc, afterLines).toFixed(CURRENCY_DECIMALS);
   })();
-  const couponOff = discount?.coupon ? +(parseFloat(discount.coupon.discount) || 0).toFixed(3) : 0;
-  const discountTotal = +Math.min(lineOffTotal + manualOff + couponOff, subTotal).toFixed(3);
+  const couponOff = discount?.coupon ? +(parseFloat(discount.coupon.discount) || 0).toFixed(CURRENCY_DECIMALS) : 0;
+  const discountTotal = +Math.min(lineOffTotal + manualOff + couponOff, subTotal).toFixed(CURRENCY_DECIMALS);
   // Delivery rides on top of the discounted goods and is never discounted,
   // matching the server's calculation in routes/pos.js.
   const deliveryCharge = Math.max(0, parseFloat(deliveryInput) || 0);
-  const total = +(Math.max(0, subTotal - discountTotal) + deliveryCharge).toFixed(3);
+  const total = +(Math.max(0, subTotal - discountTotal) + deliveryCharge).toFixed(CURRENCY_DECIMALS);
 
   // ─── Search keyboard handling ───────────────────────────────────
   // Enter on a single result -> add. Enter with multiple -> add the
@@ -587,8 +591,8 @@ export default function Pos() {
     if (wasZ) navigate(`${STAFF_BASE}/login`);
   };
 
-  const fmt = (n) => `${CURRENCY} ${(parseFloat(n) || 0).toFixed(3)}`;
-  const cashChange = payOpen === 'cash' && tendered ? +(parseFloat(tendered) - total).toFixed(3) : 0;
+  const fmt = (n) => `${CURRENCY} ${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
+  const cashChange = payOpen === 'cash' && tendered ? +(parseFloat(tendered) - total).toFixed(CURRENCY_DECIMALS) : 0;
 
   return (
     <div className="pos-app">
@@ -781,7 +785,7 @@ export default function Pos() {
               {held.map((b, n) => (
                 <span key={b.id} className="held-bill">
                   <button onClick={() => resumeBill(b.id)} title={cart.length > 0 ? 'Switch to this bill (the current one is held)' : 'Resume this bill'}>
-                    {b.linkedCustomer?.name || `Bill ${n + 1}`} · {b.cart.reduce((s, c) => s + c.quantity, 0)} items · {fmt(b.cart.reduce((s, c) => s + c.price * c.quantity, 0))}
+                    {b.linkedCustomer?.name || `Bill ${n + 1}`} · {plural(b.cart.reduce((s, c) => s + c.quantity, 0), 'item')} · {fmt(b.cart.reduce((s, c) => s + c.price * c.quantity, 0))}
                   </button>
                   <button className="held-bill-x" onClick={() => dropBill(b.id)} aria-label="Discard held bill" title="Discard">×</button>
                 </span>
@@ -798,7 +802,7 @@ export default function Pos() {
                   {priceEdit?.idx === i ? (
                     <input
                       className="cart-line-price-input"
-                      type="number" min="0" step="0.001" autoFocus
+                      type="number" min="0" step={PRICE_STEP} autoFocus
                       value={priceEdit.value}
                       onChange={(e) => setPriceEdit({ idx: i, value: e.target.value })}
                       onBlur={commitPrice}
@@ -896,7 +900,7 @@ export default function Pos() {
             <div className="sub-row delivery-input-row">
               <span>Delivery charge</span>
               <input
-                type="number" step="0.001" min="0" placeholder="0"
+                type="number" step={PRICE_STEP} min="0" placeholder="0"
                 value={deliveryInput}
                 disabled={cart.length === 0}
                 onChange={(e) => setDeliveryInput(e.target.value)}
@@ -911,7 +915,7 @@ export default function Pos() {
           <div className="pay-buttons">
             <button
               disabled={cart.length === 0}
-              onClick={() => { setPayOpen('cash'); setTendered(total.toFixed(3)); }}
+              onClick={() => { setPayOpen('cash'); setTendered(total.toFixed(CURRENCY_DECIMALS)); }}
               className="pay-btn pay-btn-cash">
               <HiCash size={22} /> Cash
             </button>
@@ -987,7 +991,7 @@ export default function Pos() {
               <>
                 <label className="modal-label">Amount tendered (<CurrencySymbol />)</label>
                 <input
-                  type="number" step="0.001" min={total}
+                  type="number" step={PRICE_STEP} min={total}
                   value={tendered}
                   onChange={(e) => setTendered(e.target.value)}
                   className="modal-input"
@@ -998,7 +1002,7 @@ export default function Pos() {
                 </div>
                 <div className="quick-cash">
                   {/* Round totals make several suggestions equal — show each amount once. */}
-                  {[...new Set([total, Math.ceil(total), Math.ceil(total / 5) * 5, Math.ceil(total / 10) * 10].map((v) => v.toFixed(3)))].map((v) => (
+                  {[...new Set([total, Math.ceil(total), Math.ceil(total / 5) * 5, Math.ceil(total / 10) * 10].map((v) => v.toFixed(CURRENCY_DECIMALS)))].map((v) => (
                     <button key={v} onClick={() => setTendered(v)}>{fmt(v)}</button>
                   ))}
                 </div>
@@ -1041,7 +1045,7 @@ export default function Pos() {
             <h3>Close shift</h3>
             <label className="modal-label">Closing cash count (<CurrencySymbol />)</label>
             <input
-              type="number" step="0.001" min={0}
+              type="number" step={PRICE_STEP} min={0}
               value={closeForm.closingCash}
               onChange={(e) => setCloseForm({ ...closeForm, closingCash: e.target.value })}
               required autoFocus
@@ -1515,6 +1519,15 @@ export default function Pos() {
         .result-name { font-size: 0.95rem; font-weight: 500; }
         .result-meta { display: flex; gap: 0.5rem; font-size: 0.72rem; margin-top: 0.3rem; align-items: center; flex-wrap: wrap; }
         .result-sku { color: var(--pos-text-3); font-family: 'SF Mono', monospace; font-size: 0.7rem; }
+        /* Label-print dialog (PosLabelPrint) — results and the picked item. */
+        .label-result, .label-selected {
+          display: flex; align-items: center; gap: 0.75rem; width: 100%;
+          padding: 0.6rem 0.75rem; border-radius: 8px; color: inherit; font: inherit;
+          background: transparent; border: 1px solid transparent; text-align: left;
+        }
+        .label-result { cursor: pointer; }
+        .label-result:hover { background: var(--pos-surface); border-color: var(--pos-border-strong); }
+        .label-selected { border-color: var(--pos-border-strong); margin-bottom: 0.75rem; }
         .stock-pill {
           display: inline-flex; align-items: center; gap: 6px;
           padding: 2px 8px 2px 6px; border-radius: 100px;

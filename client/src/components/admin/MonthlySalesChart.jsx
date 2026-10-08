@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from 'react';
 import api from '../../api/axios';
-import { CURRENCY } from '../../utils/currency';
+import { CURRENCY, CURRENCY_DECIMALS } from '../../utils/currency';
 
 const MONTHS = 12;
 const pad = (n) => String(n).padStart(2, '0');
@@ -28,7 +28,7 @@ function niceMax(v) {
   return step * 4;
 }
 
-const money = (n) => `${CURRENCY} ${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`;
+const money = (n) => `${CURRENCY} ${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: CURRENCY_DECIMALS, maximumFractionDigits: CURRENCY_DECIMALS })}`;
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
 
 export default function MonthlySalesChart() {

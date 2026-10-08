@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import { HiPlus, HiTrash, HiArrowLeft, HiSearch } from 'react-icons/hi';
 import api from '../../api/axios';
 import { localDate } from '../../lib/utils';
+import { CURRENCY_DECIMALS } from '../../utils/currency';
 
 export default function StockCounts(props) {
   const { tab } = props;
@@ -118,7 +119,7 @@ function StockCountsList({ currency, locations, setTab, setActiveStockCountId })
                   <td style={{ textAlign: 'right' }}>{r.status === 'posted' ? r.totalVarianceQty : '—'}</td>
                   <td style={{ textAlign: 'right', fontWeight: 600,
                     color: r.status !== 'posted' ? 'inherit' : value < 0 ? 'var(--danger)' : value > 0 ? 'var(--success)' : 'inherit' }}>
-                    {r.status === 'posted' ? `${currency}${value.toFixed(3)}` : '—'}
+                    {r.status === 'posted' ? `${currency}${value.toFixed(CURRENCY_DECIMALS)}` : '—'}
                   </td>
                   <td>{r.postedAt ? new Date(r.postedAt).toLocaleString() : '—'}</td>
                   <td>{r.poster?.name || '—'}</td>
@@ -162,13 +163,12 @@ function StockCountsList({ currency, locations, setTab, setActiveStockCountId })
 // ─────────────────────────────────────────────────────────────────
 // Detail view
 // ─────────────────────────────────────────────────────────────────
-function StockCountDetail({ currency, setTab, activeStockCountId, expenseCategories, cashAccounts }) {
+function StockCountDetail({ currency, setTab, activeStockCountId }) {
   const [sc, setSc] = useState(null);
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
   const [variantPicker, setVariantPicker] = useState(null);
   const [showPost, setShowPost] = useState(false);
-  const [postForm, setPostForm] = useState({ expenseCategoryId: '', cashAccountId: '' });
   const searchRef = useRef(null);
 
   const load = useCallback(() => {
@@ -277,15 +277,9 @@ function StockCountDetail({ currency, setTab, activeStockCountId, expenseCategor
   const post = async (e) => {
     e.preventDefault();
     try {
-      const body = { ...postForm };
-      // Strip empty optional fields so the server doesn't try to write a
-      // zero-amount Expense.
-      if (!body.expenseCategoryId) delete body.expenseCategoryId;
-      if (!body.cashAccountId) delete body.cashAccountId;
-      await api.post(`/stock-counts/${sc.id}/post`, body);
+      await api.post(`/stock-counts/${sc.id}/post`);
       toast.success('Posted');
       setShowPost(false);
-      setPostForm({ expenseCategoryId: '', cashAccountId: '' });
       load();
     } catch (err) {
       toast.error(err.response?.data?.message || err.message);
@@ -367,7 +361,7 @@ function StockCountDetail({ currency, setTab, activeStockCountId, expenseCategor
                     <div>{r.name}{r.hasVariants && <span style={{ color: 'var(--text-light)', marginLeft: 6 }}>(pick variant)</span>}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-light)' }}>
                       {r.sku && <span style={{ fontFamily: 'monospace' }}>{r.sku} · </span>}
-                      Cost {currency}{(r.costPrice || 0).toFixed(3)}
+                      Cost {currency}{(r.costPrice || 0).toFixed(CURRENCY_DECIMALS)}
                     </div>
                   </div>
                   {!r.hasVariants && (
@@ -423,7 +417,7 @@ function StockCountDetail({ currency, setTab, activeStockCountId, expenseCategor
           <div className="dash-card">
             <div className="dash-card-label">Variance value</div>
             <div className="dash-card-value" style={{ color: (sc.totalVarianceValue || 0) < 0 ? 'var(--danger)' : 'inherit' }}>
-              {currency}{parseFloat(sc.totalVarianceValue || 0).toFixed(3)}
+              {currency}{parseFloat(sc.totalVarianceValue || 0).toFixed(CURRENCY_DECIMALS)}
             </div>
           </div>
         )}
@@ -466,7 +460,7 @@ function StockCountDetail({ currency, setTab, activeStockCountId, expenseCategor
                   {locked && (
                     <td style={{ textAlign: 'right',
                       color: (l.varianceValue || 0) < 0 ? 'var(--danger)' : 'inherit' }}>
-                      {currency}{parseFloat(l.varianceValue || 0).toFixed(3)}
+                      {currency}{parseFloat(l.varianceValue || 0).toFixed(CURRENCY_DECIMALS)}
                     </td>
                   )}
                   <td>
@@ -493,23 +487,10 @@ function StockCountDetail({ currency, setTab, activeStockCountId, expenseCategor
           <form className="admin-form" onSubmit={post}>
             <h3>Post Count</h3>
             <p style={{ color: 'var(--text-light)', fontSize: 13 }}>
-              Counted quantities will overwrite per-location stock. Optionally
-              capture net shrinkage as an Expense to keep P&L accurate.
+              Counted quantities will overwrite per-location stock. The variance
+              value shows in the P&amp;L as a stock loss (or gain) — no cash
+              account is touched.
             </p>
-            <label>Shrinkage expense category (optional)
-              <select value={postForm.expenseCategoryId} onChange={(e) => setPostForm({ ...postForm, expenseCategoryId: e.target.value })}>
-                <option value="">— skip expense —</option>
-                {(expenseCategories || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </label>
-            <label>Pay from cash account (optional)
-              <select value={postForm.cashAccountId} onChange={(e) => setPostForm({ ...postForm, cashAccountId: e.target.value })}>
-                <option value="">— skip expense —</option>
-                {(cashAccounts || []).filter((a) => a.active).map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-            </label>
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
               <button type="button" className="btn btn-secondary" onClick={() => setShowPost(false)}>Close</button>
               <button type="submit" className="btn btn-primary">Post Count</button>
@@ -565,16 +546,16 @@ function VarianceReport({ currency, locations, setTab }) {
             </div>
             <div className="dash-card">
               <div className="dash-card-label">Shrinkage value</div>
-              <div className="dash-card-value" style={{ color: 'var(--danger)' }}>{currency}{data.totalShrinkageValue.toFixed(3)}</div>
+              <div className="dash-card-value" style={{ color: 'var(--danger)' }}>{currency}{data.totalShrinkageValue.toFixed(CURRENCY_DECIMALS)}</div>
             </div>
             <div className="dash-card">
               <div className="dash-card-label">Surplus value</div>
-              <div className="dash-card-value" style={{ color: 'var(--success)' }}>{currency}{data.totalSurplusValue.toFixed(3)}</div>
+              <div className="dash-card-value" style={{ color: 'var(--success)' }}>{currency}{data.totalSurplusValue.toFixed(CURRENCY_DECIMALS)}</div>
             </div>
             <div className="dash-card">
               <div className="dash-card-label">Net</div>
               <div className="dash-card-value" style={{ color: data.netVarianceValue < 0 ? 'var(--danger)' : 'inherit' }}>
-                {currency}{data.netVarianceValue.toFixed(3)}
+                {currency}{data.netVarianceValue.toFixed(CURRENCY_DECIMALS)}
               </div>
             </div>
           </div>
@@ -593,8 +574,8 @@ function VarianceReport({ currency, locations, setTab }) {
                   <tr key={b.locationId}>
                     <td>{b.locationName}</td>
                     <td style={{ textAlign: 'right' }}>{b.counts}</td>
-                    <td style={{ textAlign: 'right', color: 'var(--danger)' }}>{currency}{b.shrinkageValue.toFixed(3)}</td>
-                    <td style={{ textAlign: 'right', color: 'var(--success)' }}>{currency}{b.surplusValue.toFixed(3)}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--danger)' }}>{currency}{b.shrinkageValue.toFixed(CURRENCY_DECIMALS)}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--success)' }}>{currency}{b.surplusValue.toFixed(CURRENCY_DECIMALS)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -616,7 +597,7 @@ function VarianceReport({ currency, locations, setTab }) {
                     <td>{i.name}</td>
                     <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{i.sku || '—'}</td>
                     <td style={{ textAlign: 'right' }}>{i.totalQty}</td>
-                    <td style={{ textAlign: 'right', color: 'var(--danger)' }}>{currency}{i.totalValue.toFixed(3)}</td>
+                    <td style={{ textAlign: 'right', color: 'var(--danger)' }}>{currency}{i.totalValue.toFixed(CURRENCY_DECIMALS)}</td>
                   </tr>
                 ))}
               </tbody>

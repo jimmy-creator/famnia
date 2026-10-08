@@ -25,6 +25,7 @@ import { protect, protectCashier } from '../middleware/auth.js';
 import sequelize from '../config/database.js';
 import { rollup } from '../utils/posTotals.js';
 import { rangeStart, rangeEnd } from '../utils/dates.js';
+import { dp } from '../utils/money.js';
 
 // Shift history is POS money data: a cashier sees their own, staff need the
 // analytics permission, customers see nothing.
@@ -199,8 +200,8 @@ router.post('/shift/close', protectCashier, async (req, res) => {
       transaction: t,
     });
     const { cashSales, cashRefunds } = rollup(orders, returns);
-    const expectedCash = +(parseFloat(session.openingCash || 0) + cashSales - cashRefunds).toFixed(3);
-    const variance = +(closingCash - expectedCash).toFixed(3);
+    const expectedCash = +(parseFloat(session.openingCash || 0) + cashSales - cashRefunds).toFixed(dp());
+    const variance = +(closingCash - expectedCash).toFixed(dp());
 
     await session.update({
       closingCash,

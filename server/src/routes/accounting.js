@@ -182,6 +182,7 @@ router.post('/assets', protect, async (req, res) => {
         date: new Date(`${acquisitionDate}T00:00:00`),
         createdBy: req.user.id,
         transaction: t,
+        requireFunds: true,
       });
     }
 
@@ -485,6 +486,7 @@ router.post('/capital', protect, async (req, res) => {
       date: new Date(`${entryDate}T00:00:00`),
       createdBy: req.user.id,
       transaction: t,
+      requireFunds: true,   // only bites on a drawing (negative amount)
     });
 
     await t.commit();
@@ -673,7 +675,6 @@ router.get('/balance-sheet', protect, async (req, res) => {
           'Supplier opening balances have no matching asset.',
           'Fixed assets bought without a cash account sit on the books with nothing credited against them.',
           'Inventory is valued at current cost price, so this sheet cannot be rewound truthfully to a past date.',
-          'Stock-count shrinkage posts a cash payment for a non-cash inventory loss.',
           'This is a single-entry ledger with no chart of accounts — the sheet is an aggregation, not a trial balance.',
         ],
       },

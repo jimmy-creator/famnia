@@ -7,6 +7,7 @@
  * the server recomputes it from the real product price.
  */
 import { useState } from 'react';
+import { CURRENCY_DECIMALS, PRICE_STEP } from '../utils/currency';
 
 export default function PosLineDiscountModal({
   line,              // cart line { name, price, priceOverride?, quantity, lineDiscount? }
@@ -17,16 +18,16 @@ export default function PosLineDiscountModal({
   const [kind, setKind] = useState(line.lineDiscount?.kind || 'percentage');
   const [value, setValue] = useState(line.lineDiscount?.value ?? '');
 
-  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
   // A per-sale price override wins over the catalog price, same as the cart.
   const unitPrice = line.priceOverride != null ? line.priceOverride : line.price;
-  const gross = +(unitPrice * line.quantity).toFixed(3);
+  const gross = +(unitPrice * line.quantity).toFixed(CURRENCY_DECIMALS);
 
   const preview = (() => {
     const v = parseFloat(value) || 0;
     if (v <= 0) return 0;
     const calc = kind === 'percentage' ? (gross * v) / 100 : v * line.quantity;
-    return +Math.min(calc, gross).toFixed(3);
+    return +Math.min(calc, gross).toFixed(CURRENCY_DECIMALS);
   })();
 
   const apply = () => {
@@ -68,7 +69,7 @@ export default function PosLineDiscountModal({
 
         <label className="modal-label">Amount {kind === 'percentage' ? '(%)' : `(${currency} per item)`}</label>
         <input
-          type="number" step={kind === 'percentage' ? '0.1' : '0.001'} min="0"
+          type="number" step={kind === 'percentage' ? '0.1' : PRICE_STEP} min="0"
           max={kind === 'percentage' ? 100 : unitPrice}
           value={value}
           onChange={(e) => setValue(e.target.value)}

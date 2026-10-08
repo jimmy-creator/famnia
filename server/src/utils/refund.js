@@ -1,3 +1,5 @@
+import { dp } from './money.js';
+
 /**
  * Refund valuation — what a sold unit is actually worth back.
  *
@@ -27,7 +29,7 @@ function lineNet(line) {
 /**
  * Build a valuer for one order.
  * @returns {(line: object, qty: number) => number} net refund value of `qty`
- *          units of `line`, rounded to 3dp (fils).
+ *          units of `line`, rounded to the currency precision (CURRENCY_DECIMALS).
  */
 export function refundValuer(order) {
   const items = order.items || [];
@@ -47,6 +49,6 @@ export function refundValuer(order) {
     const n = parseInt(qty, 10) || 0;
     if (soldQty <= 0 || n <= 0) return 0;
     const net = (lineNet(line) / soldQty) * n;
-    return +(shares(line) ? net * factor : net).toFixed(3);
+    return +(shares(line) ? net * factor : net).toFixed(dp());
   };
 }

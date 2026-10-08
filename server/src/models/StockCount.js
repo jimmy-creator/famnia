@@ -10,9 +10,10 @@ import sequelize from '../config/database.js';
  *   posted      → variance applied to ProductStock; locked
  *   cancelled   → never posted, lines kept for audit
  *
- * Variance value posts as a single Expense (shrinkage) when total
- * counted < total expected, valued at productCost. Surplus skips the
- * expense write.
+ * Variance value (at product cost) is stored on totalVarianceValue and
+ * reaches the P&L as a non-cash stock loss/gain via computePnl. Counts
+ * posted before that carry shrinkageExpenseId — an Expense paid from a
+ * cash account — which the P&L skips so it isn't counted twice.
  */
 const StockCount = sequelize.define('StockCount', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },

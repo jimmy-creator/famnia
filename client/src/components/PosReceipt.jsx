@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import JsBarcode from 'jsbarcode';
 import { isEnabled, printSale, getReceiptLocale, RECEIPT_STORE } from '../lib/thermalPrinter';
+import { CURRENCY_DECIMALS } from '../utils/currency';
 
 // autoPrint=false shows the receipt without firing the printer — used for
 // reprints from Recent sales, where printing is a deliberate click. Only a
@@ -65,7 +66,7 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose, autoPri
   const displayCurrency = (receiptLoc === 'ar' || receiptLoc === 'bi')
     ? (import.meta.env.VITE_CURRENCY_SYMBOL_AR || 'د.ك')
     : currency;
-  const fmt = (n) => `${displayCurrency} ${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${displayCurrency} ${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
   const pickName = (it) => (receiptLoc === 'ar' && it.nameAr) ? it.nameAr : it.name;
   const when = order.createdAt ? new Date(order.createdAt).toLocaleString() : '';
   const breakdown = Array.isArray(order.paymentBreakdown) ? order.paymentBreakdown : null;

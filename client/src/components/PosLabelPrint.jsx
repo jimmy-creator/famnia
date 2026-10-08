@@ -10,6 +10,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { HiSearch, HiX, HiPrinter } from 'react-icons/hi';
 import api from '../api/axios';
 import { LABEL_SIZES, BarcodeLabelSheet, BarcodeLabelStyles } from './BarcodeLabelSheet';
+import { CURRENCY_DECIMALS } from '../utils/currency';
 
 const LABEL_SHOW = { brand: true, name: true, barcode: true, sku: true, price: true };
 const SIZE = LABEL_SIZES.find((s) => s.id === 'medium');   // 50×25mm roll — matches admin default
@@ -93,7 +94,7 @@ export default function PosLabelPrint({ currency = 'KWD', onClose }) {
                   <span style={{ display: 'block', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
                   <span style={{ fontSize: 12, color: 'var(--pos-text-2)', fontFamily: 'ui-monospace, monospace' }}>{r.code || `P${r.productId}`}</span>
                 </span>
-                <span style={{ fontWeight: 700 }}>{currency} {(parseFloat(r.price) || 0).toFixed(3)}</span>
+                <span style={{ fontWeight: 700 }}>{currency} {(parseFloat(r.price) || 0).toFixed(CURRENCY_DECIMALS)}</span>
               </button>
             ))}
           </div>
@@ -105,7 +106,7 @@ export default function PosLabelPrint({ currency = 'KWD', onClose }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600 }}>{selected.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--pos-text-2)', fontFamily: 'ui-monospace, monospace' }}>
-                  {selected.code || `P${selected.productId}`} · {currency} {(parseFloat(selected.price) || 0).toFixed(3)}
+                  {selected.code || `P${selected.productId}`} · {currency} {(parseFloat(selected.price) || 0).toFixed(CURRENCY_DECIMALS)}
                 </div>
               </div>
               <button onClick={() => setSelected(null)} className="icon-btn"><HiX size={16} /></button>

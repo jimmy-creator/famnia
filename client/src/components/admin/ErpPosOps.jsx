@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 import { HiPlus, HiPencil, HiTrash } from 'react-icons/hi';
 import api from '../../api/axios';
 import { localDate } from '../../lib/utils';
-import { CURRENCY } from '../../utils/currency';
+import { CURRENCY, CURRENCY_DECIMALS } from '../../utils/currency';
 import PosReportReceipt from '../PosReportReceipt';
 
 export default function ErpPosOps({ tab, locations, isAdmin }) {
@@ -197,10 +197,10 @@ export default function ErpPosOps({ tab, locations, isAdmin }) {
                   <td>{s.Location?.name || `Loc #${s.locationId}`}</td>
                   <td style={{ fontSize: '0.78rem' }}>{new Date(s.openedAt).toLocaleString()}</td>
                   <td style={{ fontSize: '0.78rem' }}>{s.closedAt ? new Date(s.closedAt).toLocaleString() : '—'}</td>
-                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{CURRENCY}{parseFloat(s.openingCash).toFixed(3)}</td>
-                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{s.closingCash != null ? `${CURRENCY}${parseFloat(s.closingCash).toFixed(3)}` : '—'}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{CURRENCY}{parseFloat(s.openingCash).toFixed(CURRENCY_DECIMALS)}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{s.closingCash != null ? `${CURRENCY}${parseFloat(s.closingCash).toFixed(CURRENCY_DECIMALS)}` : '—'}</td>
                   <td style={{ fontVariantNumeric: 'tabular-nums', color: s.cashVariance < 0 ? 'var(--danger)' : s.cashVariance > 0 ? 'var(--success)' : 'var(--text-secondary)' }}>
-                    {s.cashVariance != null ? `${s.cashVariance >= 0 ? '+' : ''}${parseFloat(s.cashVariance).toFixed(3)}` : '—'}
+                    {s.cashVariance != null ? `${s.cashVariance >= 0 ? '+' : ''}${parseFloat(s.cashVariance).toFixed(CURRENCY_DECIMALS)}` : '—'}
                   </td>
                   <td>
                     <span style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem', borderRadius: 4,
@@ -494,7 +494,7 @@ export default function ErpPosOps({ tab, locations, isAdmin }) {
                 const lines = [headers.join(',')];
                 for (const r of rows) {
                   const label = reportType === 'cashier' ? r.cashierName : r.locationName;
-                  const refunds = ((r.cashRefunds || 0) + (r.cardRefunds || 0)).toFixed(3);
+                  const refunds = ((r.cashRefunds || 0) + (r.cardRefunds || 0)).toFixed(CURRENCY_DECIMALS);
                   lines.push([`"${label}"`, r.orderCount, r.cashSales, r.cardSales, refunds, r.netSales].join(','));
                 }
                 const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
@@ -521,15 +521,15 @@ export default function ErpPosOps({ tab, locations, isAdmin }) {
               </div>
               <div className="dash-card">
                 <div className="dash-card-label">Cash sales</div>
-                <div className="dash-card-value">{CURRENCY}{reportData.totals.cashSales.toFixed(3)}</div>
+                <div className="dash-card-value">{CURRENCY}{reportData.totals.cashSales.toFixed(CURRENCY_DECIMALS)}</div>
               </div>
               <div className="dash-card">
                 <div className="dash-card-label">Card sales</div>
-                <div className="dash-card-value">{CURRENCY}{reportData.totals.cardSales.toFixed(3)}</div>
+                <div className="dash-card-value">{CURRENCY}{reportData.totals.cardSales.toFixed(CURRENCY_DECIMALS)}</div>
               </div>
               <div className="dash-card">
                 <div className="dash-card-label">Net sales</div>
-                <div className="dash-card-value">{CURRENCY}{reportData.totals.netSales.toFixed(3)}</div>
+                <div className="dash-card-value">{CURRENCY}{reportData.totals.netSales.toFixed(CURRENCY_DECIMALS)}</div>
               </div>
             </div>
 
@@ -553,10 +553,10 @@ export default function ErpPosOps({ tab, locations, isAdmin }) {
                     <tr key={i}>
                       <td>{reportType === 'cashier' ? r.cashierName : r.locationName}</td>
                       <td style={{ textAlign: 'right' }}>{r.orderCount}</td>
-                      <td style={{ textAlign: 'right' }}>{CURRENCY}{r.cashSales.toFixed(3)}</td>
-                      <td style={{ textAlign: 'right' }}>{CURRENCY}{r.cardSales.toFixed(3)}</td>
-                      <td style={{ textAlign: 'right' }}>{CURRENCY}{((r.cashRefunds || 0) + (r.cardRefunds || 0)).toFixed(3)}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{CURRENCY}{r.netSales.toFixed(3)}</td>
+                      <td style={{ textAlign: 'right' }}>{CURRENCY}{r.cashSales.toFixed(CURRENCY_DECIMALS)}</td>
+                      <td style={{ textAlign: 'right' }}>{CURRENCY}{r.cardSales.toFixed(CURRENCY_DECIMALS)}</td>
+                      <td style={{ textAlign: 'right' }}>{CURRENCY}{((r.cashRefunds || 0) + (r.cardRefunds || 0)).toFixed(CURRENCY_DECIMALS)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{CURRENCY}{r.netSales.toFixed(CURRENCY_DECIMALS)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -580,7 +580,7 @@ export default function ErpPosOps({ tab, locations, isAdmin }) {
                         <tr key={i}>
                           <td>{it.name}</td>
                           <td style={{ textAlign: 'right' }}>{it.qty}</td>
-                          <td style={{ textAlign: 'right' }}>{CURRENCY}{it.revenue.toFixed(3)}</td>
+                          <td style={{ textAlign: 'right' }}>{CURRENCY}{it.revenue.toFixed(CURRENCY_DECIMALS)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -642,9 +642,9 @@ export default function ErpPosOps({ tab, locations, isAdmin }) {
           }, { total: 0, cash: 0, card: 0 });
           return (
             <div className="dash-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
-              <div className="dash-card"><div className="dash-card-label">Total refunded</div><div className="dash-card-value">{CURRENCY}{totals.total.toFixed(3)}</div></div>
-              <div className="dash-card"><div className="dash-card-label">Cash refunds</div><div className="dash-card-value">{CURRENCY}{totals.cash.toFixed(3)}</div></div>
-              <div className="dash-card"><div className="dash-card-label">Card refunds</div><div className="dash-card-value">{CURRENCY}{totals.card.toFixed(3)}</div></div>
+              <div className="dash-card"><div className="dash-card-label">Total refunded</div><div className="dash-card-value">{CURRENCY}{totals.total.toFixed(CURRENCY_DECIMALS)}</div></div>
+              <div className="dash-card"><div className="dash-card-label">Cash refunds</div><div className="dash-card-value">{CURRENCY}{totals.cash.toFixed(CURRENCY_DECIMALS)}</div></div>
+              <div className="dash-card"><div className="dash-card-label">Card refunds</div><div className="dash-card-value">{CURRENCY}{totals.card.toFixed(CURRENCY_DECIMALS)}</div></div>
             </div>
           );
         })()}
@@ -674,7 +674,7 @@ export default function ErpPosOps({ tab, locations, isAdmin }) {
                   <td>{r.Location?.name || '—'}</td>
                   <td>{r.processor?.name || '—'}</td>
                   <td style={{ textTransform: 'capitalize' }}>{r.refundMethod.replace('_', ' ')}</td>
-                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{CURRENCY}{parseFloat(r.refundAmount).toFixed(3)}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{CURRENCY}{parseFloat(r.refundAmount).toFixed(CURRENCY_DECIMALS)}</td>
                   <td>
                     <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: '100px',
                       background: r.status === 'completed' ? 'rgba(90,138,106,0.15)' : 'rgba(220,38,38,0.15)',
@@ -716,7 +716,7 @@ export default function ErpPosOps({ tab, locations, isAdmin }) {
                       <tr key={i}>
                         <td>{it.name}</td>
                         <td style={{ textAlign: 'right' }}>{it.quantity}</td>
-                        <td style={{ textAlign: 'right' }}>{CURRENCY}{parseFloat(it.refundAmount).toFixed(3)}</td>
+                        <td style={{ textAlign: 'right' }}>{CURRENCY}{parseFloat(it.refundAmount).toFixed(CURRENCY_DECIMALS)}</td>
                         <td>{it.returnToStock === false ? 'No' : 'Yes'}</td>
                       </tr>
                     ))}
@@ -726,7 +726,7 @@ export default function ErpPosOps({ tab, locations, isAdmin }) {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0', borderTop: '1px solid var(--border-light)', marginTop: '0.75rem' }}>
                 <strong>Total refunded</strong>
-                <strong>{CURRENCY}{parseFloat(returnDetail.refundAmount).toFixed(3)}</strong>
+                <strong>{CURRENCY}{parseFloat(returnDetail.refundAmount).toFixed(CURRENCY_DECIMALS)}</strong>
               </div>
 
               <div className="form-actions" style={{ marginTop: '1rem' }}>

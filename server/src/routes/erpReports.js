@@ -115,11 +115,18 @@ router.get('/sales', protect, admin, requirePermission('analytics'), async (req,
       const units = items.reduce((s, i) => s + (parseInt(i.quantity, 10) || 0), 0);
       const total = parseFloat(o.totalAmount) || 0;
 
-      // Cost of goods for this order, from each product's current cost price.
-      const cogs = items.reduce((s, i) => {
-        const p = productById.get(i.productId);
-        return s + (parseFloat(p?.costPrice) || 0) * (parseInt(i.quantity, 10) || 0);
-      }, 0);
+      // Cost of goods: the cost snapshotted on the order line (what the P&L
+      // uses), falling back to the product's current cost for older lines.
+      const unitCost = (i) => (i.costPrice != null
+        ? parseFloat(i.costPrice) || 0
+        : parseFloat(productById.get(i.productId)?.costPrice) || 0);
+      const cogs = items.reduce((s, i) => s + unitCost(i) * (parseInt(i.quantity, 10) || 0), 0);
+      // Lines are at line price; the bill discount only exists on the order.
+      // Spread it over the lines pro rata so product/category rows add up
+      // to the same goods revenue as the day/channel rows (less delivery).
+      const lineGross = items.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseInt(i.quantity, 10) || 0), 0);
+      const goods = total - (parseFloat(o.shippingCharge) || 0);
+      const lineScale = lineGross > 0 ? goods / lineGross : 0;
 
       totals.orders += 1;
       totals.units += units;
@@ -143,8 +150,8 @@ router.get('/sales', protect, admin, requirePermission('analytics'), async (req,
             : (p?.category || 'Uncategorised');
 
           const qty = parseInt(i.quantity, 10) || 0;
-          const revenue = (parseFloat(i.price) || 0) * qty;
-          const lineCost = (parseFloat(p?.costPrice) || 0) * qty;
+          const revenue = (parseFloat(i.price) || 0) * qty * lineScale;
+          const lineCost = unitCost(i) * qty;
 
           const b = buckets.get(key) || {
             key, label, labelAr: groupBy === 'product' ? (p?.nameAr || null) : null,

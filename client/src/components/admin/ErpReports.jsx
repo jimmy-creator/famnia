@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import { HiDownload } from 'react-icons/hi';
 import api from '../../api/axios';
 import { localDate } from '../../lib/utils';
+import { CURRENCY_DECIMALS } from '../../utils/currency';
 
 export default function ErpReports(props) {
   const { tab } = props;
@@ -44,7 +45,7 @@ function defaultRange(days = 30) {
   return { from: localDate(from), to: localDate(to) };
 }
 
-const money = (currency, n) => `${currency}${(parseFloat(n) || 0).toFixed(3)}`;
+const money = (currency, n) => `${currency}${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
 
 /**
  * Download a report as CSV. Goes through the axios client (blob response) so

@@ -27,6 +27,7 @@ import {
   printLabelImages as thermalPrintLabelImages,
   RECEIPT_STORE,
 } from '../../lib/thermalPrinter';
+import { CURRENCY_DECIMALS, PRICE_STEP } from '../../utils/currency';
 
 // Every label is an exact size (never grows) with equal margins on all
 // sides: store name, then English | Arabic names side by side (2 lines
@@ -154,7 +155,7 @@ function drawLabelCanvas(product, size, show, currency) {
     if (show.price) {
       ctx.textAlign = 'right';
       ctx.font = font(size.pricePt, true);
-      const amount = (parseFloat(product.sellPrice) || 0).toFixed(3);
+      const amount = (parseFloat(product.sellPrice) || 0).toFixed(CURRENCY_DECIMALS);
       ctx.fillText(amount, W - padX, baseline);
       const aw = ctx.measureText(amount).width;
       ctx.font = font(size.pricePt * 0.62, true);
@@ -163,7 +164,7 @@ function drawLabelCanvas(product, size, show, currency) {
     if (show.compare && compare) {
       ctx.textAlign = 'left';
       ctx.font = font(size.wasPt, false);
-      const txt = `${currency} ${compare.toFixed(3)}`;
+      const txt = `${currency} ${compare.toFixed(CURRENCY_DECIMALS)}`;
       ctx.fillText(txt, padX, baseline);
       ctx.fillRect(padX, baseline - Math.round(px(size.wasPt) * 0.3), ctx.measureText(txt).width, Math.max(2, Math.round(scale * 2)));
     }
@@ -250,12 +251,12 @@ function Label({ product, size, show, currency }) {
         <div className="bc-foot">
           {show.compare && compare && (
             <span className="bc-compare" style={{ fontSize: `${size.wasPt}pt` }}>
-              {currency} {compare.toFixed(3)}
+              {currency} {compare.toFixed(CURRENCY_DECIMALS)}
             </span>
           )}
           {show.price && (
             <span className="bc-price" style={{ fontSize: `${size.pricePt}pt` }}>
-              <small>{currency}</small>{(parseFloat(product.sellPrice) || 0).toFixed(3)}
+              <small>{currency}</small>{(parseFloat(product.sellPrice) || 0).toFixed(CURRENCY_DECIMALS)}
             </span>
           )}
         </div>
@@ -310,7 +311,7 @@ export default function BarcodeLabels({ currency = 'KWD' }) {
       return [...prev, {
         productId: p.id, name: p.name, nameAr: p.nameAr, code: p.code, barcode: p.barcode,
         price: p.price, comparePrice: p.comparePrice, qty: 1,
-        sellPrice: (parseFloat(p.price) || 0).toFixed(3),
+        sellPrice: (parseFloat(p.price) || 0).toFixed(CURRENCY_DECIMALS),
       }];
     });
     setSearch('');
@@ -532,7 +533,7 @@ export default function BarcodeLabels({ currency = 'KWD' }) {
               <button key={p.id} className="bc-hit" onClick={() => addProduct(p)}>
                 <span>{p.name}</span>
                 <span style={{ color: 'var(--text-light)', fontSize: 12 }}>
-                  {p.code || `#${p.id}`} · {currency} {parseFloat(p.price || 0).toFixed(3)}
+                  {p.code || `#${p.id}`} · {currency} {parseFloat(p.price || 0).toFixed(CURRENCY_DECIMALS)}
                 </span>
               </button>
             ))}
@@ -557,7 +558,7 @@ export default function BarcodeLabels({ currency = 'KWD' }) {
             </div>
             {show.price && (
               <label className="bc-price-input">Selling price ({currency})
-                <input type="number" step="0.001" min={0} value={q.sellPrice}
+                <input type="number" step={PRICE_STEP} min={0} value={q.sellPrice}
                   onChange={(e) => setRow(i, { sellPrice: e.target.value })} />
               </label>
             )}

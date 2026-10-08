@@ -6,10 +6,11 @@
  *   POST   /api/wastage              post a write-off (deducts stock)
  *   POST   /api/wastage/:id/cancel   reverse a write-off (returns stock)
  *
- * Booking the cost to the P&L is optional and mirrors how StockCount handles
- * shrinkage (routes/stockCounts.js): supply an expenseCategoryId +
- * cashAccountId and an Expense is written, omit them and the entry only moves
- * stock. Point it at a non-cash account if you don't want the drawer touched.
+ * A write-off only moves stock. Its cost reaches the P&L as a non-cash
+ * "stock losses" line computed from posted Wastage rows (computePnl in
+ * finance.js). Entries from before that change may carry an expenseId; the
+ * P&L skips those (their Expense already counts) and cancelling one still
+ * reverses its Expense and cash entry.
  */
 import { Router } from 'express';
 import { Op, fn, col, literal } from 'sequelize';
@@ -53,7 +54,7 @@ router.get('/', protect, admin, requirePermission('products'), async (req, res) 
       order: [['wastageDate', 'DESC'], ['id', 'DESC']],
       limit: Math.min(parseInt(req.query.limit, 10) || 200, 1000),
       include: [
-        { model: Product, attributes: ['id', 'name', 'nameAr', 'code'] },
+        { model: Product, attributes: ['id', 'name', 'nameAr', 'code', 'variants'] },
         { model: Location, attributes: ['id', 'name'] },
         { model: User, as: 'creator', attributes: ['id', 'name'] },
       ],
@@ -134,10 +135,18 @@ router.post('/', protect, admin, requirePermission('products'), async (req, res)
 
     const vIdx = req.body.variantIndex == null || req.body.variantIndex === ''
       ? null : parseInt(req.body.variantIndex, 10);
+    const hasVariants = Array.isArray(product.variants) && product.variants.length > 0;
+    // Stock for a sized product lives on its per-variant rows; there is no
+    // base row, so a write-off without a size can only ever find 0.
+    if (hasVariants && (vIdx == null || !product.variants[vIdx])) {
+      await t.rollback();
+      return res.status(400).json({ message: `Pick a size/variant of ${product.name}` });
+    }
+    const variant = vIdx != null ? product.variants[vIdx] : null;
 
     const costPrice = req.body.costPrice != null
       ? parseFloat(req.body.costPrice)
-      : (parseFloat(product.costPrice) || 0);
+      : (parseFloat(variant?.costPrice ?? product.costPrice) || 0);
     const totalCost = +(costPrice * quantity).toFixed(3);
 
     // High-value write-offs need a manager's approval unless an admin is
@@ -164,43 +173,17 @@ router.post('/', protect, admin, requirePermission('products'), async (req, res)
       transaction: t,
     });
     const have = stockRow?.quantity || 0;
+    const label = variant ? `${product.name} (${Object.values(variant.options || {}).join('/')})` : product.name;
     if (have < quantity) {
       await t.rollback();
-      return res.status(400).json({ message: `Only ${have} of ${product.name} in stock at this location` });
+      return res.status(400).json({ message: `Only ${have} of ${label} in stock at this location` });
     }
     await stockRow.update({ quantity: have - quantity }, { transaction: t });
 
-
-    // ── Optional P&L booking ──
-    let expense = null;
-    if (totalCost > 0 && req.body.expenseCategoryId && req.body.cashAccountId) {
-      const wastageDate = req.body.wastageDate || localDate();
-      expense = await Expense.create({
-        expenseNumber: gen('EXP'),
-        expenseCategoryId: parseInt(req.body.expenseCategoryId, 10),
-        locationId: parseInt(locationId, 10),
-        cashAccountId: parseInt(req.body.cashAccountId, 10),
-        amount: totalCost,
-        paymentMethod: 'other',
-        description: `Wastage — ${product.name} (${reason || 'damaged'})`,
-        expenseDate: wastageDate,
-        status: 'paid',
-        createdBy: req.user.id,
-      }, { transaction: t });
-      await writeCashTxn({
-        cashAccountId: expense.cashAccountId,
-        amount: -totalCost,
-        source: 'expense',
-        sourceType: 'Expense',
-        sourceId: expense.id,
-        reference: expense.expenseNumber,
-        description: expense.description,
-        date: new Date(expense.expenseDate),
-        createdBy: req.user.id,
-        transaction: t,
-      });
-    }
-
+    // No Expense / cash entry: a write-off moves no money. computePnl()
+    // picks posted wastage up directly as a non-cash stock loss, the same
+    // way it treats depreciation. (Booking it as a cash-paid expense took
+    // the value out of the drawer as well — the loss counted twice.)
     const wastage = await Wastage.create({
       wastageNumber: gen('WST'),
       productId: product.id,
@@ -213,7 +196,7 @@ router.post('/', protect, admin, requirePermission('products'), async (req, res)
       notes: req.body.notes?.trim() || null,
       wastageDate: req.body.wastageDate || localDate(),
       status: 'posted',
-      expenseId: expense?.id || null,
+      expenseId: null,
       createdBy: req.user.id,
       managerOverrideBy: approver?.id || null,
     }, { transaction: t });
@@ -223,7 +206,7 @@ router.post('/', protect, admin, requirePermission('products'), async (req, res)
       action: 'wastage_post',
       entityType: 'Wastage',
       entityId: wastage.id,
-      details: { wastageNumber: wastage.wastageNumber, product: product.name, quantity, totalCost, reason },
+      details: { wastageNumber: wastage.wastageNumber, product: label, quantity, totalCost, reason },
       managerOverrideBy: approver?.id || null,
       locationId: parseInt(locationId, 10),
       transaction: t,

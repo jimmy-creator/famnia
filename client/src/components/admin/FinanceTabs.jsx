@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { HiPlus, HiPencil, HiTrash } from 'react-icons/hi';
 import api from '../../api/axios';
 import { localDate } from '../../lib/utils';
+import { CURRENCY_DECIMALS, PRICE_STEP } from '../../utils/currency';
 
 export default function FinanceTabs(props) {
   const { tab } = props;
@@ -53,7 +54,7 @@ function CashAccountsTab({ currency, locations, cashAccounts, setCashAccounts, c
         {['drawer', 'card_terminal', 'petty_cash', 'bank'].map((t) => (
           <div key={t} className="dash-card">
             <div className="dash-card-label">{ACCT_TYPE_LABEL[t]} total</div>
-            <div className="dash-card-value">{currency}{(totalsByType[t] || 0).toFixed(3)}</div>
+            <div className="dash-card-value">{currency}{(totalsByType[t] || 0).toFixed(CURRENCY_DECIMALS)}</div>
           </div>
         ))}
       </div>
@@ -68,8 +69,8 @@ function CashAccountsTab({ currency, locations, cashAccounts, setCashAccounts, c
                 <td style={{ fontWeight: 500 }}>{a.name}</td>
                 <td style={{ textTransform: 'capitalize' }}>{ACCT_TYPE_LABEL[a.type] || a.type}</td>
                 <td>{a.Location?.name || '—'}</td>
-                <td style={{ textAlign: 'right' }}>{currency}{parseFloat(a.openingBalance || 0).toFixed(3)}</td>
-                <td style={{ textAlign: 'right', fontWeight: 600, color: a.balance < 0 ? 'var(--danger)' : 'inherit' }}>{currency}{parseFloat(a.balance || 0).toFixed(3)}</td>
+                <td style={{ textAlign: 'right' }}>{currency}{parseFloat(a.openingBalance || 0).toFixed(CURRENCY_DECIMALS)}</td>
+                <td style={{ textAlign: 'right', fontWeight: 600, color: a.balance < 0 ? 'var(--danger)' : 'inherit' }}>{currency}{parseFloat(a.balance || 0).toFixed(CURRENCY_DECIMALS)}</td>
                 <td>
                   <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: '100px',
                     background: a.active ? 'rgba(90,138,106,0.15)' : 'rgba(100,116,139,0.15)',
@@ -131,7 +132,7 @@ function CashAccountsTab({ currency, locations, cashAccounts, setCashAccounts, c
               </div>
             </div>
             <div className="form-group"><label>Opening balance ({currency})</label>
-              <input type="number" step="0.001" value={cashAccountForm.openingBalance} onChange={(e) => setCashAccountForm({ ...cashAccountForm, openingBalance: e.target.value })} />
+              <input type="number" step={PRICE_STEP} value={cashAccountForm.openingBalance} onChange={(e) => setCashAccountForm({ ...cashAccountForm, openingBalance: e.target.value })} />
             </div>
             <div className="form-group"><label>Notes</label>
               <textarea rows={2} value={cashAccountForm.notes || ''} onChange={(e) => setCashAccountForm({ ...cashAccountForm, notes: e.target.value })} /></div>
@@ -226,7 +227,7 @@ function ExpensesTab({
       </div>
 
       <div className="dash-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
-        <div className="dash-card"><div className="dash-card-label">Total expenses</div><div className="dash-card-value">{currency}{totals.total.toFixed(3)}</div></div>
+        <div className="dash-card"><div className="dash-card-label">Total expenses</div><div className="dash-card-value">{currency}{totals.total.toFixed(CURRENCY_DECIMALS)}</div></div>
         <div className="dash-card"><div className="dash-card-label">Entries</div><div className="dash-card-value">{totals.count}</div></div>
       </div>
 
@@ -242,7 +243,7 @@ function ExpensesTab({
                 <td>{e.ExpenseCategory?.name || '—'}</td>
                 <td>{e.Location?.name || '—'}</td>
                 <td>{e.CashAccount?.name || '—'}</td>
-                <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{parseFloat(e.amount).toFixed(3)}</td>
+                <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{parseFloat(e.amount).toFixed(CURRENCY_DECIMALS)}</td>
                 <td>
                   <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: '100px',
                     background: e.status === 'paid' ? 'rgba(90,138,106,0.15)' : 'rgba(220,38,38,0.15)',
@@ -292,7 +293,7 @@ function ExpensesTab({
             </div>
             <div className="form-row">
               <div className="form-group"><label>Amount ({currency}) *</label>
-                <input type="number" step="0.001" min="0" value={expenseForm.amount} onChange={(ev) => setExpenseForm({ ...expenseForm, amount: ev.target.value })} required />
+                <input type="number" step={PRICE_STEP} min="0" value={expenseForm.amount} onChange={(ev) => setExpenseForm({ ...expenseForm, amount: ev.target.value })} required />
               </div>
               <div className="form-group"><label>Payment method</label>
                 <select value={expenseForm.paymentMethod} onChange={(ev) => setExpenseForm({ ...expenseForm, paymentMethod: ev.target.value })}>
@@ -304,7 +305,7 @@ function ExpensesTab({
               <div className="form-group"><label>Cash account *</label>
                 <select value={expenseForm.cashAccountId} onChange={(ev) => setExpenseForm({ ...expenseForm, cashAccountId: ev.target.value })} required>
                   <option value="">— Select —</option>
-                  {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({currency}{parseFloat(a.balance || 0).toFixed(3)})</option>)}
+                  {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({currency}{parseFloat(a.balance || 0).toFixed(CURRENCY_DECIMALS)})</option>)}
                 </select>
               </div>
               <div className="form-group"><label>Location (optional)</label>
@@ -387,7 +388,7 @@ function CashTransfersTab({ currency, isAdmin, cashAccounts, cashTransfers, setC
                 <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{tr.transferNumber}</td>
                 <td>{tr.fromAccount?.name || '—'}</td>
                 <td>{tr.toAccount?.name || '—'}</td>
-                <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{parseFloat(tr.amount).toFixed(3)}</td>
+                <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{parseFloat(tr.amount).toFixed(CURRENCY_DECIMALS)}</td>
                 <td>
                   <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.5rem', borderRadius: '100px',
                     background: tr.status === 'completed' ? 'rgba(90,138,106,0.15)' : 'rgba(220,38,38,0.15)',
@@ -426,7 +427,7 @@ function CashTransfersTab({ currency, isAdmin, cashAccounts, cashTransfers, setC
             <div className="form-group"><label>From account *</label>
               <select value={cashTransferForm.fromAccountId} onChange={(ev) => setCashTransferForm({ ...cashTransferForm, fromAccountId: ev.target.value })} required>
                 <option value="">— Select —</option>
-                {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({currency}{parseFloat(a.balance || 0).toFixed(3)})</option>)}
+                {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({currency}{parseFloat(a.balance || 0).toFixed(CURRENCY_DECIMALS)})</option>)}
               </select>
             </div>
             <div className="form-group"><label>To account *</label>
@@ -437,7 +438,7 @@ function CashTransfersTab({ currency, isAdmin, cashAccounts, cashTransfers, setC
             </div>
             <div className="form-row">
               <div className="form-group"><label>Amount ({currency}) *</label>
-                <input type="number" step="0.001" min="0" value={cashTransferForm.amount} onChange={(ev) => setCashTransferForm({ ...cashTransferForm, amount: ev.target.value })} required /></div>
+                <input type="number" step={PRICE_STEP} min="0" value={cashTransferForm.amount} onChange={(ev) => setCashTransferForm({ ...cashTransferForm, amount: ev.target.value })} required /></div>
               <div className="form-group"><label>Date *</label>
                 <input type="date" value={cashTransferForm.transferDate} onChange={(ev) => setCashTransferForm({ ...cashTransferForm, transferDate: ev.target.value })} required /></div>
             </div>
@@ -496,14 +497,14 @@ function DailyCashTab({ currency, locations, dailyCash, dailyCashFilter, setDail
                     <div style={{ fontWeight: 500 }}>{a.cashAccount.name}</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-light)' }}>{ACCT_TYPE_LABEL[a.cashAccount.type] || a.cashAccount.type}{a.cashAccount.location ? ` · ${a.cashAccount.location.name}` : ''}</div>
                   </td>
-                  <td style={{ textAlign: 'right' }}>{currency}{a.opening.toFixed(3)}</td>
-                  <td style={{ textAlign: 'right', color: a.sales > 0 ? 'var(--success)' : 'inherit' }}>{currency}{a.sales.toFixed(3)}</td>
-                  <td style={{ textAlign: 'right', color: a.refunds < 0 ? 'var(--danger)' : 'inherit' }}>{currency}{a.refunds.toFixed(3)}</td>
-                  <td style={{ textAlign: 'right', color: a.expenses < 0 ? 'var(--danger)' : 'inherit' }}>{currency}{a.expenses.toFixed(3)}</td>
-                  <td style={{ textAlign: 'right' }}>{currency}{a.transfersIn.toFixed(3)}</td>
-                  <td style={{ textAlign: 'right' }}>{currency}{a.transfersOut.toFixed(3)}</td>
-                  <td style={{ textAlign: 'right' }}>{currency}{a.other.toFixed(3)}</td>
-                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{a.expected.toFixed(3)}</td>
+                  <td style={{ textAlign: 'right' }}>{currency}{a.opening.toFixed(CURRENCY_DECIMALS)}</td>
+                  <td style={{ textAlign: 'right', color: a.sales > 0 ? 'var(--success)' : 'inherit' }}>{currency}{a.sales.toFixed(CURRENCY_DECIMALS)}</td>
+                  <td style={{ textAlign: 'right', color: a.refunds < 0 ? 'var(--danger)' : 'inherit' }}>{currency}{a.refunds.toFixed(CURRENCY_DECIMALS)}</td>
+                  <td style={{ textAlign: 'right', color: a.expenses < 0 ? 'var(--danger)' : 'inherit' }}>{currency}{a.expenses.toFixed(CURRENCY_DECIMALS)}</td>
+                  <td style={{ textAlign: 'right' }}>{currency}{a.transfersIn.toFixed(CURRENCY_DECIMALS)}</td>
+                  <td style={{ textAlign: 'right' }}>{currency}{a.transfersOut.toFixed(CURRENCY_DECIMALS)}</td>
+                  <td style={{ textAlign: 'right' }}>{currency}{a.other.toFixed(CURRENCY_DECIMALS)}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{a.expected.toFixed(CURRENCY_DECIMALS)}</td>
                 </tr>
               ))}
             </tbody>
@@ -547,9 +548,9 @@ function DaybookTab({ currency, cashAccounts, daybook, daybookFilter, setDaybook
       {daybook && (
         <>
           <div className="dash-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
-            <div className="dash-card"><div className="dash-card-label">Money in</div><div className="dash-card-value" style={{ color: 'var(--success)' }}>{currency}{daybook.totals.in.toFixed(3)}</div></div>
-            <div className="dash-card"><div className="dash-card-label">Money out</div><div className="dash-card-value" style={{ color: 'var(--danger)' }}>{currency}{Math.abs(daybook.totals.out).toFixed(3)}</div></div>
-            <div className="dash-card"><div className="dash-card-label">Net</div><div className="dash-card-value" style={{ color: daybook.totals.net >= 0 ? 'var(--success)' : 'var(--danger)' }}>{currency}{daybook.totals.net.toFixed(3)}</div></div>
+            <div className="dash-card"><div className="dash-card-label">Money in</div><div className="dash-card-value" style={{ color: 'var(--success)' }}>{currency}{daybook.totals.in.toFixed(CURRENCY_DECIMALS)}</div></div>
+            <div className="dash-card"><div className="dash-card-label">Money out</div><div className="dash-card-value" style={{ color: 'var(--danger)' }}>{currency}{Math.abs(daybook.totals.out).toFixed(CURRENCY_DECIMALS)}</div></div>
+            <div className="dash-card"><div className="dash-card-label">Net</div><div className="dash-card-value" style={{ color: daybook.totals.net >= 0 ? 'var(--success)' : 'var(--danger)' }}>{currency}{daybook.totals.net.toFixed(CURRENCY_DECIMALS)}</div></div>
             <div className="dash-card"><div className="dash-card-label">Entries</div><div className="dash-card-value">{daybook.entries.length}</div></div>
           </div>
           <div className="admin-table-wrap">
@@ -566,8 +567,8 @@ function DaybookTab({ currency, cashAccounts, daybook, daybookFilter, setDaybook
                       <td>{SOURCE_LABEL[e.source] || e.source}</td>
                       <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{e.reference || '—'}</td>
                       <td style={{ fontSize: '0.85rem' }}>{e.description || '—'}</td>
-                      <td style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 600 }}>{amt > 0 ? `${currency}${amt.toFixed(3)}` : ''}</td>
-                      <td style={{ textAlign: 'right', color: 'var(--danger)', fontWeight: 600 }}>{amt < 0 ? `${currency}${Math.abs(amt).toFixed(3)}` : ''}</td>
+                      <td style={{ textAlign: 'right', color: 'var(--success)', fontWeight: 600 }}>{amt > 0 ? `${currency}${amt.toFixed(CURRENCY_DECIMALS)}` : ''}</td>
+                      <td style={{ textAlign: 'right', color: 'var(--danger)', fontWeight: 600 }}>{amt < 0 ? `${currency}${Math.abs(amt).toFixed(CURRENCY_DECIMALS)}` : ''}</td>
                       <td style={{ fontSize: '0.82rem', color: 'var(--text-light)' }}>{e.author?.name || '—'}</td>
                     </tr>
                   );
@@ -618,32 +619,37 @@ function PnlTab({ currency, locations, pnl, pnlFilter, setPnlFilter }) {
       {pnl && (
         <>
           <div className="dash-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
-            <div className="dash-card"><div className="dash-card-label">Revenue</div><div className="dash-card-value">{currency}{pnl.netRevenue.toFixed(3)}</div></div>
-            <div className="dash-card"><div className="dash-card-label">COGS</div><div className="dash-card-value">{currency}{pnl.cogs.toFixed(3)}</div></div>
-            <div className="dash-card"><div className="dash-card-label">Gross profit</div><div className="dash-card-value" style={{ color: pnl.grossProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{currency}{pnl.grossProfit.toFixed(3)}</div><div className="dash-card-change" style={{ color: 'var(--text-light)' }}>{pnl.grossMargin}% margin</div></div>
-            <div className="dash-card"><div className="dash-card-label">Expenses</div><div className="dash-card-value">{currency}{pnl.expenses.toFixed(3)}</div></div>
+            <div className="dash-card"><div className="dash-card-label">Revenue</div><div className="dash-card-value">{currency}{pnl.netRevenue.toFixed(CURRENCY_DECIMALS)}</div></div>
+            <div className="dash-card"><div className="dash-card-label">COGS</div><div className="dash-card-value">{currency}{pnl.cogs.toFixed(CURRENCY_DECIMALS)}</div></div>
+            <div className="dash-card"><div className="dash-card-label">Gross profit</div><div className="dash-card-value" style={{ color: pnl.grossProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{currency}{pnl.grossProfit.toFixed(CURRENCY_DECIMALS)}</div><div className="dash-card-change" style={{ color: 'var(--text-light)' }}>{pnl.grossMargin}% margin</div></div>
+            <div className="dash-card"><div className="dash-card-label">Expenses</div><div className="dash-card-value">{currency}{pnl.expenses.toFixed(CURRENCY_DECIMALS)}</div></div>
             {/* `?? 0` throughout: a cached response from before these fields
                 existed must not crash the render. */}
             <div className="dash-card">
               <div className="dash-card-label">Depreciation</div>
-              <div className="dash-card-value">{currency}{(pnl.depreciation ?? 0).toFixed(3)}</div>
+              <div className="dash-card-value">{currency}{(pnl.depreciation ?? 0).toFixed(CURRENCY_DECIMALS)}</div>
               <div className="dash-card-change" style={{ color: 'var(--text-light)' }}>non-cash</div>
+            </div>
+            <div className="dash-card">
+              <div className="dash-card-label">Stock losses</div>
+              <div className="dash-card-value">{currency}{(pnl.stockLosses ?? 0).toFixed(CURRENCY_DECIMALS)}</div>
+              <div className="dash-card-change" style={{ color: 'var(--text-light)' }}>wastage + count variance · non-cash</div>
             </div>
             {(pnl.disposalGainLoss ?? 0) !== 0 && (
               <div className="dash-card">
                 <div className="dash-card-label">Disposal gain / (loss)</div>
                 <div className="dash-card-value" style={{ color: (pnl.disposalGainLoss ?? 0) >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-                  {currency}{(pnl.disposalGainLoss ?? 0).toFixed(3)}
+                  {currency}{(pnl.disposalGainLoss ?? 0).toFixed(CURRENCY_DECIMALS)}
                 </div>
               </div>
             )}
             {(pnl.deliveryIncome ?? 0) > 0 && (
               <div className="dash-card">
                 <div className="dash-card-label">Delivery income</div>
-                <div className="dash-card-value">{currency}{(pnl.deliveryIncome ?? 0).toFixed(3)}</div>
+                <div className="dash-card-value">{currency}{(pnl.deliveryIncome ?? 0).toFixed(CURRENCY_DECIMALS)}</div>
               </div>
             )}
-            <div className="dash-card"><div className="dash-card-label">Net profit</div><div className="dash-card-value" style={{ color: pnl.netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{currency}{pnl.netProfit.toFixed(3)}</div></div>
+            <div className="dash-card"><div className="dash-card-label">Net profit</div><div className="dash-card-value" style={{ color: pnl.netProfit >= 0 ? 'var(--success)' : 'var(--danger)' }}>{currency}{pnl.netProfit.toFixed(CURRENCY_DECIMALS)}</div></div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '1rem' }}>
@@ -658,12 +664,27 @@ function PnlTab({ currency, locations, pnl, pnlFilter, setPnlFilter }) {
                       <tr key={i}>
                         <td>{r.category}</td>
                         <td style={{ textAlign: 'right' }}>{r.qty}</td>
-                        <td style={{ textAlign: 'right' }}>{currency}{r.revenue.toFixed(3)}</td>
-                        <td style={{ textAlign: 'right' }}>{currency}{r.cogs.toFixed(3)}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{r.grossProfit.toFixed(3)}</td>
+                        <td style={{ textAlign: 'right' }}>{currency}{r.revenue.toFixed(CURRENCY_DECIMALS)}</td>
+                        <td style={{ textAlign: 'right' }}>{currency}{r.cogs.toFixed(CURRENCY_DECIMALS)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{r.grossProfit.toFixed(CURRENCY_DECIMALS)}</td>
                       </tr>
                     ))}
                   </tbody>
+                  {/* Lines are at line price; foot back to the Revenue tile. */}
+                  {pnl.byCategory.length > 0 && (
+                    <tfoot>
+                      {(pnl.deliveryIncome ?? 0) > 0 && (
+                        <tr><td colSpan={2}>Delivery</td><td style={{ textAlign: 'right' }}>{currency}{pnl.deliveryIncome.toFixed(CURRENCY_DECIMALS)}</td><td colSpan={2} /></tr>
+                      )}
+                      {(pnl.billDiscounts ?? 0) > 0 && (
+                        <tr><td colSpan={2}>Less bill discounts</td><td style={{ textAlign: 'right' }}>−{currency}{pnl.billDiscounts.toFixed(CURRENCY_DECIMALS)}</td><td colSpan={2} /></tr>
+                      )}
+                      {(pnl.refunds ?? 0) > 0 && (
+                        <tr><td colSpan={2}>Less refunds</td><td style={{ textAlign: 'right' }}>−{currency}{pnl.refunds.toFixed(CURRENCY_DECIMALS)}</td><td colSpan={2} /></tr>
+                      )}
+                      <tr style={{ fontWeight: 600 }}><td colSpan={2}>Revenue</td><td style={{ textAlign: 'right' }}>{currency}{pnl.netRevenue.toFixed(CURRENCY_DECIMALS)}</td><td colSpan={2} /></tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             </div>
@@ -678,7 +699,7 @@ function PnlTab({ currency, locations, pnl, pnlFilter, setPnlFilter }) {
                     {pnl.expensesByCategory.map((r, i) => (
                       <tr key={i}>
                         <td>{r.category}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{r.amount.toFixed(3)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{r.amount.toFixed(CURRENCY_DECIMALS)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -695,7 +716,7 @@ function PnlTab({ currency, locations, pnl, pnlFilter, setPnlFilter }) {
                         {pnl.depreciationByAsset.map((r, i) => (
                           <tr key={i}>
                             <td>{r.asset}</td>
-                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{r.amount.toFixed(3)}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{r.amount.toFixed(CURRENCY_DECIMALS)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -738,8 +759,8 @@ function StockValueTab({ currency, locations, stockValue, stockValueFilter, setS
         <>
           <div className="dash-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
             <div className="dash-card"><div className="dash-card-label">Total units</div><div className="dash-card-value">{stockValue.totals.quantity.toLocaleString()}</div></div>
-            <div className="dash-card"><div className="dash-card-label">Stock value (cost)</div><div className="dash-card-value">{currency}{stockValue.totals.value.toFixed(3)}</div></div>
-            <div className="dash-card"><div className="dash-card-label">Retail value</div><div className="dash-card-value">{currency}{stockValue.totals.retailValue.toFixed(3)}</div></div>
+            <div className="dash-card"><div className="dash-card-label">Stock value (cost)</div><div className="dash-card-value">{currency}{stockValue.totals.value.toFixed(CURRENCY_DECIMALS)}</div></div>
+            <div className="dash-card"><div className="dash-card-label">Retail value</div><div className="dash-card-value">{currency}{stockValue.totals.retailValue.toFixed(CURRENCY_DECIMALS)}</div></div>
             <div className="dash-card"><div className="dash-card-label">Potential margin</div><div className="dash-card-value">{stockValue.totals.marginPct}%</div></div>
           </div>
 
@@ -754,8 +775,8 @@ function StockValueTab({ currency, locations, stockValue, stockValueFilter, setS
                       <tr key={r.locationId}>
                         <td>{r.locationName}</td>
                         <td style={{ textAlign: 'right' }}>{r.quantity.toLocaleString()}</td>
-                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{r.value.toFixed(3)}</td>
-                        <td style={{ textAlign: 'right' }}>{currency}{r.retailValue.toFixed(3)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{r.value.toFixed(CURRENCY_DECIMALS)}</td>
+                        <td style={{ textAlign: 'right' }}>{currency}{r.retailValue.toFixed(CURRENCY_DECIMALS)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -778,9 +799,9 @@ function StockValueTab({ currency, locations, stockValue, stockValueFilter, setS
                     </td>
                     <td>{r.location?.name || '—'}</td>
                     <td style={{ textAlign: 'right' }}>{r.quantity}</td>
-                    <td style={{ textAlign: 'right' }}>{r.costPrice ? `${currency}${r.costPrice.toFixed(3)}` : <span style={{ color: 'var(--text-light)' }}>no cost</span>}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{r.value.toFixed(3)}</td>
-                    <td style={{ textAlign: 'right' }}>{currency}{r.retailValue.toFixed(3)}</td>
+                    <td style={{ textAlign: 'right' }}>{r.costPrice ? `${currency}${r.costPrice.toFixed(CURRENCY_DECIMALS)}` : <span style={{ color: 'var(--text-light)' }}>no cost</span>}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 600 }}>{currency}{r.value.toFixed(CURRENCY_DECIMALS)}</td>
+                    <td style={{ textAlign: 'right' }}>{currency}{r.retailValue.toFixed(CURRENCY_DECIMALS)}</td>
                     <td style={{ textAlign: 'right', color: r.margin > 0 ? 'var(--success)' : 'var(--text-light)' }}>{r.costPrice ? `${r.margin}%` : '—'}</td>
                   </tr>
                 ))}

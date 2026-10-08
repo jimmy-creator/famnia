@@ -37,7 +37,7 @@ import sequelize from '../config/database.js';
 import {
   CashAccount, CashTransaction, ExpenseCategory, Expense, CashTransfer,
   Location, User, Order, SalesReturn, Product, ProductStock,
-  FixedAsset, DepreciationEntry,
+  FixedAsset, DepreciationEntry, Wastage, StockCount,
   writeCashTxn, getCashAccountBalance,
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
@@ -301,6 +301,7 @@ router.post('/expenses', protect, async (req, res) => {
       date: new Date(exp.expenseDate),
       createdBy: req.user.id,
       transaction: t,
+      requireFunds: true,
     });
 
     await t.commit();
@@ -414,7 +415,7 @@ router.post('/cash-transfers', protect, async (req, res) => {
       cashAccountId: parseInt(fromAccountId, 10), amount: -amt,
       source: 'transfer', sourceType: 'CashTransfer', sourceId: tr.id,
       reference: tr.transferNumber, description: `Transfer to account ${toAccountId}`,
-      date: txDate, createdBy: req.user.id, transaction: t,
+      date: txDate, createdBy: req.user.id, transaction: t, requireFunds: true,
     });
     await writeCashTxn({
       cashAccountId: parseInt(toAccountId, 10), amount: amt,
@@ -427,7 +428,7 @@ router.post('/cash-transfers', protect, async (req, res) => {
     res.status(201).json(tr);
   } catch (err) {
     if (!t.finished) await t.rollback().catch(() => {});
-    res.status(500).json({ message: err.message });
+    res.status(err.status || 500).json({ message: err.message });
   }
 });
 
@@ -573,6 +574,7 @@ router.get('/daybook', protect, async (req, res) => {
 // minus COGS (Σ Order.items[].costPrice × qty, less refund cost share)
 //   = Gross profit
 // minus Expenses (status=paid)
+// minus Depreciation and stock losses (wastage + count variance) — non-cash
 //   = Net profit
 //
 // COGS uses the snapshot costPrice on each Order line. Lines without
@@ -696,12 +698,41 @@ export async function computePnl({ from, to, locationId = null }) {
     });
     const disposalGainLoss = disposals.reduce((s, a) => s + (parseFloat(a.disposalGainLoss) || 0), 0);
 
+    // ── Stock losses (NON-CASH) ──────────────────────────────────
+    // Wastage write-offs and stock-count variances take value out of
+    // inventory without moving money, so they come straight off the
+    // inventory records here rather than through Expense (which would also
+    // debit a cash account). Rows from before that change carry an
+    // expense id — their Expense is already counted above, so skip them.
+    const wastageRows = await Wastage.findAll({
+      where: {
+        status: 'posted',
+        expenseId: null,
+        wastageDate: { [Op.between]: [dateOnly(from), dateOnly(to)] },
+        ...locationFilter,
+      },
+      attributes: ['totalCost'],
+    });
+    const wastageLoss = wastageRows.reduce((s, w) => s + (parseFloat(w.totalCost) || 0), 0);
+    const countRows = await StockCount.findAll({
+      where: {
+        status: 'posted',
+        shrinkageExpenseId: null,
+        postedAt: { [Op.between]: [from, to] },
+        ...locationFilter,
+      },
+      attributes: ['totalVarianceValue'],
+    });
+    // totalVarianceValue is negative for shrinkage, positive for a surplus.
+    const countVariance = countRows.reduce((s, c) => s + (parseFloat(c.totalVarianceValue) || 0), 0);
+    const stockLosses = wastageLoss - countVariance;
+
     const round = (n) => +n.toFixed(3);
     const netRevenue = revenue - refunds;
     const netCogs = cogs - refundCogs;
     const grossProfit = netRevenue - netCogs;
     const operatingProfit = grossProfit - totalExpenses;
-    const netProfit = operatingProfit - depreciation + disposalGainLoss;
+    const netProfit = operatingProfit - depreciation - stockLosses + disposalGainLoss;
     const grossMargin = netRevenue > 0 ? +((grossProfit / netRevenue) * 100).toFixed(2) : 0;
 
     return {
@@ -718,6 +749,11 @@ export async function computePnl({ from, to, locationId = null }) {
       expenses: round(totalExpenses),
       operatingProfit: round(operatingProfit),
       depreciation: round(depreciation),
+      stockLosses: round(stockLosses),
+      // byCategory is at line price, before order-level discounts and
+      // refunds; these let the table foot back to netRevenue.
+      billDiscounts: round([...linesByCategory.values()].reduce((s, v) => s + v.revenue, 0) + deliveryIncome - revenue),
+      stockLossDetail: { wastage: round(wastageLoss), countVariance: round(countVariance) },
       disposalGainLoss: round(disposalGainLoss),
       netProfit: round(netProfit),
       byCategory: [...linesByCategory.entries()].map(([category, v]) => ({

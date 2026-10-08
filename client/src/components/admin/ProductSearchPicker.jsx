@@ -13,6 +13,7 @@
  */
 import { useState, useMemo, forwardRef } from 'react';
 import toast from 'react-hot-toast';
+import { CURRENCY_DECIMALS } from '../../utils/currency';
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 
@@ -29,7 +30,7 @@ function exactMatch(products, q) {
 const ProductSearchPicker = forwardRef(function ProductSearchPicker({ products, currency, onPick, hint }, ref) {
   const [search, setSearch] = useState('');
   const [hit, setHit] = useState(0);
-  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
 
   const options = useMemo(() => {
     if (!search.trim()) return [];

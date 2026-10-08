@@ -10,6 +10,7 @@ import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import api from '../../api/axios';
 import ProductSearchPicker from './ProductSearchPicker';
+import { CURRENCY_DECIMALS } from '../../utils/currency';
 
 export default function PurchaseReturnModals({
   prForm, setPrForm, prDetail, setPrDetail,
@@ -36,7 +37,7 @@ export default function PurchaseReturnModals({
 
 function PrEditor({ form, setForm, suppliers, locations, products, currency, onSaved }) {
   const [poList, setPoList] = useState([]);
-  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
 
   // When supplier changes, load their received POs as a pick-source.
   useEffect(() => {
@@ -214,7 +215,7 @@ function PrEditor({ form, setForm, suppliers, locations, products, currency, onS
 }
 
 function PrDetail({ row, currency, isAdmin, onClose, onCancel }) {
-  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency}${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
   return (
     <div className="admin-form-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="admin-form" style={{ maxWidth: 640 }}>

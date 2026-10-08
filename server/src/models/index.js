@@ -219,6 +219,7 @@ Wastage.belongsTo(User, { as: 'approver', foreignKey: 'managerOverrideBy' });
 export async function writeCashTxn({
   cashAccountId, amount, source, sourceType = null, sourceId = null,
   reference = null, description = null, date, createdBy = null, transaction = null,
+  requireFunds = false,
 }) {
   if (!cashAccountId) {
     // Silently dropping a money movement is worse than a noisy log — the
@@ -226,6 +227,24 @@ export async function writeCashTxn({
     console.warn(`[writeCashTxn] no cashAccountId for ${source}/${sourceType}#${sourceId} ` +
       `(${amount}) — movement NOT recorded in the cash ledger`);
     return null;
+  }
+  // Back-office payments can't spend money an account doesn't hold — a
+  // supplier paid from an empty petty cash left it at a negative balance.
+  // The account row is locked so two payments can't both pass the check.
+  if (requireFunds && amount < 0) {
+    const acct = await CashAccount.findByPk(cashAccountId, {
+      attributes: ['id', 'name', 'openingBalance'],
+      ...(transaction ? { transaction, lock: transaction.LOCK.UPDATE } : {}),
+    });
+    const sum = await CashTransaction.sum('amount', {
+      where: { cashAccountId }, ...(transaction ? { transaction } : {}),
+    });
+    const balance = (parseFloat(acct?.openingBalance) || 0) + (parseFloat(sum) || 0);
+    if (balance + amount < -0.0005) {
+      const err = new Error(`Not enough in ${acct?.name || 'that account'} — balance ${balance.toFixed(2)}, need ${(-amount).toFixed(2)}`);
+      err.status = 400;
+      throw err;
+    }
   }
   return CashTransaction.create({
     cashAccountId,
@@ -298,7 +317,23 @@ export async function recomputeProductStock(productId) {
   if (!productId) return;
   try {
     const total = await ProductStock.sum('quantity', { where: { productId } });
-    await Product.update({ stock: total || 0 }, { where: { id: productId } });
+    const update = { stock: total || 0 };
+    // Roll the per-variant rows up into variants[].stock too. The storefront
+    // size picker reads that field, so leaving it alone meant a size sold
+    // out at the till still showed as available online (and a received
+    // size stayed "out of stock").
+    const product = await Product.findByPk(productId, { attributes: ['id', 'variants'] });
+    if (Array.isArray(product?.variants) && product.variants.length) {
+      const rows = await ProductStock.findAll({
+        where: { productId },
+        attributes: ['variantIndex', [sequelize.fn('SUM', sequelize.col('quantity')), 'qty']],
+        group: ['variantIndex'],
+        raw: true,
+      });
+      const byIdx = new Map(rows.map((r) => [r.variantIndex, parseInt(r.qty, 10) || 0]));
+      update.variants = product.variants.map((v, i) => ({ ...v, stock: byIdx.get(i) || 0 }));
+    }
+    await Product.update(update, { where: { id: productId } });
   } catch (err) {
     console.error('[recomputeProductStock]', productId, err.message);
   }

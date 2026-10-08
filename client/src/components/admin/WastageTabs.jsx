@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import { HiPlus } from 'react-icons/hi';
 import api from '../../api/axios';
 import { localDate } from '../../lib/utils';
+import { CURRENCY_DECIMALS } from '../../utils/currency';
 
 export default function WastageTabs(props) {
   const { tab } = props;
@@ -28,7 +29,7 @@ const cardGrid = {
 const right = { textAlign: 'right' };
 const empty = { textAlign: 'center', padding: '2rem', color: 'var(--text-light)' };
 
-const money = (currency, n) => `${currency}${(parseFloat(n) || 0).toFixed(3)}`;
+const money = (currency, n) => `${currency}${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
 
 // Must match the Wastage.reason ENUM on the server.
 const REASON_LABEL = {
@@ -44,7 +45,7 @@ function defaultRange(days = 30) {
 }
 
 // ─── Wastage ───────────────────────────────────────────────────────
-function WastageTab({ currency, locations = [], products = [], cashAccounts = [], expenseCategories = [] }) {
+function WastageTab({ currency, locations = [], products = [] }) {
   const [filter, setFilter] = useState({ ...defaultRange(30), locationId: '', reason: '' });
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -82,7 +83,7 @@ function WastageTab({ currency, locations = [], products = [], cashAccounts = []
     <div className="admin-section">
       <div className="admin-section-header">
         <h2>Wastage</h2>
-        <button type="button" className="btn-primary" onClick={() => setShowNew(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+        <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
           <HiPlus /> Record wastage
         </button>
       </div>
@@ -139,6 +140,9 @@ function WastageTab({ currency, locations = [], products = [], cashAccounts = []
                 <td>{w.wastageDate}</td>
                 <td>
                   {w.Product?.name || '—'}
+                  {w.variantIndex != null && w.Product?.variants?.[w.variantIndex] && (
+                    <span style={{ color: 'var(--text-light)' }}> ({Object.values(w.Product.variants[w.variantIndex].options || {}).join(' / ')})</span>
+                  )}
                   {w.Product?.nameAr && <div style={{ fontSize: '0.78rem', color: 'var(--text-light)', direction: 'rtl' }}>{w.Product.nameAr}</div>}
                 </td>
                 <td>{w.Location?.name || '—'}</td>
@@ -147,7 +151,7 @@ function WastageTab({ currency, locations = [], products = [], cashAccounts = []
                 <td style={{ ...right, color: 'var(--danger)' }}>{money(currency, w.totalCost)}</td>
                 <td>{w.creator?.name || '—'}</td>
                 <td style={right}>
-                  <button type="button" className="btn-secondary" onClick={() => cancel(w)}>Reverse</button>
+                  <button type="button" className="btn btn-secondary" onClick={() => cancel(w)}>Reverse</button>
                 </td>
               </tr>
             ))}
@@ -159,8 +163,6 @@ function WastageTab({ currency, locations = [], products = [], cashAccounts = []
         <WastageModal
           locations={locations}
           products={products}
-          cashAccounts={cashAccounts}
-          expenseCategories={expenseCategories}
           onClose={() => setShowNew(false)}
           onSaved={() => { setShowNew(false); load(); }}
         />
@@ -169,21 +171,24 @@ function WastageTab({ currency, locations = [], products = [], cashAccounts = []
   );
 }
 
-function WastageModal({ locations, products, cashAccounts, expenseCategories, onClose, onSaved }) {
+function WastageModal({ locations, products, onClose, onSaved }) {
   const [form, setForm] = useState({
-    productId: '', locationId: locations[0]?.id || '', quantity: '',
+    productId: '', variantIndex: '', locationId: locations[0]?.id || '', quantity: '',
     reason: 'damaged', notes: '', wastageDate: localDate(),
-    expenseCategoryId: '', cashAccountId: '',
   });
   const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const product = products.find((p) => String(p.id) === String(form.productId));
-  const estValue = (parseFloat(product?.costPrice) || 0) * (parseFloat(form.quantity) || 0);
+  const variants = Array.isArray(product?.variants) ? product.variants : [];
+  const variant = form.variantIndex !== '' ? variants[parseInt(form.variantIndex, 10)] : null;
+  const unitCost = parseFloat(variant?.costPrice ?? product?.costPrice) || 0;
+  const estValue = unitCost * (parseFloat(form.quantity) || 0);
 
   const submit = async (e) => {
     e.preventDefault();
     if (!form.productId) return toast.error('Pick a product');
+    if (variants.length && form.variantIndex === '') return toast.error('Pick a size');
     if (!form.locationId) return toast.error('Pick a location');
     if (!(parseFloat(form.quantity) > 0)) return toast.error('Quantity must be greater than 0');
 
@@ -203,10 +208,22 @@ function WastageModal({ locations, products, cashAccounts, expenseCategories, on
     <Modal title="Record wastage" onClose={onClose}>
       <form onSubmit={submit}>
         <label style={dlbl}>Product *</label>
-        <select value={form.productId} onChange={(e) => set('productId', e.target.value)} style={{ width: '100%', marginBottom: '0.75rem' }}>
+        <select value={form.productId} onChange={(e) => setForm((f) => ({ ...f, productId: e.target.value, variantIndex: '' }))} style={{ width: '100%', marginBottom: '0.75rem' }}>
           <option value="">Select…</option>
           {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
+
+        {variants.length > 0 && (
+          <>
+            <label style={dlbl}>Size / variant *</label>
+            <select value={form.variantIndex} onChange={(e) => set('variantIndex', e.target.value)} style={{ width: '100%', marginBottom: '0.75rem' }}>
+              <option value="">Select…</option>
+              {variants.map((v, i) => (
+                <option key={i} value={i}>{Object.values(v.options || {}).join(' / ') || `Variant ${i + 1}`}{v.sku ? ` — ${v.sku}` : ''}</option>
+              ))}
+            </select>
+          </>
+        )}
 
         <label style={dlbl}>Location *</label>
         <select value={form.locationId} onChange={(e) => set('locationId', e.target.value)} style={{ width: '100%', marginBottom: '0.75rem' }}>
@@ -229,54 +246,32 @@ function WastageModal({ locations, products, cashAccounts, expenseCategories, on
         <label style={dlbl}>Notes</label>
         <textarea rows={2} value={form.notes} onChange={(e) => set('notes', e.target.value)} style={{ width: '100%', marginBottom: '0.75rem' }} />
 
-        <div style={{ padding: '0.75rem', borderRadius: 8, background: 'var(--surface-alt,#f8f9fa)', marginBottom: '0.75rem' }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginBottom: '0.5rem' }}>
-            Optional — also book this as an expense so it shows in the P&amp;L. Leave blank to only adjust stock.
-          </div>
-          <label style={dlbl}>Expense category</label>
-          <select value={form.expenseCategoryId} onChange={(e) => set('expenseCategoryId', e.target.value)} style={{ width: '100%', marginBottom: '0.5rem' }}>
-            <option value="">None</option>
-            {expenseCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <label style={dlbl}>Paid from account</label>
-          <select value={form.cashAccountId} onChange={(e) => set('cashAccountId', e.target.value)} style={{ width: '100%' }}>
-            <option value="">None</option>
-            {cashAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </div>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-light)', marginBottom: '0.75rem' }}>
+          The cost shows in the P&amp;L as a stock loss. No cash account is touched — nothing was paid out.
+        </p>
 
         {estValue > 0 && (
           <p style={{ fontSize: '0.85rem', marginBottom: '1rem' }}>
-            Estimated write-off value: <strong style={{ color: 'var(--danger)' }}>{estValue.toFixed(3)}</strong>
+            Estimated write-off value: <strong style={{ color: 'var(--danger)' }}>{estValue.toFixed(CURRENCY_DECIMALS)}</strong>
           </p>
         )}
 
         <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Record'}</button>
-          <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Record'}</button>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
         </div>
       </form>
     </Modal>
   );
 }
 
+// Same overlay + panel classes as the PO modals, so the ERP theme's backdrop
+// and input styling (scoped to .admin-form) apply here too.
 function Modal({ title, children, onClose }) {
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'var(--surface, #fff)', borderRadius: 10, padding: '1.5rem',
-          width: 'min(480px,100%)', maxHeight: '90vh', overflowY: 'auto',
-        }}
-      >
-        <h3 style={{ marginTop: 0, marginBottom: '1rem' }}>{title}</h3>
+    <div className="admin-form-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="admin-form" style={{ maxWidth: 480 }}>
+        <h3>{title}</h3>
         {children}
       </div>
     </div>

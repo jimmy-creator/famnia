@@ -11,12 +11,13 @@
  */
 import { useState } from 'react';
 import { HiCash, HiCreditCard } from 'react-icons/hi';
+import { CURRENCY_DECIMALS, PRICE_STEP } from '../utils/currency';
 
 export default function PosSplitPayment({ total, currency = 'KWD', onClose, onConfirm, submitting }) {
   const [cash, setCash] = useState('');
   const [card, setCard] = useState('');
 
-  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
   const cashNum = parseFloat(cash) || 0;
   const cardNum = parseFloat(card) || 0;
 
@@ -25,19 +26,19 @@ export default function PosSplitPayment({ total, currency = 'KWD', onClose, onCo
   const cashApplied = Math.max(0, total - cardApplied);   // what cash actually needs to cover
   const cashTendered = cashNum;
   const cashChange = Math.max(0, cashTendered - cashApplied);
-  const remaining = +(total - cardApplied - Math.min(cashTendered, cashApplied)).toFixed(3);
+  const remaining = +(total - cardApplied - Math.min(cashTendered, cashApplied)).toFixed(CURRENCY_DECIMALS);
   const fullyPaid = remaining <= 0.0001;
 
   // "X for rest" fills field X with whatever's left after the other.
-  const setCashForRest = () => setCash(Math.max(0, total - cardNum).toFixed(3));
-  const setCardForRest = () => setCard(Math.max(0, total - cashNum).toFixed(3));
+  const setCashForRest = () => setCash(Math.max(0, total - cardNum).toFixed(CURRENCY_DECIMALS));
+  const setCardForRest = () => setCard(Math.max(0, total - cashNum).toFixed(CURRENCY_DECIMALS));
 
   const submit = (e) => {
     e.preventDefault();
     if (!fullyPaid) return;
     const tenders = [];
-    if (cardApplied > 0) tenders.push({ method: 'card', amount: +cardApplied.toFixed(3) });
-    if (cashApplied > 0) tenders.push({ method: 'cash', amount: +cashApplied.toFixed(3) });
+    if (cardApplied > 0) tenders.push({ method: 'card', amount: +cardApplied.toFixed(CURRENCY_DECIMALS) });
+    if (cashApplied > 0) tenders.push({ method: 'cash', amount: +cashApplied.toFixed(CURRENCY_DECIMALS) });
     onConfirm(tenders);
   };
 
@@ -56,12 +57,12 @@ export default function PosSplitPayment({ total, currency = 'KWD', onClose, onCo
               <HiCash size={16} /> Cash
             </label>
             <input
-              type="number" step="0.001" min={0}
+              type="number" step={PRICE_STEP} min={0}
               value={cash}
               onChange={(e) => setCash(e.target.value)}
               className="modal-input"
               autoFocus
-              placeholder="0.000"
+              placeholder={(0).toFixed(CURRENCY_DECIMALS)}
             />
           </div>
           <div>
@@ -69,11 +70,11 @@ export default function PosSplitPayment({ total, currency = 'KWD', onClose, onCo
               <HiCreditCard size={16} /> Card
             </label>
             <input
-              type="number" step="0.001" min={0} max={total}
+              type="number" step={PRICE_STEP} min={0} max={total}
               value={card}
               onChange={(e) => setCard(e.target.value)}
               className="modal-input"
-              placeholder="0.000"
+              placeholder={(0).toFixed(CURRENCY_DECIMALS)}
             />
           </div>
         </div>

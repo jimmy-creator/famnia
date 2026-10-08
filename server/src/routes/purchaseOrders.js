@@ -335,7 +335,7 @@ router.post('/:id/receive', protect, async (req, res) => {
     if (owed > 0.0005) {
       await t.rollback();
       return res.status(400).json({
-        message: `Pay this PO in full before receiving — ${owed} outstanding of ${po.totalAmount}`,
+        message: `Pay this PO in full before receiving — ${owed.toFixed(2)} outstanding of ${(parseFloat(po.totalAmount) || 0).toFixed(2)}`,
         requires: 'payment',
         outstanding: owed,
       });
@@ -504,6 +504,7 @@ router.post('/:id/pay', protect, admin, async (req, res) => {
         date: new Date(),
         createdBy: req.user.id,
         transaction: t,
+        requireFunds: true,
       });
     }
 

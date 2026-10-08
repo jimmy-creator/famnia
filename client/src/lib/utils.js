@@ -16,3 +16,8 @@ const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: STORE_TZ, year: 'num
 export function localDate(d = new Date()) {
   return dayFmt.format(new Date(d));
 }
+
+/** "1 item", "3 items". */
+export function plural(n, word) {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}

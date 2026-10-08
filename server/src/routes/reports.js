@@ -19,6 +19,7 @@ import { Order, User, CashierSession, Location, SalesReturn } from '../models/in
 import { protect, requirePermission, protectCashier } from '../middleware/auth.js';
 import { rangeStart, rangeEnd } from '../utils/dates.js';
 import { rollup } from '../utils/posTotals.js';
+import { dp } from '../utils/money.js';
 
 const router = Router();
 
@@ -54,7 +55,7 @@ function topItems(orders, n = 5) {
     }
   }
   return [...map.entries()]
-    .map(([name, v]) => ({ name, qty: v.qty, revenue: +v.revenue.toFixed(3) }))
+    .map(([name, v]) => ({ name, qty: v.qty, revenue: +v.revenue.toFixed(dp()) }))
     .sort((a, b) => b.qty - a.qty)
     .slice(0, n);
 }
@@ -206,8 +207,8 @@ router.get('/location-sales', protect, requirePermission('analytics'), async (re
 // ─── Daily report (all shifts) ─────────────────────────────────────
 // One store-local day: every in-store order (POS and aggregator orders
 // keyed in at the till — not web orders), whether or not it belongs to a
-// shift, so imported old-POS days report too. Plus each shift opened that
-// day with its drawer result.
+// shift, so imported old-POS days report too. Plus each shift open during
+// the day with its drawer result.
 router.get('/day', protect, async (req, res) => {
   try {
     if (!canSeeReports(req.user)) return res.status(403).json({ message: 'Forbidden' });
@@ -222,9 +223,15 @@ router.get('/day', protect, async (req, res) => {
     const returns = await SalesReturn.findAll({ where: retWhere });
     const totals = rollup(orders, returns);
     // Anything the drawer/terminal lines don't cover — so the lines add up.
-    const otherSales = +(totals.totalSales - totals.cashSales - totals.cardSales).toFixed(3);
+    const otherSales = +(totals.totalSales - totals.cashSales - totals.cardSales).toFixed(dp());
 
-    const shiftWhere = { openedAt: { [Op.between]: [from, to] } };
+    // Every shift that was open at any point in the day — not only those
+    // opened that day, or a shift running past midnight vanishes from the
+    // day it was closed and counted on.
+    const shiftWhere = {
+      openedAt: { [Op.lte]: to },
+      [Op.or]: [{ closedAt: null }, { closedAt: { [Op.gte]: from } }],
+    };
     if (locationId) shiftWhere.locationId = locationId;
     const sessions = await CashierSession.findAll({
       where: shiftWhere,
@@ -254,7 +261,11 @@ router.get('/day', protect, async (req, res) => {
       ...totals,
       otherSales,
       shifts,
-      totalVariance: +shifts.reduce((s, x) => s + (x.variance || 0), 0).toFixed(3),
+      // A shift's variance belongs to the day it was counted (closed), so a
+      // shift spanning two days isn't counted on both.
+      totalVariance: +shifts
+        .filter((x) => x.closedAt && new Date(x.closedAt) >= from && new Date(x.closedAt) <= to)
+        .reduce((s, x) => s + (x.variance || 0), 0).toFixed(dp()),
       topItems: topItems(orders, 10),
     });
   } catch (err) {
@@ -286,7 +297,7 @@ router.get('/x', protectCashier, async (req, res) => {
 
     const totals = rollup(orders, returns);
     const openingCash = parseFloat(session.openingCash) || 0;
-    const expectedCash = +(openingCash + totals.cashSales - totals.cashRefunds).toFixed(3);
+    const expectedCash = +(openingCash + totals.cashSales - totals.cashRefunds).toFixed(dp());
 
     res.json({
       type: 'X',
@@ -336,7 +347,7 @@ router.get('/z/:sessionId', protect, async (req, res) => {
 
     const totals = rollup(orders, returns);
     const openingCash = parseFloat(session.openingCash) || 0;
-    const expectedCash = +(openingCash + totals.cashSales - totals.cashRefunds).toFixed(3);
+    const expectedCash = +(openingCash + totals.cashSales - totals.cashRefunds).toFixed(dp());
 
     // Still open (viewed from the ERP): there's no count yet, so it's an
     // X-report — same shape as GET /x — not a Z with a fake 0 closing.
@@ -356,7 +367,7 @@ router.get('/z/:sessionId', protect, async (req, res) => {
       });
     }
     const closingCash = parseFloat(session.closingCash) || 0;
-    const variance = +(closingCash - expectedCash).toFixed(3);
+    const variance = +(closingCash - expectedCash).toFixed(dp());
 
     res.json({
       type: 'Z',

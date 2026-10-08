@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { HiX, HiPlus, HiCash, HiCreditCard, HiSearch } from 'react-icons/hi';
 import api from '../api/axios';
+import { CURRENCY_DECIMALS } from '../utils/currency';
 
 export default function PosBillEditor({ orderNumber, currency = 'KWD', onClose, onNeedOverride, onUpdated }) {
   const [order, setOrder] = useState(null);
@@ -30,7 +31,7 @@ export default function PosBillEditor({ orderNumber, currency = 'KWD', onClose, 
   const [payMethod, setPayMethod] = useState('cash');
   const [submitting, setSubmitting] = useState(false);
 
-  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
   const keyOf = (pid, vIdx) => `${pid}:${vIdx ?? 'b'}`;
 
   const load = async () => {

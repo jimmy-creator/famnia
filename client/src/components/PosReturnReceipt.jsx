@@ -5,6 +5,7 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { isEnabled, printReturn, getReceiptLocale, RECEIPT_STORE } from '../lib/thermalPrinter';
+import { CURRENCY_DECIMALS } from '../utils/currency';
 
 export default function PosReturnReceipt({ payload, currency = 'KWD', onClose }) {
   const printedRef = useRef(false);
@@ -40,7 +41,7 @@ export default function PosReturnReceipt({ payload, currency = 'KWD', onClose })
   const displayCurrency = (receiptLoc === 'ar' || receiptLoc === 'bi')
     ? (import.meta.env.VITE_CURRENCY_SYMBOL_AR || 'د.ك')
     : currency;
-  const fmt = (n) => `${displayCurrency} ${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${displayCurrency} ${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
   const pickName = (it) => (receiptLoc === 'ar' && it.nameAr) ? it.nameAr : it.name;
   const when = sr.createdAt ? new Date(sr.createdAt).toLocaleString() : '';
   const method = sr.refundMethod === 'cash' ? 'Cash' : 'Card';

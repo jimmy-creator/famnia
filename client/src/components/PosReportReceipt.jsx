@@ -6,6 +6,7 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { isEnabled, printReport, RECEIPT_STORE } from '../lib/thermalPrinter';
+import { CURRENCY_DECIMALS } from '../utils/currency';
 
 // autoPrint=false shows the slip without firing the printer — used for the
 // X-report, where printing is a deliberate click rather than the end of a shift.
@@ -40,7 +41,7 @@ export default function PosReportReceipt({ report, currency = 'KWD', onClose, au
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
   // DAY = end-of-day report across every shift (GET /reports/day).
   const isDay = report.type === 'DAY';
   const t = isDay ? 'DAILY REPORT' : report.type === 'Z' ? 'Z-REPORT' : 'X-REPORT';

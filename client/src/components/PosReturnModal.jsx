@@ -16,6 +16,7 @@
 import { useState, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import api from '../api/axios';
+import { CURRENCY_DECIMALS } from '../utils/currency';
 
 export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, onNeedOverride }) {
   const [step, setStep] = useState('lookup');         // lookup | pick | pay
@@ -31,7 +32,7 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(3)}`;
+  const fmt = (n) => `${currency} ${(parseFloat(n) || 0).toFixed(CURRENCY_DECIMALS)}`;
   const refundTotal = lines.reduce((s, l) => s + l.price * (l.returnQty || 0), 0);
 
   const inputRef = useRef(null);
@@ -204,7 +205,7 @@ export default function PosReturnModal({ currency = 'KWD', onClose, onComplete, 
             <input
               ref={inputRef}
               className="modal-input"
-              placeholder="POS-XXXXX-XXXX or order number"
+              placeholder="Receipt number, e.g. INV-1007"
               value={orderNumber}
               onChange={(e) => setOrderNumber(e.target.value)}
               autoFocus
