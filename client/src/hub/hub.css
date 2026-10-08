@@ -420,3 +420,81 @@ html.hub-theme .invoice-preview .print-only {
   color: #000;
   padding: 8mm;
 }
+
+/* ── Classic screens inside the hub (Back Office, Online Store) ──────────────
+   The ERP and store-admin pages render embedded under `.hub-legacy`. Their
+   skin (.erp-ui in index.css) is built on the storefront brand tokens, which
+   ThemeContext writes inline on <html>; redeclaring them here (a descendant
+   wins for inheritance) repaints those screens in the hub palette without
+   touching their JSX. */
+html.hub-theme .hub-legacy {
+  --copper: var(--primary);
+  --copper-light: color-mix(in oklab, var(--primary) 70%, white);
+  --copper-dark: color-mix(in oklab, var(--primary) 85%, black);
+  --gold: var(--primary);
+  --bg: var(--background);
+  --bg-warm: var(--muted);
+  --bg-card: var(--card);
+  --text: var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  --text-light: var(--muted-foreground);
+  --border-light: var(--border);
+  --danger: var(--destructive);
+  --radius: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  font-family: var(--font-body);
+}
+
+html.hub-theme .hub-legacy.erp-ui {
+  /* The ERP page paints its own off-white page; inside the hub it sits on the hub background. */
+  background: transparent;
+}
+
+html.hub-theme .hub-legacy h1.font-serif {
+  /* The embedded page's own title duplicates the hub header — keep it as a section label. */
+  font-size: 1.25rem;
+}
+
+html.hub-theme .hub-legacy-pill,
+html.hub-theme .hub-legacy-subpill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  border-radius: 999px;
+  font-weight: 500;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+html.hub-theme .hub-legacy-pill {
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  font-size: 0.875rem;
+}
+
+html.hub-theme .hub-legacy-subpill {
+  min-height: 2.1rem;
+  padding: 0 0.85rem;
+  font-size: 0.8125rem;
+  background: transparent;
+}
+
+html.hub-theme .hub-legacy-pill:hover,
+html.hub-theme .hub-legacy-subpill:hover {
+  background: var(--secondary);
+  color: var(--primary);
+}
+
+html.hub-theme .hub-legacy-pill.is-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+html.hub-theme .hub-legacy-subpill.is-active {
+  background: var(--secondary);
+  border-color: var(--secondary);
+  color: var(--primary);
+  font-weight: 600;
+}

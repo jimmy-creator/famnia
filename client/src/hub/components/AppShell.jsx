@@ -8,6 +8,7 @@ import {
   ExternalLink,
   FileBarChart,
   Home,
+  Landmark,
   LogOut,
   Menu,
   Package,
@@ -16,6 +17,7 @@ import {
   Printer,
   Settings as SettingsIcon,
   ShoppingCart,
+  Store,
   Truck,
   ShieldCheck,
   UserRound,
@@ -93,23 +95,39 @@ export function AppShell({ children }) {
     </nav>
   );
 
-  // Until every screen has moved into the hub, admins and staff can still
-  // reach the classic back office for what isn't here yet.
+  // Our own features the design has no screen for, shown inside the hub
+  // (the classic pages render embedded). The old admin stays one click away
+  // until it is retired.
+  const extraLink = (to, label, icon) => {
+    const Icon = icon;
+    const active = pathname === to;
+    return (
+      <Link
+        to={to}
+        onClick={() => setOpen(false)}
+        className={cn(
+          'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+          active ? 'bg-primary text-primary-foreground shadow-sm' : 'text-foreground/80 hover:bg-secondary hover:text-primary',
+        )}
+      >
+        <Icon className="size-4 shrink-0" />
+        <span className="truncate">{label}</span>
+      </Link>
+    );
+  };
   const classic =
     access.data && (access.data.isAdmin || access.data.roles.includes('staff')) ? (
       <div className="mt-4 border-t border-border pt-4">
-        <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Classic back office</p>
+        <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">More</p>
+        <div className="flex flex-col gap-1">
+          {extraLink('/hub/back-office', 'Back Office', Landmark)}
+          {extraLink('/hub/store', 'Online Store', Store)}
+        </div>
         <a
           href="/admin/erp"
-          className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-foreground/80 hover:bg-secondary hover:text-primary"
+          className="mt-1 flex items-center gap-3 rounded-xl px-3 py-2 text-xs text-muted-foreground hover:bg-secondary hover:text-primary"
         >
-          <ExternalLink className="size-4 shrink-0" /> ERP &amp; Finance
-        </a>
-        <a
-          href="/admin"
-          className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-foreground/80 hover:bg-secondary hover:text-primary"
-        >
-          <ExternalLink className="size-4 shrink-0" /> Store Admin
+          <ExternalLink className="size-3.5 shrink-0" /> Classic admin
         </a>
       </div>
     ) : null;

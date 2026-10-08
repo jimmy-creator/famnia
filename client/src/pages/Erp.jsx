@@ -52,7 +52,12 @@ const LEDGER_TABS = ['stock-counts', 'stock-count-detail', 'variance-report',
 // their parent so the nav doesn't look like it lost its place.
 const SUB_TABS = { 'stock-count-detail': 'stock-counts', 'variance-report': 'stock-counts' };
 
-export default function Erp() {
+/**
+ * `embedded`: rendered inside the FEMNIA Hub shell (/hub/back-office) — no
+ * rail or top bar of its own, a compact section nav instead, and the hub's
+ * palette through `.hub-legacy` (hub.css).
+ */
+export default function Erp({ embedded = false }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -300,7 +305,8 @@ export default function Erp() {
   })();
 
   return (
-    <div className="erp-ui min-h-screen">
+    <div className={embedded ? 'erp-ui hub-legacy' : 'erp-ui min-h-screen'}>
+      {!embedded && (<>
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-30 bg-black/45 backdrop-blur-sm lg:hidden"
@@ -413,8 +419,10 @@ export default function Erp() {
           </button>
         </div>
       </aside>
+      </>)}
 
-      <div className="flex min-h-screen flex-col lg:pl-64">
+      <div className={embedded ? '' : 'flex min-h-screen flex-col lg:pl-64'}>
+        {!embedded && (
         <header className="erp-topbar sticky top-0 z-20 px-4 py-3 lg:px-6">
           <div className="flex items-center justify-between gap-3">
             <button
@@ -441,8 +449,43 @@ export default function Erp() {
             </div>
           </div>
         </header>
+        )}
 
-        <main className="flex-1 px-4 pb-16 pt-5 lg:px-6 lg:pt-6">
+        <main className={embedded ? '' : 'flex-1 px-4 pb-16 pt-5 lg:px-6 lg:pt-6'}>
+          {embedded && (
+            <nav className="hub-legacy-nav mb-5 flex flex-col gap-2">
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  className={cn('hub-legacy-pill', tab === 'overview' && 'is-active')}
+                  onClick={() => setTab('overview')}
+                >
+                  Overview
+                </button>
+                {NAV_SECTIONS.filter((s) => s.items.some((i) => i.show)).map((s) => (
+                  <button
+                    key={s.id}
+                    className={cn('hub-legacy-pill', activeSection?.id === s.id && 'is-active')}
+                    onClick={() => setTab(s.items.find((i) => i.show).tab)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              {activeSection && (
+                <div className="flex flex-wrap gap-1.5">
+                  {activeSection.items.filter((i) => i.show).map((i) => (
+                    <button
+                      key={i.tab}
+                      className={cn('hub-legacy-subpill', navTab === i.tab && 'is-active')}
+                      onClick={() => setTab(i.tab)}
+                    >
+                      {i.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </nav>
+          )}
           <div className="mb-6">
             <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               {activeSection ? activeSection.label : 'ERP'}

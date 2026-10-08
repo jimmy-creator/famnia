@@ -584,7 +584,11 @@ function HeroBannerEditor() {
   );
 }
 
-export default function Admin() {
+// Store-admin screens the FEMNIA Hub has no replacement for. In `embedded`
+// mode (/hub/store) only these are offered, inside the hub shell.
+const EMBED_TABS = ['categories', 'abandoned', 'b2bquotes', 'reviews', 'coupons', 'theme'];
+
+export default function Admin({ embedded = false }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { currentTheme, changeTheme, themes: themeOptions } = useTheme();
@@ -594,6 +598,10 @@ export default function Admin() {
     navigate('/login');
   };
   const [tab, setTab] = useState(() => {
+    if (embedded) {
+      const wanted = new URLSearchParams(window.location.search).get('tab');
+      return EMBED_TABS.includes(wanted) ? wanted : 'categories';
+    }
     if (user?.role === 'staff' && user?.permissions?.length > 0) {
       const permToTab = { analytics: 'dashboard', products: 'products', orders: 'orders', categories: 'categories', customers: 'customers', coupons: 'coupons', reviews: 'reviews', settings: 'theme' };
       return permToTab[user.permissions[0]] || 'dashboard';
@@ -708,7 +716,7 @@ export default function Admin() {
 
   // ─── Sidebar nav structure ──────────────────────────────────────
   // `show` is computed per render so role/feature gating stays live.
-  const NAV_SECTIONS = [
+  const ALL_NAV_SECTIONS = [
     { id: 'catalog', label: 'Catalog', items: [
         { tab: 'products',   label: 'Products',   show: hasAccess('products') },
         { tab: 'categories', label: 'Categories', show: hasAccess('categories') },
@@ -729,6 +737,9 @@ export default function Admin() {
         { tab: 'theme',    label: 'Theme',    show: hasAccess('settings') },
     ]},
   ];
+  const NAV_SECTIONS = embedded
+    ? ALL_NAV_SECTIONS.map((s) => ({ ...s, items: s.items.filter((i) => EMBED_TABS.includes(i.tab)) }))
+    : ALL_NAV_SECTIONS;
 
   // Auto-expand the section containing the active tab so a tab switch is
   // always visible even if the user had collapsed that section earlier.
@@ -766,13 +777,14 @@ export default function Admin() {
   const statusColors = { processing: '#f59e0b', confirmed: '#3b82f6', shipped: '#8b5cf6', delivered: '#10b981', cancelled: '#ef4444' };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className={embedded ? 'hub-legacy' : 'min-h-screen bg-background'}>
       {/* On desktop the shell is pinned to the viewport and the sidebar and
           content scroll independently — the nav list is long enough that a
           single page scroll would carry the content away while reaching for
           an item near the bottom. Mobile keeps normal page scrolling, where
           the sidebar is an overlay that already scrolls on its own. */}
-      <div className="mx-auto flex min-h-screen max-w-[1600px] lg:h-screen lg:min-h-0 lg:overflow-hidden">
+      <div className={embedded ? '' : 'mx-auto flex min-h-screen max-w-[1600px] lg:h-screen lg:min-h-0 lg:overflow-hidden'}>
+        {!embedded && (<>
         {/* Mobile top bar */}
         <button
           className="fixed left-0 right-0 top-0 z-30 flex items-center gap-2 border-b border-border bg-background/95 px-4 py-3 text-sm font-medium backdrop-blur lg:hidden"
@@ -846,9 +858,24 @@ export default function Admin() {
             <LogOut className="size-4" /> Logout{user?.name ? ` (${user.name})` : ''}
           </button>
         </aside>
+        </>)}
 
-        <main className="min-w-0 flex-1 px-4 pb-16 pt-16 lg:h-screen lg:overflow-y-auto lg:px-8 lg:pt-8">
-          <h1 className="mb-6 font-serif text-2xl font-semibold tracking-tight">Admin Panel</h1>
+        <main className={embedded ? 'min-w-0' : 'min-w-0 flex-1 px-4 pb-16 pt-16 lg:h-screen lg:overflow-y-auto lg:px-8 lg:pt-8'}>
+          {embedded ? (
+            <nav className="hub-legacy-nav mb-5 flex flex-wrap gap-1.5">
+              {NAV_SECTIONS.flatMap((s) => s.items).filter((i) => i.show).map((i) => (
+                <button
+                  key={i.tab}
+                  className={cn('hub-legacy-pill', tab === i.tab && 'is-active')}
+                  onClick={() => setTab(i.tab)}
+                >
+                  {i.label}
+                </button>
+              ))}
+            </nav>
+          ) : (
+            <h1 className="mb-6 font-serif text-2xl font-semibold tracking-tight">Admin Panel</h1>
+          )}
 
         {tab === 'dashboard' && dashboard && (
           <div className="flex flex-col gap-6">
