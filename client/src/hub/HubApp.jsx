@@ -15,6 +15,11 @@ import ProductsPage from '@/hub/pages/Products';
 import InventoryPage from '@/hub/pages/Inventory';
 import StockInPage from '@/hub/pages/StockIn';
 import StockOutPage from '@/hub/pages/StockOut';
+import NewSalesOrderPage from '@/hub/pages/NewSalesOrder';
+import OrdersPage from '@/hub/pages/Orders';
+import CustomersPage from '@/hub/pages/Customers';
+import InvoicesPage from '@/hub/pages/Invoices';
+import PrintDeliveryLabelPage from '@/hub/pages/PrintDeliveryLabel';
 
 const FONTS_HREF =
   'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap';
@@ -66,13 +71,9 @@ function Protected() {
 // back office until its replacement lands.
 const PENDING = [
   ['dashboard', 'Dashboard', 'Live KPIs, recent orders, low stock and cash position arrive with the reports stage.'],
-  ['pos', 'New Sales Order', 'Order entry with delivery or pickup, payments and consignment arrives with the sales stage.'],
-  ['orders', 'Sales Orders', 'Order list, details, returns, cancellations and price corrections arrive with the sales stage.'],
-  ['customers', 'Customers', 'Customer records and purchase history arrive with the sales stage.'],
   ['delivery', 'Delivery', 'The delivery and pickup board with staff assignment arrives with the delivery stage.'],
   ['my-deliveries', 'My Deliveries', 'The delivery staff board arrives with the delivery stage.'],
   ['delivery-reports', 'Delivery Reports', 'Daily to yearly delivery reports arrive with the delivery stage.'],
-  ['invoices', 'Invoices & Labels', 'A4 invoices and 100×130 / 100×150 delivery labels arrive with the sales stage.'],
   ['expenses', 'Expenses & Assets', 'Expenses, assets and personally paid liabilities arrive with the back-office stage.'],
   ['reports', 'Reports', 'Sales, product, inventory, profit, expense and payment reports arrive with the back-office stage.'],
   ['staff', 'Staff & Permissions', 'Staff accounts, approvals and the permission matrix arrive with the back-office stage.'],
@@ -90,6 +91,8 @@ export default function HubApp() {
       <Routes>
         <Route path="login" element={<LoginPage />} />
         <Route path="reset-password" element={<ResetPasswordPage />} />
+        {/* Print pages: outside the AppShell; the page checks the session itself. */}
+        <Route path="print/delivery-label/:orderId" element={<PrintDeliveryLabelPage />} />
         <Route element={<Protected />}>
           <Route index element={<Navigate to="/hub/dashboard" replace />} />
           <Route path="profile" element={<ProfilePage />} />
@@ -97,6 +100,10 @@ export default function HubApp() {
           <Route path="inventory" element={<InventoryPage />} />
           <Route path="stock-in" element={<StockInPage />} />
           <Route path="stock-out" element={<StockOutPage />} />
+          <Route path="pos" element={<NewSalesOrderPage />} />
+          <Route path="orders" element={<OrdersPage />} />
+          <Route path="customers" element={<CustomersPage />} />
+          <Route path="invoices" element={<InvoicesPage />} />
           {PENDING.map(([path, title, note]) => (
             <Route key={path} path={path} element={<ComingSoon title={title} note={note} />} />
           ))}

@@ -2,10 +2,11 @@ import { Router } from 'express';
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
-  Product, ProductStock, StockMovement, ProductAuditLog, ImportBatch, Supplier, User, logActivity,
+  Product, ProductStock, StockMovement, ProductAuditLog, ImportBatch, Supplier, User,
 } from '../models/index.js';
 import { protect } from '../middleware/auth.js';
-import { HUB_ROLES, hasPermission } from '../hub/permissions.js';
+import { HUB_ROLES } from '../hub/permissions.js';
+import { bad, can, hubLog, need, wrap as wrapAs } from '../hub/http.js';
 import {
   applyStockDelta, displaySku, hasVariants, listSkus, loadSku, nextProductCodes, normalizeProductCode,
   recomputeAfter, skuEntries, skuFields, skuKey, skuLock, skuRow, skuStock, supplierByName, uniqueSlug,
@@ -24,28 +25,7 @@ import { todayLocal } from '../services/stockLedger.js';
 const router = Router();
 
 // ── plumbing ────────────────────────────────────────────────────────
-const can = (req, key) => hasPermission(req.user, key);
-
-const need = (...keys) => (req, res, next) => {
-  if (!HUB_ROLES.includes(req.user.role)) return res.status(403).json({ message: 'Staff access only' });
-  if (keys.some((k) => can(req, k))) return next();
-  return res.status(403).json({ message: 'You do not have permission to perform this action.' });
-};
-
-const wrap = (fn) => async (req, res) => {
-  try {
-    await fn(req, res);
-  } catch (err) {
-    if (err.name === 'SequelizeUniqueConstraintError') {
-      return res.status(409).json({ message: 'This was already recorded — no duplicate was created.' });
-    }
-    const status = err.status || 500;
-    if (status === 500) console.error('[hubCatalog]', req.method, req.originalUrl, err);
-    return res.status(status).json({ message: status === 500 ? 'Something went wrong. Please try again.' : err.message });
-  }
-};
-
-const bad = (message, status = 400) => Object.assign(new Error(message), { status });
+const wrap = (fn) => wrapAs('hubCatalog', fn);
 const clean = (v) => {
   const s = v === undefined || v === null ? '' : String(v).replace(/\s+/g, ' ').trim();
   return s || null;
@@ -57,16 +37,6 @@ const money = (v) => {
 const dateOnly = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v) : todayLocal());
 const randomSuffix = () => Math.random().toString(36).slice(2, 6).toUpperCase();
 const stamp = () => todayLocal().replace(/-/g, '');
-
-function hubLog(req, action, module, recordId = null, description = null) {
-  return logActivity({
-    userId: req.user.id,
-    action,
-    entityType: module,
-    details: { recordId, description: description ? String(description).slice(0, 500) : null },
-    ip: req.ip,
-  });
-}
 
 async function audit(product, variantIndex, sku, changes, userId, transaction) {
   if (!changes.length) return;

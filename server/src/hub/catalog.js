@@ -1,9 +1,10 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
-  Product, ProductStock, Location, Order, Setting, Supplier, StockMovement, recomputeProductStock,
+  Product, ProductStock, Location, Order, Supplier, StockMovement, recomputeProductStock,
 } from '../models/index.js';
 import { withStockContext } from '../services/stockLedger.js';
+import { loadAppSettings } from './settings.js';
 
 /**
  * The hub's SKU view of the catalogue.
@@ -83,14 +84,8 @@ export function skuFields(product, variantIndex) {
 export const multilocOn = () => process.env.FEATURE_MULTILOC === 'true';
 
 export async function stockSettings() {
-  const rows = await Setting.findAll({ where: { key: ['low_stock_rule', 'reorder_multiplier'] }, raw: true });
-  const map = new Map(rows.map((r) => [r.key, r.value]));
-  const rule = parseInt(map.get('low_stock_rule'), 10);
-  const mult = parseFloat(map.get('reorder_multiplier'));
-  return {
-    lowStockRule: Number.isFinite(rule) ? rule : 3,
-    reorderMultiplier: Number.isFinite(mult) ? mult : 2,
-  };
+  const { lowStockRule, reorderMultiplier } = await loadAppSettings();
+  return { lowStockRule, reorderMultiplier };
 }
 
 export function stockStatusOf(current, reorderLevel) {

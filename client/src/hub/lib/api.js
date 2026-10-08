@@ -17,6 +17,14 @@ export const qk = {
   importBatches: ['femnia', 'import-batches'],
   dashboard: ['femnia', 'dashboard'],
   activity: ['femnia', 'activity'],
+  appSettings: ['femnia', 'app-settings'],
+  orders: ['femnia', 'orders'],
+  order: (id) => ['femnia', 'order', id],
+  orderAudit: (id) => ['femnia', 'order-audit', id],
+  customers: ['femnia', 'customers'],
+  customerRecords: ['femnia', 'customer-records'],
+  customerHistory: (id) => ['femnia', 'customer-history', id],
+  customerPurchases: (id) => ['femnia', 'customer-purchases', id],
 };
 
 const get = async (url) => (await api.get(url)).data;
@@ -107,3 +115,57 @@ export async function uploadProductImage(file) {
 export const findBatchByHash = (hash) => get(`/hub/imports/by-hash/${hash}`);
 export const confirmImport = (kind, args) => send('post', `/hub/imports/${kind}`, args);
 export const reverseImport = async (id, reason) => (await send('post', `/hub/imports/${id}/reverse`, { reason })).note;
+
+/* -------------------------------- sales -------------------------------- */
+const orderUrl = (id, rest = '') => `/hub/orders/${encodeURIComponent(id)}${rest}`;
+
+export const appSettingsQuery = { queryKey: qk.appSettings, queryFn: () => get('/hub/settings'), staleTime: 60_000 };
+export const ordersQuery = { queryKey: qk.orders, queryFn: () => get('/hub/orders'), staleTime: 15_000 };
+export const salesOrderQuery = (id) => ({ queryKey: qk.order(id), queryFn: () => get(orderUrl(id)), enabled: Boolean(id) });
+export const orderAuditQuery = (id) => ({
+  queryKey: qk.orderAudit(id),
+  queryFn: () => get(orderUrl(id, '/audit')),
+  enabled: Boolean(id),
+});
+/** Customer directory with order stats (also feeds the order-form picker). */
+export const customerRecordsQuery = { queryKey: qk.customerRecords, queryFn: () => get('/hub/customers'), staleTime: 30_000 };
+export const customersQuery = customerRecordsQuery;
+export const customerHistoryQuery = (id) => ({
+  queryKey: qk.customerHistory(id),
+  queryFn: () => get(`/hub/customers/${id}/history`),
+  enabled: Boolean(id),
+});
+export const customerPurchasesQuery = (id) => ({
+  queryKey: qk.customerPurchases(id),
+  queryFn: () => get(`/hub/customers/${id}/purchases`),
+  enabled: Boolean(id),
+});
+
+export const newIdempotencyKey = () => `idem-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+
+export function whatsappLink(phone) {
+  const digits = (phone ?? '').replace(/[^\d]/g, '');
+  const withCountry = digits.startsWith('974') ? digits : `974${digits.replace(/^0+/, '')}`;
+  return `https://wa.me/${withCountry}`;
+}
+
+/** Draft save: no stock movement. Resolves { orderId }. */
+export const saveSalesOrderDraft = (input) => send('post', '/hub/orders/draft', input);
+/** The one action that deducts stock; idempotent on input.idempotencyKey. Resolves { order, duplicate }. */
+export const confirmSalesOrder = (input) => send('post', '/hub/orders/confirm', input);
+export const updateFulfilmentAndPayment = ({ orderId, ...patch }) => send('patch', orderUrl(orderId, '/fulfilment'), patch);
+export const updateOrderContact = ({ orderId, ...patch }) => send('patch', orderUrl(orderId, '/contact'), patch);
+export const correctOrderPricing = ({ orderId, ...input }) => send('post', orderUrl(orderId, '/correct-prices'), input);
+export const processOrderReturn = (orderId, lines) => send('post', orderUrl(orderId, '/returns'), { lines });
+export const cancelSalesOrder = (orderId, reason, restock) => send('post', orderUrl(orderId, '/cancel'), { reason, restock });
+export const recordInvoicePrint = (orderId) => send('post', orderUrl(orderId, '/invoice-print'));
+export const recordLabelPrint = async (orderId, labelSize) =>
+  (await send('post', orderUrl(orderId, '/label-print'), { labelSize })).printCount;
+
+/* ------------------------------ customers ------------------------------ */
+export const findCustomerByPhone = (phone) => get(`/hub/customers/lookup?phone=${encodeURIComponent(phone)}`);
+/** New Sales Order: reuses the customer already on that mobile number. Resolves { customer, existed }. */
+export const createOrReuseCustomer = (input) => send('post', '/hub/customers', { ...input, reuse: true });
+export const createCustomerRecord = async (input) => (await send('post', '/hub/customers', input)).customer;
+export const updateCustomerRecord = (id, input) => send('put', `/hub/customers/${id}`, input);
+

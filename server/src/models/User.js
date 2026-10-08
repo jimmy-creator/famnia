@@ -109,6 +109,11 @@ const User = sequelize.define('User', {
     type: DataTypes.TEXT,
     allowNull: true,
   },
+  // Customer details kept by the staff hub (Customers screen).
+  altPhone: { type: DataTypes.STRING(30), allowNull: true },
+  area: { type: DataTypes.STRING, allowNull: true },
+  landmark: { type: DataTypes.STRING, allowNull: true },
+  customerNotes: { type: DataTypes.TEXT, allowNull: true },
   resetToken: {
     type: DataTypes.STRING,
     allowNull: true,

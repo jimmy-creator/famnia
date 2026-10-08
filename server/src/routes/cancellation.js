@@ -36,6 +36,7 @@ router.post('/:id/cancel', optionalAuth, async (req, res) => {
       orderStatus: 'cancelled',
       cancellationReason: reason || 'Cancelled by customer',
       cancelledAt: new Date(),
+      ...(order.hubStatus ? { hubStatus: 'Cancelled' } : {}),
     });
 
     // Restore stock — the online inventory pool when configured, else
@@ -104,6 +105,12 @@ router.post('/:id/refund', protect, admin, async (req, res) => {
       paymentStatus: 'refunded',
       orderStatus: order.orderStatus === 'processing' || order.orderStatus === 'confirmed' ? 'cancelled' : order.orderStatus,
     });
+    if (order.hubStatus) {
+      await order.update({
+        hubPaymentStatus: 'Refunded',
+        ...(order.orderStatus === 'cancelled' ? { hubStatus: 'Cancelled' } : {}),
+      });
+    }
 
     // Restore stock if not already cancelled
     if (order.orderStatus !== 'cancelled' && !(await restoreOnlineStock(order))) {

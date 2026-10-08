@@ -34,6 +34,8 @@ import Wastage from './Wastage.js';
 import StockMovement from './StockMovement.js';
 import ProductAuditLog from './ProductAuditLog.js';
 import ImportBatch from './ImportBatch.js';
+import OrderAuditLog from './OrderAuditLog.js';
+import OrderReturn from './OrderReturn.js';
 import sequelize from '../config/database.js';
 import { initStockLedger, recordStockDelta } from '../services/stockLedger.js';
 
@@ -383,6 +385,8 @@ export async function getOnlineLocationId() {
 // the stored selected-options against each variant's options (the same
 // matching the legacy reduceStock does). Returns null for a base product.
 function variantIndexForItem(product, item) {
+  // Staff-hub lines record the index itself instead of the chosen options.
+  if (item.variantIndex !== undefined && item.variantIndex !== null) return Number(item.variantIndex);
   const selected = item.variant || item.selectedVariant;
   if (!selected || !Array.isArray(product?.variants) || !product.variants.length) {
     return null;
@@ -421,6 +425,7 @@ export async function decrementOnlineStock(order) {
     touched.add(item.productId);
   }
   for (const pid of touched) await recomputeProductStock(pid);
+  if (order.stockState) await order.update({ stockState: 'deducted' });
   if (!order.locationId) {
     try { await order.update({ locationId: onlineLocId }); } catch { /* non-fatal */ }
   }
@@ -433,21 +438,27 @@ export async function restoreOnlineStock(order) {
   if (process.env.FEATURE_MULTILOC !== 'true') return false;
   const onlineLocId = await getOnlineLocationId();
   if (!onlineLocId) return false;
+  // Orders the staff hub has touched track whether their goods are out: a
+  // draft never deducted, and a hub cancel already put them back.
+  if (order.stockState === 'none' || order.stockState === 'restored') return true;
 
   const items = Array.isArray(order.items) ? order.items : [];
   const touched = new Set();
   for (const item of items) {
-    if (!item.productId || !item.quantity) continue;
+    // Hub returns already settled their units (restocked or written off).
+    const qty = (parseInt(item.quantity, 10) || 0) - (parseInt(item.returnedQty, 10) || 0);
+    if (!item.productId || qty <= 0) continue;
     const product = await Product.findByPk(item.productId, { attributes: ['id', 'variants'] });
     const vIdx = variantIndexForItem(product, item);
     const [row] = await ProductStock.findOrCreate({
       where: { productId: item.productId, variantIndex: vIdx, locationId: onlineLocId },
       defaults: { quantity: 0 },
     });
-    await row.update({ quantity: row.quantity + item.quantity });
+    await row.update({ quantity: row.quantity + qty });
     touched.add(item.productId);
   }
   for (const pid of touched) await recomputeProductStock(pid);
+  if (order.stockState) await order.update({ stockState: 'restored', restockedAt: new Date() });
   return true;
 }
 
@@ -464,6 +475,7 @@ export {
   FixedAsset, DepreciationEntry, CapitalEntry,
   Wastage,
   StockMovement, ProductAuditLog, ImportBatch,
+  OrderAuditLog, OrderReturn,
 };
 
 // ── Activity log + manager-override helpers ─────────────────────

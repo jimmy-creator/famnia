@@ -79,6 +79,33 @@ const STEPS = [
   ['Products.sourceCountry', () => addColumnIfMissing('Products', 'sourceCountry', { type: DataTypes.STRING, allowNull: true })],
   ['Products.wholesaler', () => addColumnIfMissing('Products', 'wholesaler', { type: DataTypes.STRING, allowNull: true })],
   ['Products.importBatchId', () => addColumnIfMissing('Products', 'importBatchId', { type: DataTypes.INTEGER, allowNull: true })],
+
+  // ── 2026-10 FEMNIA Hub: sales orders & customers (phase 3) ──────────
+  ['Orders.channel += staff', () => ensureEnum('Orders', 'channel',
+    ['web', 'pos', 'phone', 'whatsapp', 'other', 'staff'], { allowNull: false, defaultValue: 'web' })],
+  ...[
+    ['hubStatus', DataTypes.STRING(30)], ['hubPaymentStatus', DataTypes.STRING(20)], ['hubPaymentMode', DataTypes.STRING(30)],
+    ['fulfilmentMethod', DataTypes.STRING(20)], ['customerName', DataTypes.STRING], ['customerPhone', DataTypes.STRING(30)],
+    ['area', DataTypes.STRING], ['address', DataTypes.TEXT], ['landmark', DataTypes.STRING],
+    ['paymentDate', DataTypes.DATEONLY], ['paymentTime', DataTypes.STRING(20)], ['paymentReference', DataTypes.STRING],
+    ['paymentNotes', DataTypes.TEXT], ['paymentHeldIn', DataTypes.STRING(60)], ['paymentHolderDetails', DataTypes.STRING(200)],
+    ['deliveryDate', DataTypes.DATEONLY], ['courier', DataTypes.STRING(80)], ['deliveryNotes', DataTypes.TEXT],
+    ['pickupDate', DataTypes.DATEONLY], ['pickupTime', DataTypes.STRING(20)], ['pickupNotes', DataTypes.TEXT],
+    ['confirmedAt', DataTypes.DATE], ['restockedAt', DataTypes.DATE], ['stockState', DataTypes.STRING(10)],
+    ['idempotencyKey', DataTypes.STRING(120)], ['labelSize', DataTypes.STRING(10)],
+    ['assignedTo', DataTypes.INTEGER], ['assignedAt', DataTypes.DATE], ['assignedBy', DataTypes.INTEGER],
+    ['createdBy', DataTypes.INTEGER],
+  ].map(([col, type]) => [`Orders.${col}`, () => addColumnIfMissing('Orders', col, { type, allowNull: true })]),
+  ['Orders.amountReceived', () => addColumnIfMissing('Orders', 'amountReceived', {
+    type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0,
+  })],
+  ['Orders.labelPrintCount', () => addColumnIfMissing('Orders', 'labelPrintCount', {
+    type: DataTypes.INTEGER, allowNull: false, defaultValue: 0,
+  })],
+  ['Orders.idempotencyKey unique', () => addIndexIfMissing('Orders', 'order_idempotency_unique', ['idempotencyKey'], true)],
+  ['Orders.assignedTo index', () => addIndexIfMissing('Orders', 'order_assigned_to', ['assignedTo'])],
+  ...[['altPhone', DataTypes.STRING(30)], ['area', DataTypes.STRING], ['landmark', DataTypes.STRING], ['customerNotes', DataTypes.TEXT]]
+    .map(([col, type]) => [`Users.${col}`, () => addColumnIfMissing('Users', col, { type, allowNull: true })]),
 ];
 
 export async function runMigrations({ log = console.log } = {}) {

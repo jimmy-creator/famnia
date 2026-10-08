@@ -134,7 +134,8 @@ const Order = sequelize.define('Order', {
     // the sales report. Phone/WhatsApp orders are rung up at the till.
     // Orders that predate this column are backfilled by scripts/seedErp.js
     // (till sales → 'pos'); otherwise they'd all read as 'web'.
-    type: DataTypes.ENUM('web', 'pos', 'phone', 'whatsapp', 'other'),
+    // 'staff' = a sales order entered in the staff hub (/hub/pos).
+    type: DataTypes.ENUM('web', 'pos', 'phone', 'whatsapp', 'other', 'staff'),
     defaultValue: 'web',
     allowNull: false,
   },
@@ -144,6 +145,51 @@ const Order = sequelize.define('Order', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+
+  // ── FEMNIA Hub sales-order fields ──
+  // The hub's own status / payment vocabulary ("Out for Delivery",
+  // "Partially Paid", …). Null on orders the hub has never touched; those
+  // derive their hub view from orderStatus / paymentStatus. Every hub write
+  // also syncs orderStatus / paymentStatus so the storefront and reports
+  // keep reading the legacy fields (see server/src/hub/sales.js).
+  hubStatus: { type: DataTypes.STRING(30), allowNull: true },
+  hubPaymentStatus: { type: DataTypes.STRING(20), allowNull: true },
+  hubPaymentMode: { type: DataTypes.STRING(30), allowNull: true },
+  fulfilmentMethod: { type: DataTypes.STRING(20), allowNull: true },   // Delivery | Customer Pickup
+  // Customer / address snapshot as entered by staff (web orders keep theirs
+  // in shippingAddress).
+  customerName: { type: DataTypes.STRING, allowNull: true },
+  customerPhone: { type: DataTypes.STRING(30), allowNull: true },
+  area: { type: DataTypes.STRING, allowNull: true },
+  address: { type: DataTypes.TEXT, allowNull: true },
+  landmark: { type: DataTypes.STRING, allowNull: true },
+  amountReceived: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0 },
+  paymentDate: { type: DataTypes.DATEONLY, allowNull: true },
+  paymentTime: { type: DataTypes.STRING(20), allowNull: true },
+  paymentReference: { type: DataTypes.STRING, allowNull: true },
+  paymentNotes: { type: DataTypes.TEXT, allowNull: true },
+  paymentHeldIn: { type: DataTypes.STRING(60), allowNull: true },
+  paymentHolderDetails: { type: DataTypes.STRING(200), allowNull: true },
+  deliveryDate: { type: DataTypes.DATEONLY, allowNull: true },
+  courier: { type: DataTypes.STRING(80), allowNull: true },
+  deliveryNotes: { type: DataTypes.TEXT, allowNull: true },
+  pickupDate: { type: DataTypes.DATEONLY, allowNull: true },
+  pickupTime: { type: DataTypes.STRING(20), allowNull: true },
+  pickupNotes: { type: DataTypes.TEXT, allowNull: true },
+  confirmedAt: { type: DataTypes.DATE, allowNull: true },
+  restockedAt: { type: DataTypes.DATE, allowNull: true },
+  // none | deducted | restored — whether this order's stock left the shelf.
+  // Null for orders the hub has never handled (derived; see hub/sales.js).
+  stockState: { type: DataTypes.STRING(10), allowNull: true },
+  // Retried confirmations carry the same key, so stock is deducted once.
+  idempotencyKey: { type: DataTypes.STRING(120), allowNull: true, unique: 'order_idempotency_unique' },
+  labelSize: { type: DataTypes.STRING(10), allowNull: true },
+  labelPrintCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  // Delivery staff assignment.
+  assignedTo: { type: DataTypes.INTEGER, allowNull: true },
+  assignedAt: { type: DataTypes.DATE, allowNull: true },
+  assignedBy: { type: DataTypes.INTEGER, allowNull: true },
+  createdBy: { type: DataTypes.INTEGER, allowNull: true },
 }, {
   indexes: [
     { fields: ['channel'] },
