@@ -1,6 +1,7 @@
 import crypto from 'crypto';
-import { User } from '../models/index.js';
+import { User, logActivity } from '../models/index.js';
 import { generateToken } from '../middleware/auth.js';
+import { HUB_ROLES, passwordProblem } from '../hub/permissions.js';
 import { sendPasswordResetEmail } from '../services/emailService.js';
 
 const cookieOptions = {
@@ -55,19 +56,30 @@ export const register = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    // `email` stays the field name for the storefront form; hub staff may
+    // type their username there instead.
+    const identifier = String(req.body.email || '').toLowerCase().trim();
+    const { password } = req.body;
 
-    if (!email || !password) {
+    if (!identifier || !password) {
       return res.status(400).json({ message: 'Email and password are required' });
     }
 
-    const user = await User.findOne({ where: { email: email.toLowerCase().trim() } });
-    if (!user || !(await user.comparePassword(password))) {
+    const where = identifier.includes('@') ? { email: identifier } : { username: identifier };
+    const user = await User.findOne({ where });
+    if (!user || !user.password || !(await user.comparePassword(password))) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
     const token = generateToken(user.id);
-    res.cookie('token', token, cookieOptions);
+    // Hub "Remember me on this device" unticked → a browser-session cookie.
+    const { maxAge, ...sessionOnly } = cookieOptions;
+    res.cookie('token', token, req.body.remember === false ? sessionOnly : cookieOptions);
+
+    if (HUB_ROLES.includes(user.role)) {
+      await user.update({ lastLoginAt: new Date() });
+      logActivity({ userId: user.id, action: 'Login', entityType: 'Auth', ip: req.ip });
+    }
 
     res.json({ user });
   } catch (error) {
@@ -114,7 +126,9 @@ export const forgotPassword = async (req, res) => {
     await user.update({ resetToken, resetTokenExpiry });
 
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-    const resetUrl = `${clientUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+    // Staff reset links land on the hub's own reset page.
+    const resetPath = HUB_ROLES.includes(user.role) ? '/hub/reset-password' : '/reset-password';
+    const resetUrl = `${clientUrl}${resetPath}?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
 
     await sendPasswordResetEmail(user.email, resetUrl);
 
@@ -133,14 +147,6 @@ export const resetPassword = async (req, res) => {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    if (password.length < 8) {
-      return res.status(400).json({ message: 'Password must be at least 8 characters' });
-    }
-
-    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
-      return res.status(400).json({ message: 'Password must contain uppercase, lowercase, and a number' });
-    }
-
     const user = await User.findOne({
       where: { email: email.toLowerCase().trim() },
     });
@@ -153,15 +159,82 @@ export const resetPassword = async (req, res) => {
       return res.status(400).json({ message: 'Reset link has expired. Please request a new one' });
     }
 
+    // Hub staff follow the hub rule (letter + digit); customers keep the
+    // storefront rule (upper + lower + digit).
+    if (HUB_ROLES.includes(user.role)) {
+      const problem = passwordProblem(password);
+      if (problem) return res.status(400).json({ message: problem });
+    } else {
+      if (password.length < 8) {
+        return res.status(400).json({ message: 'Password must be at least 8 characters' });
+      }
+      if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+        return res.status(400).json({ message: 'Password must contain uppercase, lowercase, and a number' });
+      }
+    }
+
     await user.update({
       password,
       resetToken: null,
       resetTokenExpiry: null,
+      mustChangePassword: false,
+      passwordChangedAt: new Date(),
     });
 
     res.json({ message: 'Password reset successful. You can now login.' });
   } catch (error) {
     console.error('Reset password error:', error);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+};
+
+// Re-issue this device's cookie after a password change. Older tokens fail
+// the passwordChangedAt check in `protect`, which signs out other devices.
+async function setNewPassword(req, res, user, password) {
+  await user.update({ password, mustChangePassword: false, passwordChangedAt: new Date() });
+  res.cookie('token', generateToken(user.id), cookieOptions);
+  logActivity({ userId: user.id, action: 'Password changed', entityType: 'Auth', ip: req.ip });
+}
+
+// Hub "My Profile → Change password".
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+    if (!req.user.password || !(await req.user.comparePassword(currentPassword))) {
+      return res.status(400).json({ message: 'Your current password is incorrect.' });
+    }
+    const problem = passwordProblem(newPassword);
+    if (problem) return res.status(400).json({ message: problem });
+    if (await req.user.comparePassword(newPassword)) {
+      return res.status(400).json({ message: 'Your new password must be different from the current one.' });
+    }
+    await setNewPassword(req, res, req.user, newPassword);
+    res.json({ message: 'Password changed' });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+};
+
+// Hub forced change after signing in with an admin-issued temporary password.
+export const forcedPassword = async (req, res) => {
+  try {
+    if (!req.user.mustChangePassword) {
+      return res.status(400).json({ message: 'No password change is pending.' });
+    }
+    const { password } = req.body;
+    const problem = passwordProblem(password);
+    if (problem) return res.status(400).json({ message: problem });
+    if (await req.user.comparePassword(password)) {
+      return res.status(400).json({ message: 'Choose a password different from the temporary one.' });
+    }
+    await setNewPassword(req, res, req.user, password);
+    res.json({ message: 'Password saved' });
+  } catch (error) {
+    console.error('Forced password error:', error);
     res.status(500).json({ message: 'Something went wrong' });
   }
 };

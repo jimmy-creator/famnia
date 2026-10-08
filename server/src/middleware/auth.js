@@ -1,5 +1,22 @@
 import jwt from 'jsonwebtoken';
 import { User } from '../models/index.js';
+import { HUB_ROLES, hasPermission } from '../hub/permissions.js';
+
+// Endpoints a hub account may still call while it is not active or still
+// holds a temporary password — just enough for the hub's gate screens to
+// explain the state and let the user fix it or sign out.
+const GATE_ALLOWED = new Set([
+  '/api/auth/profile',
+  '/api/auth/forced-password',
+  '/api/hub/access',
+]);
+
+/** True when the token predates the user's last password change. */
+function tokenRevoked(user, decoded) {
+  if (!user.passwordChangedAt || !decoded.iat) return false;
+  // JWT iat is whole seconds; allow the same second the change was made in.
+  return decoded.iat * 1000 < new Date(user.passwordChangedAt).getTime() - 1000;
+}
 
 export const protect = async (req, res, next) => {
   try {
@@ -14,6 +31,21 @@ export const protect = async (req, res, next) => {
 
     if (!req.user) {
       return res.status(401).json({ message: 'User not found' });
+    }
+    if (tokenRevoked(req.user, decoded)) {
+      return res.status(401).json({ message: 'Your session has expired. Please sign in again.' });
+    }
+
+    if (HUB_ROLES.includes(req.user.role)) {
+      const path = req.originalUrl.split('?')[0];
+      if (!GATE_ALLOWED.has(path)) {
+        if (req.user.status && req.user.status !== 'active') {
+          return res.status(403).json({ message: 'Your account is not active.', code: 'ACCOUNT_INACTIVE' });
+        }
+        if (req.user.mustChangePassword) {
+          return res.status(403).json({ message: 'Choose your own password to continue.', code: 'PASSWORD_CHANGE_REQUIRED' });
+        }
+      }
     }
 
     next();
@@ -38,15 +70,15 @@ export const admin = (req, res, next) => {
   }
 };
 
-// Check specific permission for staff users
+// Check specific permission for staff users. Accepts legacy keys
+// ('products', …) and hub keys ('orders.create', …); a hub key also satisfies
+// the legacy key that covers it (see hub/permissions.js).
 export const requirePermission = (...perms) => {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ message: 'Not authorized' });
     if (req.user.role === 'admin') return next(); // Admin has all permissions
-    if (req.user.role === 'staff') {
-      const userPerms = req.user.permissions || [];
-      const hasPermission = perms.some((p) => userPerms.includes(p));
-      if (hasPermission) return next();
+    if (req.user.role === 'staff' || req.user.role === 'delivery') {
+      if (perms.some((p) => hasPermission(req.user, p))) return next();
     }
     res.status(403).json({ message: 'You do not have permission for this action' });
   };
@@ -58,7 +90,8 @@ export const optionalAuth = async (req, res, next) => {
     let token = req.cookies?.token; // Cookie-only — no Bearer token fallback
     if (token) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      req.user = await User.findByPk(decoded.id);
+      const user = await User.findByPk(decoded.id);
+      req.user = user && !tokenRevoked(user, decoded) ? user : null;
     }
   } catch (error) {
     // Token invalid — continue as guest

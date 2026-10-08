@@ -33,13 +33,54 @@ const User = sequelize.define('User', {
     allowNull: true,
   },
   role: {
-    type: DataTypes.ENUM('customer', 'admin', 'staff', 'cashier'),
+    // 'delivery' = delivery staff: hub sign-in, sees only their own deliveries.
+    type: DataTypes.ENUM('customer', 'admin', 'staff', 'cashier', 'delivery'),
     defaultValue: 'customer',
   },
   permissions: {
-    // Staff permissions: ["products","orders","coupons","reviews","customers","analytics","categories","settings"]
+    // Staff permissions. Hub keys ("orders.create", …; see hub/permissions.js)
+    // plus, until the old admin is retired, its legacy keys
+    // ("products","orders","coupons","reviews","customers","analytics","categories","settings").
     type: DataTypes.JSON,
     defaultValue: null,
+  },
+  // Hub (staff back office) account fields. Customers and cashiers keep the
+  // defaults and never see them.
+  username: {
+    // Optional staff login name; staff can sign in with it instead of email.
+    // Unique index `user_username_unique` is added by the migration.
+    type: DataTypes.STRING(32),
+    allowNull: true,
+  },
+  status: {
+    // Hub account state. Non-active hub accounts are refused by `protect`.
+    type: DataTypes.ENUM('pending', 'active', 'suspended', 'deactivated'),
+    allowNull: false,
+    defaultValue: 'active',
+  },
+  mustChangePassword: {
+    // Set when an admin issues a temporary password; the hub forces a change.
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+  approvedBy: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  approvedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  lastLoginAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  passwordChangedAt: {
+    // Tokens issued before this instant are rejected by `protect`, so a
+    // password change signs out every other device.
+    type: DataTypes.DATE,
+    allowNull: true,
   },
   pin: {
     // 4-6 digit PIN for cashier quick-login at the POS terminal.

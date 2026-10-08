@@ -53,6 +53,8 @@ import accountingRoutes from './routes/accounting.js';
 import stockCountsRoutes from './routes/stockCounts.js';
 import wastageRoutes from './routes/wastage.js';
 import erpReportsRoutes from './routes/erpReports.js';
+import hubRoutes from './routes/hub.js';
+import { runMigrations } from './migrations/index.js';
 import { registerShiprocketHooks } from './services/shiprocketSync.js';
 import { startAbandonedCartJob } from './services/abandonedCartJob.js';
 import { startLowStockJob } from './services/lowStockJob.js';
@@ -157,6 +159,7 @@ app.use('/api/accounting', accountingRoutes);
 app.use('/api/stock-counts', stockCountsRoutes);
 app.use('/api/wastage', wastageRoutes);
 app.use('/api/erp-reports', erpReportsRoutes);
+app.use('/api/hub', hubRoutes);
 app.use('/', sitemapRoutes);
 
 // Serve the built client bundles. Needed on hosts WITHOUT nginx (e.g.
@@ -202,6 +205,7 @@ const start = async () => {
   try {
     await sequelize.authenticate();
     console.log('Database connected');
+    await runMigrations();
     await sequelize.sync({ alter: process.env.DB_SYNC_ALTER === 'true' });
     console.log('Models synced');
 

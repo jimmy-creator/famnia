@@ -9,6 +9,7 @@
     "seed": "node src/seed.js",
     "seed:femnia": "node src/seedFemnia.js",
     "seed:erp": "node src/scripts/seedErp.js",
+    "migrate": "node src/scripts/migrate.js",
     "create:admin": "node src/scripts/createAdmin.js",
     "test:email": "node src/scripts/testEmail.js",
     "export:shiprocket": "node src/scripts/exportShiprocketInventory.js",

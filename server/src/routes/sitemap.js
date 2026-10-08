@@ -97,6 +97,7 @@ router.get('/robots.txt', (req, res) => {
   const txt = `User-agent: *
 Allow: /
 Disallow: /admin
+Disallow: /hub
 Disallow: /api/
 Disallow: /checkout
 Disallow: /profile

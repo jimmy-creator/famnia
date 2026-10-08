@@ -19,7 +19,13 @@ api.interceptors.response.use(
     // Don't redirect for initial profile checks or public pages
     if (error.response?.status === 401 && url !== '/auth/profile' && !CREDENTIAL_URLS.includes(url)) {
       const path = window.location.pathname;
-      if (path.includes(STAFF_BASE)) {
+      if (path === '/hub' || path.startsWith('/hub/')) {
+        // Staff hub: an expired session goes back to the hub sign-in.
+        localStorage.removeItem('user');
+        if (path !== '/hub/login' && path !== '/hub/reset-password' && url !== '/hub/access') {
+          window.location.href = '/hub/login';
+        }
+      } else if (path.includes(STAFF_BASE)) {
         // POS till: an expired cashier session goes back to the POS login,
         // never the storefront. The POS login page handles its own 401s
         // (the admin-only /locations probe), and Pos.jsx handles /cashier/me.

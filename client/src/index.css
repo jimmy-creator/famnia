@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./hub/hub.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -97,9 +98,21 @@
 
   --font-sans: var(--font-body);
   --font-serif: var(--font-display);
+  --font-display: var(--font-display);
 
-  /* Radii: --radius-lg matches the brand's 8px; the rest fill out the scale.
-     We intentionally do NOT redefine the brand's bare --radius (4px). */
+  /* Semantic status colours + card shadow, used by the staff hub (/hub). */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-neutral: var(--neutral);
+  --shadow-card: var(--shadow-card);
+}
+
+/* Radii: --radius-lg matches the brand's 8px; the rest fill out the scale.
+   We intentionally do NOT redefine the brand's bare --radius (4px).
+   Not `inline`: utilities read var(--radius-*), so the staff hub can swap in
+   its rounder scale under html.hub-theme without touching the storefront. */
+@theme {
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;

@@ -25,8 +25,10 @@ export function AuthProvider({ children }) {
       });
   }, []);
 
-  const login = async (email, password) => {
-    const { data } = await api.post('/auth/login', { email, password });
+  // `email` may also be a staff username. `remember: false` (hub sign-in)
+  // makes the session cookie end with the browser session.
+  const login = async (email, password, remember = true) => {
+    const { data } = await api.post('/auth/login', { email, password, remember });
     setUser(data.user);
     localStorage.setItem('user', JSON.stringify(data.user));
     return data;

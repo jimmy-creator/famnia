@@ -1,0 +1,195 @@
+/* ============================================================================
+   FEMNIA Hub — staff back office design system (/hub).
+
+   Replica of the FEMNIA Hub design (plum + lavender, Playfair Display +
+   Manrope, rounded 0.9rem radius scale). Scoped to html.hub-theme, which the
+   hub adds to <html> while mounted — <html> rather than a wrapper div so that
+   Radix portals (dialogs, sheets, selects), which mount on <body>, pick it up.
+
+   Every token is !important because ThemeContext writes the storefront's
+   brand variables (--border, --font-body, …) inline on <html>, and inline
+   declarations beat any stylesheet rule that isn't !important.
+   ========================================================================== */
+
+html.hub-theme {
+  --radius-sm: 0.65rem !important;
+  --radius-md: 0.775rem !important;
+  --radius-lg: 0.9rem !important;
+  --radius-xl: 1.15rem !important;
+  --radius-2xl: 1.4rem !important;
+  --radius-3xl: 1.65rem !important;
+  --radius-4xl: 1.9rem !important;
+
+  --background: oklch(0.985 0.006 330) !important;
+  --foreground: oklch(0.24 0.014 300) !important;
+  --card: oklch(1 0 0) !important;
+  --card-foreground: oklch(0.24 0.014 300) !important;
+  --popover: oklch(1 0 0) !important;
+  --popover-foreground: oklch(0.24 0.014 300) !important;
+
+  /* deep plum #4A2040 */
+  --primary: oklch(0.324 0.093 336.5) !important;
+  --primary-foreground: oklch(0.99 0.004 330) !important;
+
+  /* lavender #EDE4F2 */
+  --secondary: oklch(0.928 0.024 315) !important;
+  --secondary-foreground: oklch(0.324 0.093 336.5) !important;
+
+  /* soft blush #F7EEF3 */
+  --muted: oklch(0.955 0.014 340) !important;
+  --muted-foreground: oklch(0.5 0.03 320) !important;
+  --accent: oklch(0.928 0.024 315) !important;
+  --accent-foreground: oklch(0.324 0.093 336.5) !important;
+
+  --destructive: oklch(0.505 0.196 27.5) !important;
+  --destructive-foreground: oklch(0.99 0.004 330) !important;
+  --success: oklch(0.5 0.128 148) !important;
+  --success-foreground: oklch(0.99 0.004 330) !important;
+  --warning: oklch(0.703 0.166 62) !important;
+  --warning-foreground: oklch(0.22 0.02 60) !important;
+  --info: oklch(0.53 0.14 255) !important;
+  --info-foreground: oklch(0.99 0.004 330) !important;
+  --neutral: oklch(0.72 0.008 300) !important;
+  --neutral-foreground: oklch(0.24 0.014 300) !important;
+
+  --border: oklch(0.9 0.018 325) !important;
+  --input: oklch(0.9 0.018 325) !important;
+  --ring: oklch(0.324 0.093 336.5) !important;
+
+  --chart-1: oklch(0.324 0.093 336.5) !important;
+  --chart-2: oklch(0.6 0.11 330) !important;
+  --chart-3: oklch(0.75 0.08 315) !important;
+  --chart-4: oklch(0.703 0.166 62) !important;
+  --chart-5: oklch(0.5 0.128 148) !important;
+
+  --shadow-card: 0 1px 2px oklch(0.324 0.093 336.5 / 0.06), 0 8px 24px oklch(0.324 0.093 336.5 / 0.07) !important;
+  --gradient-brand: linear-gradient(135deg, oklch(0.324 0.093 336.5) 0%, oklch(0.42 0.11 330) 60%, oklch(0.55 0.1 320) 100%) !important;
+  --font-display: "Playfair Display", Georgia, serif !important;
+  --font-body: "Manrope", system-ui, -apple-system, sans-serif !important;
+
+  /* Soft pastel accents (screen only) */
+  --tint-mint: oklch(0.962 0.032 155);
+  --tint-mint-border: oklch(0.87 0.055 155);
+  --tint-mint-ink: oklch(0.42 0.11 152);
+  --tint-lavender: oklch(0.958 0.022 315);
+  --tint-lavender-border: oklch(0.885 0.038 315);
+  --tint-lavender-ink: oklch(0.324 0.093 336.5);
+  --tint-peach: oklch(0.962 0.036 72);
+  --tint-peach-border: oklch(0.885 0.06 72);
+  --tint-peach-ink: oklch(0.47 0.12 62);
+  --tint-rose: oklch(0.958 0.028 20);
+  --tint-rose-border: oklch(0.882 0.055 22);
+  --tint-rose-ink: oklch(0.48 0.15 25);
+}
+
+html.hub-theme body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+html.hub-theme * {
+  border-color: var(--color-border);
+}
+
+/* The storefront pads .app for its mobile bottom nav, which the hub hides. */
+html.hub-theme .app {
+  padding-bottom: 0;
+}
+
+html.hub-theme :is(h1, h2, h3) {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+@utility brand-gradient {
+  background-image: var(--gradient-brand);
+}
+
+@utility card-surface {
+  background-color: var(--color-card);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+}
+
+@utility tint-mint {
+  background-color: var(--tint-mint);
+  border-color: var(--tint-mint-border);
+}
+@utility tint-lavender {
+  background-color: var(--tint-lavender);
+  border-color: var(--tint-lavender-border);
+}
+@utility tint-peach {
+  background-color: var(--tint-peach);
+  border-color: var(--tint-peach-border);
+}
+@utility tint-rose {
+  background-color: var(--tint-rose);
+  border-color: var(--tint-rose-border);
+}
+
+@utility kpi-card {
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+  transition:
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+  &:hover {
+    box-shadow: 0 2px 4px oklch(0.324 0.093 336.5 / 0.08), 0 12px 28px oklch(0.324 0.093 336.5 / 0.1);
+  }
+}
+
+@utility section-title {
+  position: relative;
+  padding-left: 0.65rem;
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.18em;
+    bottom: 0.18em;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--color-primary);
+  }
+}
+
+/* Used by the source design's chip rows but never defined there. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ---------- Printing ---------- */
+html.hub-theme .print-only {
+  display: none;
+}
+
+@media print {
+  html.hub-theme .no-print {
+    display: none !important;
+  }
+  html.hub-theme .print-only {
+    display: block;
+  }
+  html.hub-theme body {
+    background: #fff !important;
+  }
+}
+
+/* ---------- Subtle screen-only hover tints (never affects print) ---------- */
+@media screen {
+  html.hub-theme .card-surface tbody tr {
+    transition: background-color 0.15s ease;
+  }
+  html.hub-theme .card-surface tbody tr:hover {
+    background-color: color-mix(in oklab, var(--tint-lavender) 70%, white);
+  }
+}

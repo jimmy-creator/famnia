@@ -99,7 +99,18 @@ House rules enforced in code: no supplier credit (a PO cannot be received until 
 
 POS tenders are **cash and card only**. KNET was inherited from the Kuwait upstream and removed — it is Kuwait's national debit network and doesn't operate in Qatar, so it offered a rail customers couldn't pay on and a drawer line that always read zero.
 
+### FEMNIA Hub (staff back office, `/hub`)
+
+A replica of the client's "FEMNIA Hub" design (a Lovable app), being rebuilt screen by screen on this backend to replace `/admin` and `/admin/erp`, which stay reachable until every screen has moved. Code lives in `client/src/hub/` (lazy-loaded `HubApp.jsx`, own router subtree, @tanstack/react-query, sonner toasts) and `server/src/hub/` + `routes/hub.js`.
+
+- **Own design system, scoped to `html.hub-theme`** (`client/src/hub/hub.css`, imported by `index.css`). `HubApp` adds the class to `<html>` while mounted — not a wrapper div — so Radix portals inherit it. Tokens are `!important` because ThemeContext writes the storefront's brand vars inline on `<html>`. The radius scale lives in a non-inline `@theme` block in `index.css` precisely so the hub can override it.
+- **Own shadcn copies in `client/src/hub/ui/`** — ported from the design's (older, forwardRef) components, which look different from the storefront's `components/ui/`. Use these inside the hub, never the storefront ones.
+- **Permissions:** `server/src/hub/permissions.js` is the catalogue (≈60 keys like `orders.create`, presets, `accessFor`). Roles admin / staff / **delivery**. `requirePermission('products')` also accepts the hub keys that imply a legacy key, so hub-created staff can use old endpoints during the transition.
+- **Account gate:** hub accounts carry `status` (pending/active/suspended/deactivated), `mustChangePassword`, `username` (sign in with it instead of email), `passwordChangedAt`. `protect` refuses non-active or must-change accounts except on `/api/auth/profile`, `/api/auth/forced-password`, `/api/hub/access`; tokens issued before `passwordChangedAt` are rejected (a password change signs out other devices).
+
 ### Database
+
+**Column migrations run on boot.** `server/src/migrations/index.js` holds idempotent add-column / add-index / widen-ENUM steps, run from `start()` before `sync()` (and by `npm run migrate`). Boot's `sync()` creates new tables but never adds columns to existing ones, so **every column added to an existing model must get a step there** or production breaks on deploy.
 
 Sequelize ORM with MySQL. Models in `server/src/models/`. Key models: User, Product, Order, Review, Category, Coupon, Setting, Pincode, AbandonedCart, plus the ERP set (Location, ProductStock, Supplier, PurchaseOrder, CashAccount, CashTransaction, Expense, FixedAsset, DepreciationEntry, CapitalEntry, Counter, Wastage). Sync behavior: `DB_SYNC_ALTER=true` enables `sync({ alter: true })` — only use in development, never in production (causes duplicate index buildup).
 

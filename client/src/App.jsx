@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { useEffect, Fragment } from 'react';
+import { useEffect, Fragment, lazy, Suspense } from 'react';
 import { useAuth } from './context/AuthContext';
 import { Toaster } from 'react-hot-toast';
 import { GoogleOAuthProvider } from '@react-oauth/google';
@@ -30,6 +30,11 @@ import WholesaleQuoteDetail from './pages/WholesaleQuoteDetail';
 import ShiprocketCheckout from './pages/ShiprocketCheckout';
 import PosLogin from './pages/PosLogin';
 import Pos from './pages/Pos';
+
+// FEMNIA Hub — the staff back office. Lazy so storefront visitors never
+// download it.
+const HubApp = lazy(() => import('./hub/HubApp'));
+const isHubPath = (pathname) => pathname === '/hub' || pathname.startsWith('/hub/');
 
 const B2B_ENABLED = import.meta.env.VITE_FEATURE_B2B === 'true';
 const SHIPROCKET_CHECKOUT = import.meta.env.VITE_FEATURE_SHIPROCKET_CHECKOUT === 'true';
@@ -82,7 +87,7 @@ function PageWrapper({ children }) {
   // the containing block for fixed descendants — which pins them to the
   // scrolled page instead of the viewport, so the nav scrolls away. The
   // fade is meaningless on a till anyway, so skip the wrapper there.
-  if (isPosPath(pathname)) return children;
+  if (isPosPath(pathname) || isHubPath(pathname)) return children;
   return <div key={pathname} className="page-transition">{children}</div>;
 }
 
@@ -102,7 +107,7 @@ const isPosPath = (pathname) => pathname.includes(STAFF_BASE);
 function PosAware({ children }) {
   const { pathname } = useLocation();
   if (isPosPath(pathname)) return null;
-  if (pathname.startsWith('/admin')) return null;
+  if (pathname.startsWith('/admin') || isHubPath(pathname)) return null;
   return children;
 }
 
@@ -137,6 +142,11 @@ export default function App() {
             <main className="main">
               <PageWrapper>
               <Routes>
+                {/* Staff hub: English only, never locale-prefixed. */}
+                <Route
+                  path="/hub/*"
+                  element={<Suspense fallback={null}><HubApp /></Suspense>}
+                />
                 {/* Storefront + admin routes, mounted twice for path-based
                     locale: bare paths are English (default), /ar/* serves
                     the Arabic-locale version. The LocaleManager above
