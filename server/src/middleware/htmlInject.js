@@ -305,7 +305,10 @@ export default async function htmlInject(req, res, next) {
   const proto = xfproto || req.protocol || 'https';
   const host = req.get('x-forwarded-host') || req.get('host');
   const requestUrl = `${proto}://${host}${req.originalUrl}`;
-  const cacheKey = req.originalUrl;
+  // Keyed by full URL, not just path: absolute URLs in the page come from the
+  // request origin, so a request reaching Node directly (a health probe on
+  // 127.0.0.1) must not cache its URLs for the public domain.
+  const cacheKey = requestUrl;
 
   const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
