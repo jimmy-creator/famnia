@@ -28,6 +28,8 @@ export const qk = {
   deliveryStaff: ['femnia', 'delivery-staff'],
   myDeliveries: ['femnia', 'my-deliveries'],
   deliveryPaymentModes: ['femnia', 'delivery-payment-modes'],
+  staff: ['femnia', 'staff'],
+  cataloguePreview: ['femnia', 'catalogue-preview'],
 };
 
 const get = async (url) => (await api.get(url)).data;
@@ -184,6 +186,34 @@ export const deliveryPaymentModesQuery = {
 /** input: { orderId, status, paymentStatus, paymentMode, amountCollected, note } */
 export const updateMyDelivery = ({ orderId, ...input }) =>
   send('post', `/hub/delivery/${encodeURIComponent(orderId)}/update`, input);
+/* ------------------------------ admin ------------------------------ */
+export const staffQuery = { queryKey: qk.staff, queryFn: () => get('/hub/staff') };
+export const activityQuery = { queryKey: qk.activity, queryFn: () => get('/hub/activity?limit=200') };
+/** Username + temporary password account. Resolves { ok, userId, username, temporaryPassword }. */
+export const createStaffAccount = (input) => send('post', '/hub/staff', input);
+/** Email invitation (needs SMTP on the server). Resolves { ok, userId }. */
+export const inviteStaff = (input) => send('post', '/hub/staff/invite', input);
+/** Resolves { ok, temporaryPassword }. */
+export const resetStaffPassword = (userId, password) =>
+  send('post', `/hub/staff/${userId}/reset-password`, password ? { password } : {});
+export const setStaffStatus = (member, status) => send('patch', `/hub/staff/${member.id}/status`, { status });
+export const setStaffRole = (member, role) => send('patch', `/hub/staff/${member.id}/role`, { role });
+/** Resolves { added, removed }. */
+export const setStaffPermissions = (member, permissions) =>
+  send('put', `/hub/staff/${member.id}/permissions`, { permissions });
+/** Resolves { changed, settings }. */
+export const saveAppSettings = (next) => send('put', '/hub/settings', next);
+export const saveDeliveryPaymentModes = async (modes) => {
+  const current = await get('/hub/settings');
+  return send('put', '/hub/settings', { ...current, deliveryPaymentModes: modes });
+};
+/** { sheets: [{ name, rows: [object] }] } — read-only export. */
+export const fetchBackup = () => get('/hub/backup');
+export const cataloguePreviewQuery = { queryKey: qk.cataloguePreview, queryFn: () => get('/hub/catalogue-replace/preview') };
+export const replaceCatalogue = (args) => send('post', '/hub/catalogue-replace', args);
+export const rollbackCatalogueReplacement = (run) =>
+  send('post', `/hub/catalogue-replace/${encodeURIComponent(run.reference)}/rollback`);
+
 /** Assigns (or clears, with a null staff id) one or more deliveries. Resolves { ok, updated }. */
 export const assignDeliveries = (orderIds, staffId) => {
   if (!orderIds.length) return Promise.reject(new Error('Select at least one delivery first.'));
