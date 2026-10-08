@@ -25,6 +25,9 @@ import MyDeliveriesPage from '@/hub/pages/MyDeliveries';
 import DeliveryReportsPage from '@/hub/pages/DeliveryReports';
 import StaffPage from '@/hub/pages/Staff';
 import SettingsPage from '@/hub/pages/Settings';
+import ExpensesPage from '@/hub/pages/Expenses';
+import DashboardPage from '@/hub/pages/Dashboard';
+import ReportsPage from '@/hub/pages/Reports';
 
 const FONTS_HREF =
   'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap';
@@ -75,9 +78,6 @@ function Protected() {
 // Screens still to be built, phase by phase. Each points staff at the classic
 // back office until its replacement lands.
 const PENDING = [
-  ['dashboard', 'Dashboard', 'Live KPIs, recent orders, low stock and cash position arrive with the reports stage.'],
-  ['expenses', 'Expenses & Assets', 'Expenses, assets and personally paid liabilities arrive with the back-office stage.'],
-  ['reports', 'Reports', 'Sales, product, inventory, profit, expense and payment reports arrive with the back-office stage.'],
 ];
 
 export default function HubApp() {
@@ -109,6 +109,9 @@ export default function HubApp() {
           <Route path="delivery-reports" element={<DeliveryReportsPage />} />
           <Route path="staff" element={<StaffPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="expenses" element={<ExpensesPage />} />
+          <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="reports" element={<ReportsPage />} />
           {PENDING.map(([path, title, note]) => (
             <Route key={path} path={path} element={<ComingSoon title={title} note={note} />} />
           ))}

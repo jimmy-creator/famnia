@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 
 import { FemniaLogo } from '@/hub/components/Brand';
 import { CatalogueReplaceCard } from '@/hub/components/CatalogueReplaceCard';
+import { FundingAccountsCard } from '@/hub/components/FundingAccountsCard';
 import { ErrorState, Loading, PageHeader } from '@/hub/components/shared';
 import { Button } from '@/hub/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/hub/ui/card';
@@ -314,6 +315,8 @@ function SettingsForm({ saved, isAdmin, onRefresh, section, setSection, backup }
           </CardContent>
         </Card>
       )}
+
+      {section === 'business' && isAdmin && <FundingAccountsCard />}
 
       {section === 'orders' && (
         <Card>

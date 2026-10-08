@@ -37,7 +37,7 @@ import sequelize from '../config/database.js';
 import {
   CashAccount, CashTransaction, ExpenseCategory, Expense, CashTransfer,
   Location, User, Order, SalesReturn, Product, ProductStock,
-  FixedAsset, DepreciationEntry, Wastage, StockCount,
+  FixedAsset, DepreciationEntry, Wastage, StockCount, HubExpenseEntry,
   writeCashTxn, getCashAccountBalance,
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
@@ -663,6 +663,20 @@ export async function computePnl({ from, to, locationId = null }) {
       totalExpenses += amt;
       const cat = e.ExpenseCategory?.name || 'Uncategorized';
       expensesByCategory.set(cat, (expensesByCategory.get(cat) || 0) + amt);
+    }
+    // Hub expenses paid personally have no Expense row (no company cash left
+    // yet); they count here on their own date, and the balance sheet carries
+    // the unpaid part as a liability. Reimbursing them only moves cash.
+    if (!locationFilter.locationId) {
+      const personal = await HubExpenseEntry.findAll({
+        where: { entryType: 'expense', fundingSource: 'Paid Personally', txnDate: { [Op.between]: [dateOnly(from), dateOnly(to)] } },
+        attributes: ['amount', 'category'],
+      });
+      for (const e of personal) {
+        const amt = parseFloat(e.amount || 0);
+        totalExpenses += amt;
+        expensesByCategory.set(e.category, (expensesByCategory.get(e.category) || 0) + amt);
+      }
     }
 
     // ── Depreciation (NON-CASH) ──────────────────────────────────

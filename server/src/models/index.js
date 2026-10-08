@@ -36,6 +36,9 @@ import ProductAuditLog from './ProductAuditLog.js';
 import ImportBatch from './ImportBatch.js';
 import OrderAuditLog from './OrderAuditLog.js';
 import OrderReturn from './OrderReturn.js';
+import HubExpenseEntry from './HubExpenseEntry.js';
+import HubLiability from './HubLiability.js';
+import HubReimbursement from './HubReimbursement.js';
 import sequelize from '../config/database.js';
 import { initStockLedger, recordStockDelta } from '../services/stockLedger.js';
 
@@ -476,6 +479,7 @@ export {
   Wastage,
   StockMovement, ProductAuditLog, ImportBatch,
   OrderAuditLog, OrderReturn,
+  HubExpenseEntry, HubLiability, HubReimbursement,
 };
 
 // ── Activity log + manager-override helpers ─────────────────────

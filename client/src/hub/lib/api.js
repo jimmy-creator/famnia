@@ -30,6 +30,10 @@ export const qk = {
   deliveryPaymentModes: ['femnia', 'delivery-payment-modes'],
   staff: ['femnia', 'staff'],
   cataloguePreview: ['femnia', 'catalogue-preview'],
+  expenses: ['femnia', 'expenses'],
+  assets: ['femnia', 'assets'],
+  liabilities: ['femnia', 'liabilities'],
+  fundingAccounts: ['femnia', 'funding-accounts'],
 };
 
 const get = async (url) => (await api.get(url)).data;
@@ -213,6 +217,31 @@ export const cataloguePreviewQuery = { queryKey: qk.cataloguePreview, queryFn: (
 export const replaceCatalogue = (args) => send('post', '/hub/catalogue-replace', args);
 export const rollbackCatalogueReplacement = (run) =>
   send('post', `/hub/catalogue-replace/${encodeURIComponent(run.reference)}/rollback`);
+
+/* --------------------------- dashboard & reports --------------------------- */
+export const dashboardQuery = { queryKey: qk.dashboard, queryFn: () => get('/hub/dashboard'), staleTime: 30_000 };
+/** Cost recorded at the time of sale, keyed `orderId|sku`. */
+export const saleCostsQuery = { queryKey: ['femnia', 'sale-costs'], queryFn: () => get('/hub/reports/sale-costs'), staleTime: 30_000 };
+/** Same figures as the classic P&L for the range (needs reports.financial). */
+export const financialSummaryQuery = (from, to, enabled = true) => ({
+  queryKey: ['femnia', 'financial-summary', from, to],
+  queryFn: () => get(`/hub/reports/financial-summary?from=${from}&to=${to}`),
+  enabled: Boolean(enabled && from && to),
+});
+
+/* ------------------------- expenses & assets ------------------------- */
+export const expensesQuery = { queryKey: qk.expenses, queryFn: () => get('/hub/expenses?type=expense') };
+export const assetsQuery = { queryKey: qk.assets, queryFn: () => get('/hub/expenses?type=asset') };
+export const liabilitiesQuery = { queryKey: qk.liabilities, queryFn: () => get('/hub/liabilities') };
+/** { sources: [{source, mapped, cashAccountId, cashAccountName, balance}], accounts: [{id, name, type}] (admins only) } */
+export const fundingAccountsQuery = { queryKey: qk.fundingAccounts, queryFn: () => get('/hub/finance/funding-accounts') };
+export const saveFundingAccounts = (mapping) => send('put', '/hub/finance/funding-accounts', { mapping });
+/** Resolves { entry, liabilityCreated, liabilityPerson }. */
+export const saveEntry = (input) => send('post', '/hub/expenses', input);
+export const updatePurchasedBy = async (entry, purchasedBy) =>
+  (await send('patch', `/hub/expenses/${entry.id}/purchased-by`, { purchasedBy })).purchasedBy;
+/** input: { liabilityId, paidOn, amount, paymentMethod, fundingSource?, reference, notes, idempotencyKey }. Resolves the updated liability. */
+export const recordReimbursement = ({ liabilityId, ...input }) => send('post', `/hub/liabilities/${liabilityId}/reimburse`, input);
 
 /** Assigns (or clears, with a null staff id) one or more deliveries. Resolves { ok, updated }. */
 export const assignDeliveries = (orderIds, staffId) => {

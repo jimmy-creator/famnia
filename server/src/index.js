@@ -59,6 +59,8 @@ import hubCatalogRoutes from './routes/hubCatalog.js';
 import hubSalesRoutes from './routes/hubSales.js';
 import hubDeliveryRoutes from './routes/hubDelivery.js';
 import hubAdminRoutes from './routes/hubAdmin.js';
+import hubFinanceRoutes from './routes/hubFinance.js';
+import hubReportsRoutes from './routes/hubReports.js';
 import { ledgerRequestContext, reconcileStockLedger } from './services/stockLedger.js';
 import { registerShiprocketHooks } from './services/shiprocketSync.js';
 import { startAbandonedCartJob } from './services/abandonedCartJob.js';
@@ -171,6 +173,8 @@ app.use('/api/hub', hubCatalogRoutes);
 app.use('/api/hub', hubSalesRoutes);
 app.use('/api/hub', hubDeliveryRoutes);
 app.use('/api/hub', hubAdminRoutes);
+app.use('/api/hub', hubFinanceRoutes);
+app.use('/api/hub', hubReportsRoutes);
 app.use('/', sitemapRoutes);
 
 // Serve the built client bundles. Needed on hosts WITHOUT nginx (e.g.

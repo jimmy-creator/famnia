@@ -651,6 +651,7 @@ function BalanceSheetTab({ currency }) {
             <table className="admin-table">
               <tbody>
                 {row('Supplier payable', L.supplierPayable)}
+                {row('Owed to people who paid personally', L.personalPayable || 0)}
                 {row('Total liabilities', L.total, { strong: true })}
                 {row("Owner's capital", E.capitalContributions)}
                 {row('less drawings', -E.drawings, { indent: true, muted: true })}

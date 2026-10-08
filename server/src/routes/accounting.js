@@ -30,6 +30,7 @@ import sequelize from '../config/database.js';
 import {
   FixedAsset, DepreciationEntry, CapitalEntry,
   CashAccount, CashTransaction, Location, Supplier, User, Order,
+  HubExpenseEntry, HubLiability, HubReimbursement,
   writeCashTxn, logActivity,
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
@@ -614,8 +615,25 @@ router.get('/balance-sheet', protect, async (req, res) => {
     const pnl = await computePnl({ from: new Date('1970-01-01T00:00:00'), to: asOfEnd });
     const retainedProfit = num(pnl.netProfit);
 
+    // ── Liabilities: owed to people who paid personally (hub) ───
+    const personalEntries = await HubExpenseEntry.findAll({
+      where: { fundingSource: 'Paid Personally', txnDate: { [Op.lte]: asOfStr } },
+      attributes: ['id', 'entryType', 'fixedAssetId'],
+    });
+    let personalPayable = 0;
+    if (personalEntries.length) {
+      const liabs = await HubLiability.findAll({ where: { entryId: personalEntries.map((e) => e.id) }, attributes: ['id', 'amount'] });
+      const repaid = liabs.length
+        ? num(await HubReimbursement.sum('amount', { where: { liabilityId: liabs.map((l) => l.id), paidOn: { [Op.lte]: asOfStr } } }))
+        : 0;
+      personalPayable = liabs.reduce((s, l) => s + num(l.amount), 0) - repaid;
+    }
+    // Personally paid hub assets are matched by that liability, so they are
+    // not "acquired without a cash source".
+    const personalAssetIds = personalEntries.filter((e) => e.fixedAssetId).map((e) => e.fixedAssetId);
+
     const totalAssets = cashInHand + cashInBank + inventory + fixedAssetsNet + supplierAdvances;
-    const totalLiabilities = supplierPayable;
+    const totalLiabilities = supplierPayable + personalPayable;
     const ownersEquity = capitalContributions - drawings + retainedProfit;
     const totalLiabilitiesAndEquity = totalLiabilities + ownersEquity;
     const difference = round3(totalAssets - totalLiabilitiesAndEquity);
@@ -632,7 +650,11 @@ router.get('/balance-sheet', protect, async (req, res) => {
     const cashAccountOpeningBalances = accounts.reduce((s, a) => s + num(a.openingBalance), 0);
     const supplierOpeningBalances = num(await Supplier.sum('openingBalance'));
     const assetsWithoutCashSource = num(await FixedAsset.sum('cost', {
-      where: { cashAccountId: null, ...assetWhere },
+      where: {
+        cashAccountId: null,
+        ...assetWhere,
+        ...(personalAssetIds.length ? { id: { [Op.notIn]: personalAssetIds } } : {}),
+      },
     }));
 
     res.json({
@@ -651,6 +673,7 @@ router.get('/balance-sheet', protect, async (req, res) => {
       },
       liabilities: {
         supplierPayable: round3(supplierPayable),
+        personalPayable: round3(personalPayable),
         total: round3(totalLiabilities),
       },
       equity: {

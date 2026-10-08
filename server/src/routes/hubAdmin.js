@@ -3,7 +3,8 @@ import { Router } from 'express';
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
-  ActivityLog, Expense, FixedAsset, Order, OrderAuditLog, OrderReturn, Product, ProductAuditLog, Setting,
+  ActivityLog, Expense, FixedAsset, HubExpenseEntry, HubLiability, HubReimbursement, Order, OrderAuditLog, OrderReturn,
+  Product, ProductAuditLog, Setting,
   StockMovement, User,
 } from '../models/index.js';
 import { protect } from '../middleware/auth.js';
@@ -354,6 +355,11 @@ router.get('/backup', need('admin.settings'), wrap(async (req, res) => {
     ProductAuditLog.findAll({ order: [['createdAt', 'ASC']], raw: true }),
     User.findAll({ where: { role: STAFF_ROLES }, attributes: ['id', 'name', 'email', 'username'], raw: true }),
   ]);
+  const [hubEntries, liabilities, reimbursements] = await Promise.all([
+    HubExpenseEntry.findAll({ order: [['txnDate', 'ASC'], ['id', 'ASC']], raw: true }),
+    HubLiability.findAll({ order: [['createdAt', 'ASC']], raw: true }),
+    HubReimbursement.findAll({ order: [['paidOn', 'ASC'], ['id', 'ASC']], raw: true }),
+  ]);
   const settings = await loadAppSettings();
   const views = orders.map((o) => toSalesOrder(o, { customerPrefix: settings.customerPrefix }));
   const productRows = skus.map((s) => ({
@@ -386,6 +392,10 @@ router.get('/backup', need('admin.settings'), wrap(async (req, res) => {
     },
     { name: 'Expenses', rows: expenses },
     { name: 'Assets', rows: assets },
+    { name: 'Hub Expense Entries', rows: hubEntries.filter((e) => e.entryType === 'expense') },
+    { name: 'Hub Asset Entries', rows: hubEntries.filter((e) => e.entryType === 'asset') },
+    { name: 'Liabilities', rows: liabilities },
+    { name: 'Reimbursements', rows: reimbursements },
     {
       name: 'Audit Logs',
       rows: [
