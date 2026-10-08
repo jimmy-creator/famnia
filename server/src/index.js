@@ -57,6 +57,7 @@ import hubRoutes from './routes/hub.js';
 import { runMigrations } from './migrations/index.js';
 import hubCatalogRoutes from './routes/hubCatalog.js';
 import hubSalesRoutes from './routes/hubSales.js';
+import hubDeliveryRoutes from './routes/hubDelivery.js';
 import { ledgerRequestContext, reconcileStockLedger } from './services/stockLedger.js';
 import { registerShiprocketHooks } from './services/shiprocketSync.js';
 import { startAbandonedCartJob } from './services/abandonedCartJob.js';
@@ -167,6 +168,7 @@ app.use('/api/erp-reports', erpReportsRoutes);
 app.use('/api/hub', hubRoutes);
 app.use('/api/hub', hubCatalogRoutes);
 app.use('/api/hub', hubSalesRoutes);
+app.use('/api/hub', hubDeliveryRoutes);
 app.use('/', sitemapRoutes);
 
 // Serve the built client bundles. Needed on hosts WITHOUT nginx (e.g.

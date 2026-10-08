@@ -25,6 +25,9 @@ export const qk = {
   customerRecords: ['femnia', 'customer-records'],
   customerHistory: (id) => ['femnia', 'customer-history', id],
   customerPurchases: (id) => ['femnia', 'customer-purchases', id],
+  deliveryStaff: ['femnia', 'delivery-staff'],
+  myDeliveries: ['femnia', 'my-deliveries'],
+  deliveryPaymentModes: ['femnia', 'delivery-payment-modes'],
 };
 
 const get = async (url) => (await api.get(url)).data;
@@ -168,4 +171,22 @@ export const findCustomerByPhone = (phone) => get(`/hub/customers/lookup?phone=$
 export const createOrReuseCustomer = (input) => send('post', '/hub/customers', { ...input, reuse: true });
 export const createCustomerRecord = async (input) => (await send('post', '/hub/customers', input)).customer;
 export const updateCustomerRecord = (id, input) => send('put', `/hub/customers/${id}`, input);
+
+/* ------------------------------- delivery ------------------------------- */
+export const deliveryStaffQuery = { queryKey: qk.deliveryStaff, queryFn: () => get('/hub/delivery/staff'), staleTime: 60_000 };
+/** The signed-in delivery staff member's own deliveries (safe fields only). */
+export const myDeliveriesQuery = { queryKey: qk.myDeliveries, queryFn: () => get('/hub/delivery/mine'), staleTime: 10_000 };
+export const deliveryPaymentModesQuery = {
+  queryKey: qk.deliveryPaymentModes,
+  queryFn: () => get('/hub/delivery/payment-modes'),
+  staleTime: 300_000,
+};
+/** input: { orderId, status, paymentStatus, paymentMode, amountCollected, note } */
+export const updateMyDelivery = ({ orderId, ...input }) =>
+  send('post', `/hub/delivery/${encodeURIComponent(orderId)}/update`, input);
+/** Assigns (or clears, with a null staff id) one or more deliveries. Resolves { ok, updated }. */
+export const assignDeliveries = (orderIds, staffId) => {
+  if (!orderIds.length) return Promise.reject(new Error('Select at least one delivery first.'));
+  return send('post', '/hub/delivery/assign', { orderIds, staffId });
+};
 

@@ -460,6 +460,10 @@ router.patch('/orders/:number/fulfilment', need('orders.update_delivery', 'payme
   const changes = Object.entries(patch)
     .filter(([col, value]) => String(previous[col] ?? '') !== String(value ?? ''))
     .map(([col, value]) => ({ field: FIELD_LABELS[col] ?? col, oldValue: str(previous[col]), newValue: str(value) }));
+  if (before.status === 'Delivered' && before.paymentStatus === 'Paid' && req.user.role !== 'admin'
+    && ((patch.hubStatus ?? 'Delivered') !== 'Delivered' || (patch.hubPaymentStatus ?? 'Paid') !== 'Paid')) {
+    throw bad('Only an Admin can change a delivery that is already Delivered and Paid.', 403);
+  }
   Object.assign(order, patch);
   if (patch.hubPaymentStatus === 'Paid' && !order.paymentDate) order.paymentDate = new Date().toISOString().slice(0, 10);
   syncLegacy(order);

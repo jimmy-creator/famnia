@@ -20,6 +20,9 @@ import OrdersPage from '@/hub/pages/Orders';
 import CustomersPage from '@/hub/pages/Customers';
 import InvoicesPage from '@/hub/pages/Invoices';
 import PrintDeliveryLabelPage from '@/hub/pages/PrintDeliveryLabel';
+import DeliveryPage from '@/hub/pages/Delivery';
+import MyDeliveriesPage from '@/hub/pages/MyDeliveries';
+import DeliveryReportsPage from '@/hub/pages/DeliveryReports';
 
 const FONTS_HREF =
   'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap';
@@ -71,9 +74,6 @@ function Protected() {
 // back office until its replacement lands.
 const PENDING = [
   ['dashboard', 'Dashboard', 'Live KPIs, recent orders, low stock and cash position arrive with the reports stage.'],
-  ['delivery', 'Delivery', 'The delivery and pickup board with staff assignment arrives with the delivery stage.'],
-  ['my-deliveries', 'My Deliveries', 'The delivery staff board arrives with the delivery stage.'],
-  ['delivery-reports', 'Delivery Reports', 'Daily to yearly delivery reports arrive with the delivery stage.'],
   ['expenses', 'Expenses & Assets', 'Expenses, assets and personally paid liabilities arrive with the back-office stage.'],
   ['reports', 'Reports', 'Sales, product, inventory, profit, expense and payment reports arrive with the back-office stage.'],
   ['staff', 'Staff & Permissions', 'Staff accounts, approvals and the permission matrix arrive with the back-office stage.'],
@@ -104,6 +104,9 @@ export default function HubApp() {
           <Route path="orders" element={<OrdersPage />} />
           <Route path="customers" element={<CustomersPage />} />
           <Route path="invoices" element={<InvoicesPage />} />
+          <Route path="delivery" element={<DeliveryPage />} />
+          <Route path="my-deliveries" element={<MyDeliveriesPage />} />
+          <Route path="delivery-reports" element={<DeliveryReportsPage />} />
           {PENDING.map(([path, title, note]) => (
             <Route key={path} path={path} element={<ComingSoon title={title} note={note} />} />
           ))}
