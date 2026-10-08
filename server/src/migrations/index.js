@@ -69,6 +69,16 @@ const STEPS = [
   ['Users.approvedAt', () => addColumnIfMissing('Users', 'approvedAt', { type: DataTypes.DATE, allowNull: true })],
   ['Users.lastLoginAt', () => addColumnIfMissing('Users', 'lastLoginAt', { type: DataTypes.DATE, allowNull: true })],
   ['Users.passwordChangedAt', () => addColumnIfMissing('Users', 'passwordChangedAt', { type: DataTypes.DATE, allowNull: true })],
+
+  // ── 2026-10 FEMNIA Hub: catalogue (phase 2) ─────────────────────────
+  ['Products.designModel', () => addColumnIfMissing('Products', 'designModel', { type: DataTypes.STRING, allowNull: true })],
+  ['Products.rack', () => addColumnIfMissing('Products', 'rack', { type: DataTypes.STRING, allowNull: true })],
+  ['Products.shelfLocation', () => addColumnIfMissing('Products', 'shelfLocation', { type: DataTypes.STRING, allowNull: true })],
+  ['Products.notes', () => addColumnIfMissing('Products', 'notes', { type: DataTypes.TEXT, allowNull: true })],
+  ['Products.batchNumber', () => addColumnIfMissing('Products', 'batchNumber', { type: DataTypes.STRING, allowNull: true })],
+  ['Products.sourceCountry', () => addColumnIfMissing('Products', 'sourceCountry', { type: DataTypes.STRING, allowNull: true })],
+  ['Products.wholesaler', () => addColumnIfMissing('Products', 'wholesaler', { type: DataTypes.STRING, allowNull: true })],
+  ['Products.importBatchId', () => addColumnIfMissing('Products', 'importBatchId', { type: DataTypes.INTEGER, allowNull: true })],
 ];
 
 export async function runMigrations({ log = console.log } = {}) {

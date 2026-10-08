@@ -165,6 +165,20 @@ const Product = sequelize.define('Product', {
     type: DataTypes.INTEGER,
     allowNull: true,
   },
+  // ── FEMNIA Hub catalogue fields ──
+  // The hub treats every variant as its own SKU. SKU-level values (cost,
+  // rack, shelf, reorder level, active, opening batch) live on the variant
+  // object in `variants`; for a product without variants they live here.
+  designModel: { type: DataTypes.STRING, allowNull: true },
+  rack: { type: DataTypes.STRING, allowNull: true },
+  shelfLocation: { type: DataTypes.STRING, allowNull: true },
+  notes: { type: DataTypes.TEXT, allowNull: true },
+  // Opening-stock batch details (informational only).
+  batchNumber: { type: DataTypes.STRING, allowNull: true },
+  sourceCountry: { type: DataTypes.STRING, allowNull: true },
+  wholesaler: { type: DataTypes.STRING, allowNull: true },
+  // Hub import that created this product, so the import can be reversed.
+  importBatchId: { type: DataTypes.INTEGER, allowNull: true },
 });
 
 // Keep the denormalized primary `category` in sync with the `categories`

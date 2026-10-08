@@ -11,6 +11,10 @@ import { useHubTitle } from '@/hub/lib/useHubTitle';
 import LoginPage from '@/hub/pages/Login';
 import ResetPasswordPage from '@/hub/pages/ResetPassword';
 import ProfilePage from '@/hub/pages/Profile';
+import ProductsPage from '@/hub/pages/Products';
+import InventoryPage from '@/hub/pages/Inventory';
+import StockInPage from '@/hub/pages/StockIn';
+import StockOutPage from '@/hub/pages/StockOut';
 
 const FONTS_HREF =
   'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap';
@@ -64,10 +68,6 @@ const PENDING = [
   ['dashboard', 'Dashboard', 'Live KPIs, recent orders, low stock and cash position arrive with the reports stage.'],
   ['pos', 'New Sales Order', 'Order entry with delivery or pickup, payments and consignment arrives with the sales stage.'],
   ['orders', 'Sales Orders', 'Order list, details, returns, cancellations and price corrections arrive with the sales stage.'],
-  ['products', 'Products', 'Product list, variants, editing, batches and barcode labels arrive with the catalogue stage.'],
-  ['inventory', 'Inventory', 'Live stock ledger, adjustments and product history arrive with the catalogue stage.'],
-  ['stock-in', 'Stock In', 'Receiving stock with batch details arrives with the catalogue stage.'],
-  ['stock-out', 'Stock Out', 'Non-sale stock removals arrive with the catalogue stage.'],
   ['customers', 'Customers', 'Customer records and purchase history arrive with the sales stage.'],
   ['delivery', 'Delivery', 'The delivery and pickup board with staff assignment arrives with the delivery stage.'],
   ['my-deliveries', 'My Deliveries', 'The delivery staff board arrives with the delivery stage.'],
@@ -93,6 +93,10 @@ export default function HubApp() {
         <Route element={<Protected />}>
           <Route index element={<Navigate to="/hub/dashboard" replace />} />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="products" element={<ProductsPage />} />
+          <Route path="inventory" element={<InventoryPage />} />
+          <Route path="stock-in" element={<StockInPage />} />
+          <Route path="stock-out" element={<StockOutPage />} />
           {PENDING.map(([path, title, note]) => (
             <Route key={path} path={path} element={<ComingSoon title={title} note={note} />} />
           ))}

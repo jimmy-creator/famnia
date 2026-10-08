@@ -55,6 +55,8 @@ import wastageRoutes from './routes/wastage.js';
 import erpReportsRoutes from './routes/erpReports.js';
 import hubRoutes from './routes/hub.js';
 import { runMigrations } from './migrations/index.js';
+import hubCatalogRoutes from './routes/hubCatalog.js';
+import { ledgerRequestContext, reconcileStockLedger } from './services/stockLedger.js';
 import { registerShiprocketHooks } from './services/shiprocketSync.js';
 import { startAbandonedCartJob } from './services/abandonedCartJob.js';
 import { startLowStockJob } from './services/lowStockJob.js';
@@ -113,6 +115,8 @@ app.use(cookieParser());
 app.use(sanitizeInput);
 app.use(preventInjection);
 app.use('/api', validateDateQuery, sanitizeErrors);
+// Lets the stock-ledger hooks see which request moved stock.
+app.use('/api', ledgerRequestContext);
 
 // Serve uploaded images
 // Uploaded images have unique hashed filenames (a replaced image gets a new
@@ -160,6 +164,7 @@ app.use('/api/stock-counts', stockCountsRoutes);
 app.use('/api/wastage', wastageRoutes);
 app.use('/api/erp-reports', erpReportsRoutes);
 app.use('/api/hub', hubRoutes);
+app.use('/api/hub', hubCatalogRoutes);
 app.use('/', sitemapRoutes);
 
 // Serve the built client bundles. Needed on hosts WITHOUT nginx (e.g.
@@ -208,6 +213,7 @@ const start = async () => {
     await runMigrations();
     await sequelize.sync({ alter: process.env.DB_SYNC_ALTER === 'true' });
     console.log('Models synced');
+    await reconcileStockLedger();
 
     // Create/promote an admin from BOOTSTRAP_ADMIN_* env vars (no shell needed).
     await bootstrapAdminFromEnv();

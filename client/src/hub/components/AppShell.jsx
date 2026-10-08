@@ -72,7 +72,8 @@ export function AppShell({ children }) {
         to === '/hub/my-deliveries'
           ? Boolean(access.data?.roles.includes('delivery'))
           : !access.data || can(access.data, permission),
-      ).map(({ to, label, icon: Icon }) => {
+      ).map(({ to, label, icon }) => {
+        const Icon = icon;
         const active = pathname === to || pathname.startsWith(`${to}/`);
         return (
           <Link

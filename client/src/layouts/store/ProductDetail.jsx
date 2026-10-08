@@ -110,11 +110,13 @@ export default function ProductDetail() {
 
   const hasVariants = product.variants && product.variants.length > 0;
   const activeVariant = hasVariants
-    ? product.variants.find((v) => Object.entries(selectedOptions).every(([k, val]) => v.options[k] === val))
+    ? product.variants.find((v) => !v.archived && Object.entries(selectedOptions).every(([k, val]) => v.options[k] === val))
     : null;
 
+  // A size the staff hub has deactivated or archived is not for sale online.
+  const variantSellable = (v) => v && v.active !== false && !v.archived;
   const displayPrice = activeVariant?.price != null ? activeVariant.price : product.price;
-  const displayStock = hasVariants ? (activeVariant?.stock ?? 0) : product.stock;
+  const displayStock = hasVariants ? (variantSellable(activeVariant) ? (activeVariant.stock ?? 0) : 0) : product.stock;
   const discount = product.comparePrice ? Math.round((1 - displayPrice / product.comparePrice) * 100) : 0;
 
   const handleAddToCart = () => addToCart(product, quantity, hasVariants ? selectedOptions : null);
@@ -126,7 +128,7 @@ export default function ProductDetail() {
   const isOptionAvailable = (type, value) => {
     if (!hasVariants) return true;
     return product.variants.some((v) =>
-      v.options[type] === value && v.stock > 0 &&
+      v.options[type] === value && v.stock > 0 && variantSellable(v) &&
       Object.entries(selectedOptions).every(([k, sv]) => k === type || v.options[k] === sv),
     );
   };

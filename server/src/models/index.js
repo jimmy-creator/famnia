@@ -31,7 +31,11 @@ import FixedAsset from './FixedAsset.js';
 import DepreciationEntry from './DepreciationEntry.js';
 import CapitalEntry from './CapitalEntry.js';
 import Wastage from './Wastage.js';
+import StockMovement from './StockMovement.js';
+import ProductAuditLog from './ProductAuditLog.js';
+import ImportBatch from './ImportBatch.js';
 import sequelize from '../config/database.js';
+import { initStockLedger, recordStockDelta } from '../services/stockLedger.js';
 
 // ── MariaDB JSON-column fix ──────────────────────────────────────
 // On MariaDB (common on shared hosts like Hostinger) the JSON type is just a
@@ -204,6 +208,26 @@ Wastage.belongsTo(Expense, { foreignKey: 'expenseId' });
 Wastage.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
 Wastage.belongsTo(User, { as: 'approver', foreignKey: 'managerOverrideBy' });
 
+// ── Stock ledger ─────────────────────────────────────────────────
+// Every ProductStock quantity change writes a StockMovement (see
+// services/stockLedger.js), so stock history covers every path that moves
+// stock without each route having to remember. All ProductStock writes in
+// this codebase go through instance create/update, which fire these hooks.
+StockMovement.belongsTo(Product, { foreignKey: 'productId' });
+StockMovement.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
+ProductAuditLog.belongsTo(User, { as: 'changer', foreignKey: 'changedBy' });
+ImportBatch.belongsTo(User, { as: 'creator', foreignKey: 'createdBy' });
+
+ProductStock.addHook('afterCreate', (row, options) =>
+  recordStockDelta(row, row.quantity || 0, options, { created: true }));
+ProductStock.addHook('afterUpdate', (row, options) => {
+  if (!row.changed('quantity')) return undefined;
+  const before = parseInt(row.previous('quantity'), 10) || 0;
+  return recordStockDelta(row, (row.quantity || 0) - before, options);
+});
+
+initStockLedger({ sequelize, StockMovement });
+
 // ── Keep Product.stock in sync with SUM(ProductStock.quantity) ───
 // Called explicitly by routes after they mutate ProductStock (and after
 // any transaction has committed). An earlier version did this via
@@ -363,8 +387,10 @@ function variantIndexForItem(product, item) {
   if (!selected || !Array.isArray(product?.variants) || !product.variants.length) {
     return null;
   }
+  // Archived variants (removed in the staff hub) keep their slot so indexes
+  // stay stable, but must never match a new order line.
   const idx = product.variants.findIndex(
-    (v) => v.options && Object.entries(v.options).every(([k, val]) => selected[k] === val)
+    (v) => v && !v.archived && v.options && Object.entries(v.options).every(([k, val]) => selected[k] === val)
   );
   return idx >= 0 ? idx : null;
 }
@@ -437,6 +463,7 @@ export {
   Counter,
   FixedAsset, DepreciationEntry, CapitalEntry,
   Wastage,
+  StockMovement, ProductAuditLog, ImportBatch,
 };
 
 // ── Activity log + manager-override helpers ─────────────────────
