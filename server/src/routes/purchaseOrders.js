@@ -36,6 +36,7 @@ import { protect, admin } from '../middleware/auth.js';
 import { rangeStart, rangeEnd } from '../utils/dates.js';
 import { generatePurchaseOrderPdf } from '../services/purchaseDocs.js';
 import { priceFromMargin } from '../utils/pricing.js';
+import { hasPermission } from '../hub/permissions.js';
 
 const router = Router();
 
@@ -45,7 +46,7 @@ const gen = (prefix) =>
 // ─── List ──────────────────────────────────────────────────────────
 router.get('/', protect, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+    if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     const where = {};
@@ -76,7 +77,7 @@ router.get('/', protect, async (req, res) => {
 // ─── Detail ────────────────────────────────────────────────────────
 router.get('/:id', protect, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+    if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     const po = await PurchaseOrder.findByPk(req.params.id, {
@@ -98,7 +99,7 @@ router.get('/:id', protect, async (req, res) => {
 // ─── PDF (opens in the browser to print or save) ───────────────────
 router.get('/:id/pdf', protect, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+    if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     const po = await PurchaseOrder.findByPk(req.params.id, {
@@ -184,7 +185,7 @@ function applyLandedCost(items, shippingCost = 0) {
 // ─── Create ────────────────────────────────────────────────────────
 router.post('/', protect, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+    if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     const { supplierId, locationId, items, status, notes, expectedDate, shippingCost = 0, discount = 0 } = req.body;
@@ -230,7 +231,7 @@ router.post('/', protect, async (req, res) => {
 // ─── Update ────────────────────────────────────────────────────────
 router.put('/:id', protect, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+    if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     const po = await PurchaseOrder.findByPk(req.params.id);
@@ -316,7 +317,7 @@ router.post('/:id/cancel', protect, admin, async (req, res) => {
 
 // ─── Receive (GRN) ─────────────────────────────────────────────────
 router.post('/:id/receive', protect, async (req, res) => {
-  if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+  if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
     return res.status(403).json({ message: 'Forbidden' });
   }
   const t = await sequelize.transaction();

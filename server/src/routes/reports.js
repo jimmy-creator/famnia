@@ -20,6 +20,7 @@ import { protect, requirePermission, protectCashier } from '../middleware/auth.j
 import { rangeStart, rangeEnd } from '../utils/dates.js';
 import { rollup } from '../utils/posTotals.js';
 import { dp } from '../utils/money.js';
+import { hasPermission } from '../hub/permissions.js';
 
 const router = Router();
 
@@ -36,7 +37,7 @@ function parseRange(q) {
 
 // Staff reading POS figures need the analytics permission; admins always pass.
 const canSeeReports = (user) =>
-  user.role === 'admin' || (user.role === 'staff' && (user.permissions || []).includes('analytics'));
+  user.role === 'admin' || (user.role === 'staff' && hasPermission(user, 'analytics'));
 
 // Every order query here must carry paymentBreakdown — without it a split
 // sale can't be bucketed and its cash leg silently drops out of the drawer.

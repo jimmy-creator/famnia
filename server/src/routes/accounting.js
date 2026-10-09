@@ -34,6 +34,7 @@ import {
   writeCashTxn, logActivity,
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
+import { hasPermission } from '../hub/permissions.js';
 import { computePnl, computeStockValue, dateOnly, monthKeyLocal } from './finance.js';
 import { computeBalance as computeSupplierBalance } from './suppliers.js';
 import { runDepreciation, ensureDepreciation } from '../services/depreciationJob.js';
@@ -50,8 +51,8 @@ const gen = (prefix) =>
 // Same guard the finance routes use. Deliberately NOT the `admin`
 // middleware, which despite its name lets in any staff member holding any
 // single permission.
-const hasFinanceAccess = (req) =>
-  req.user.role === 'admin' || (req.user.permissions || []).includes('analytics');
+// Admins, classic 'analytics' staff, and hub staff whose permissions imply it.
+const hasFinanceAccess = (req) => req.user.role === 'admin' || hasPermission(req.user, 'analytics');
 
 const guard = (req, res) => {
   if (!hasFinanceAccess(req)) { res.status(403).json({ message: 'Forbidden' }); return false; }

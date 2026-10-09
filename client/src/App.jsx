@@ -18,7 +18,7 @@ import Register from './pages/Register';
 import Orders from './pages/Orders';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
-import { ERP_SCREENS } from './hub/lib/erpScreens';
+import { ERP_TAB_TO_HUB } from './hub/lib/legacyRoutes';
 import OrderSuccess from './pages/OrderSuccess';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -113,16 +113,9 @@ function PosAware({ children }) {
 
 // The ERP now lives inside the hub: old /admin/erp links (bookmarks, the
 // ?tab= deep links) open the matching hub screen.
-const ERP_TAB_TO_HUB = {
-  products: '/hub/products', expenses: '/hub/expenses', 'barcode-labels': '/hub/products',
-  'activity-log': '/hub/staff?tab=activity', backup: '/hub/settings', inventory: '/hub/m/stock-on-hand',
-};
 function ErpRedirect() {
   const [params] = useSearchParams();
-  const tab = params.get('tab');
-  const screen = tab && Object.entries(ERP_SCREENS).find(([, m]) => m.tab === tab)?.[0];
-  const to = (tab && ERP_TAB_TO_HUB[tab]) || (screen ? `/hub/m/${screen}` : '/hub/dashboard');
-  return <Navigate to={to} replace />;
+  return <Navigate to={ERP_TAB_TO_HUB[params.get('tab') || 'overview'] || '/hub/dashboard'} replace />;
 }
 
 let didInitialStaffRedirect = false;

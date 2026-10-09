@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, Plus, Settings2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
+import { AssetDetailSheet, CapitalPanel } from '@/hub/components/CashFinance';
 import { ExpenseEntryDialog } from '@/hub/components/ExpenseEntryDialog';
 import { ReimbursementDialog } from '@/hub/components/ReimbursementDialog';
 import { EmptyState, ErrorState, LoadingRows, PageHeader, StatusBadge } from '@/hub/components/shared';
@@ -303,6 +303,7 @@ function CategoriesDialog({ open, onClose }) {
 
 const ALL = '__all__';
 const clean = (v) => (v === ALL ? '' : v);
+const MULTILOC = import.meta.env.VITE_FEATURE_MULTILOC === 'true';
 
 export default function ExpensesPage() {
   useHubTitle('Expenses, Assets & Liabilities — FEMNIA Hub');
@@ -322,6 +323,9 @@ export default function ExpensesPage() {
   const canAddExpense = can(access, 'expenses.add');
   const canAddAsset = can(access, 'assets.add');
   const canReimburse = can(access, 'liabilities.reimburse') || can(access, 'liabilities.settle');
+  // Owner capital and the asset ledger are classic finance screens: 'analytics' access, multi-location only.
+  const canFinance = MULTILOC && Boolean(access?.isAdmin || access?.legacy?.includes('analytics'));
+  const [assetId, setAssetId] = useState(null);
 
   const [tab, setTab] = useState('expenses');
   const [search, setSearch] = useState('');
@@ -388,7 +392,9 @@ export default function ExpensesPage() {
         ? canViewAssets
         : tab === 'monthly'
           ? canViewExpenses || canViewAssets
-          : canViewExpenses;
+          : tab === 'capital'
+            ? canFinance
+            : canViewExpenses;
 
   const tabs = [
     { key: 'expenses', label: 'Daily Expenses', count: liveExpenses.length, visible: canViewExpenses },
@@ -405,6 +411,7 @@ export default function ExpensesPage() {
       count: monthly.expenses.rows.length + monthly.assets.rows.length,
       visible: canViewExpenses || canViewAssets,
     },
+    { key: 'capital', label: 'Capital', visible: canFinance },
   ];
 
   return (
@@ -448,12 +455,12 @@ export default function ExpensesPage() {
                   : 'border-border bg-card text-foreground/80 hover:bg-secondary',
               )}
             >
-              {t.label} <span className="opacity-70">({t.count})</span>
+              {t.label} {t.count !== undefined && <span className="opacity-70">({t.count})</span>}
             </button>
           ))}
       </div>
 
-      {tab === 'monthly' ? (
+      {tab === 'capital' ? null : tab === 'monthly' ? (
         <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <select
             aria-label="Month"
@@ -522,16 +529,13 @@ export default function ExpensesPage() {
               <Settings2 className="mr-2 size-4" /> Manage categories
             </Button>
           )}
-          {tab === 'assets' && (
-            <Button asChild variant="outline" className="h-11 sm:col-span-2 lg:col-span-1">
-              <Link to="/hub/m/fixed-assets">Depreciation &amp; disposals</Link>
-            </Button>
-          )}
         </div>
       )}
 
       {!allowed ? (
         <EmptyState title="No access" hint="You do not have permission to view this section." />
+      ) : tab === 'capital' ? (
+        <CapitalPanel isAdmin={Boolean(access?.isAdmin)} />
       ) : active.isLoading ? (
         <LoadingRows />
       ) : active.isError ? (
@@ -843,9 +847,13 @@ export default function ExpensesPage() {
             </dl>
 
             {detail.notes && <p className="mt-3 text-sm text-muted-foreground">{detail.notes}</p>}
-            {detail.asset && (
-              <Button asChild variant="outline" className="mt-4 h-11 w-full">
-                <Link to="/hub/m/fixed-assets">Depreciation schedule &amp; disposal</Link>
+            {detail.asset && canFinance && (
+              <Button variant="outline" className="mt-4 h-11 w-full" onClick={() => {
+                  setAssetId(detail.asset.id);
+                  setDetail(null);
+                }}
+              >
+                Depreciation schedule{access?.isAdmin ? ', edit & disposal' : ''}
               </Button>
             )}
             {canVoid(detail) && <VoidSection key={detail.id} entry={detail} onDone={() => setDetail(null)} />}
@@ -871,6 +879,8 @@ export default function ExpensesPage() {
       />
 
       <CategoriesDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
+
+      {assetId && <AssetDetailSheet assetId={assetId} isAdmin={Boolean(access?.isAdmin)} onClose={() => setAssetId(null)} />}
 
       <ReimbursementDialog
         liability={reimburse}

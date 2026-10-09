@@ -26,14 +26,13 @@ import { accessQuery } from '@/hub/lib/api';
 import { can } from '@/hub/lib/permissions';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
-import { ERP_SCREENS, STORE_SCREENS, canOpenScreen, canOpenStoreScreen } from '@/hub/lib/erpScreens';
 
-// One menu for the whole back office. Items are either hub pages (gated on a
-// hub permission) or our ERP screens at /hub/m/:screen (gated on the classic
-// area the server checks — see erpScreens.js).
+// One menu for the whole back office — every screen is a native hub page.
+// `permission` is a hub key; `legacyAny` the classic area keys the server
+// checks for screens that reuse classic APIs (accessFor().legacy);
+// `multiloc` screens exist only with multi-location inventory on.
+const MULTILOC = import.meta.env.VITE_FEATURE_MULTILOC === 'true';
 const page = (to, label, permission, extra = {}) => ({ to, label, permission, ...extra });
-const erp = (screen) => ({ to: `/hub/m/${screen}`, label: ERP_SCREENS[screen].title, screen });
-const store = (screen) => ({ to: `/hub/s/${screen}`, label: STORE_SCREENS[screen].title, storeScreen: screen });
 
 const NAV_GROUPS = [
   { id: 'home', items: [page('/hub/dashboard', 'Dashboard', 'dashboard.view')], icon: Home, flat: true },
@@ -44,12 +43,14 @@ const NAV_GROUPS = [
       page('/hub/orders', 'Sales Orders', 'orders.view_all'),
       page('/hub/customers', 'Customers', 'customers.view'),
       page('/hub/invoices', 'Invoices & Labels', 'invoices.view'),
-      erp('till-returns'),
     ],
   },
   {
     id: 'catalogue', label: 'Catalogue', icon: Package,
-    items: [page('/hub/products', 'Products', 'products.view'), erp('categories')],
+    items: [
+      page('/hub/products', 'Products', 'products.view'),
+      page('/hub/categories', 'Categories', null, { legacyAny: ['categories'] }),
+    ],
   },
   {
     id: 'inventory', label: 'Inventory', icon: Boxes,
@@ -57,12 +58,14 @@ const NAV_GROUPS = [
       page('/hub/inventory', 'Inventory', 'inventory.view'),
       page('/hub/stock-in', 'Stock In', 'inventory.stock_in'),
       page('/hub/stock-out', 'Stock Out', 'inventory.stock_out'),
-      erp('stock-counts'), erp('wastage'), erp('transfers'), erp('stock-on-hand'), erp('locations'), erp('reorder'),
+      page('/hub/stock-counts', 'Stock Counts', null, { legacyAny: ['products'], multiloc: true }),
+      page('/hub/wastage', 'Wastage', null, { legacyAny: ['products'], multiloc: true }),
+      page('/hub/transfers', 'Transfers', null, { legacyAny: ['products'], multiloc: true }),
     ],
   },
   {
-    id: 'purchasing', label: 'Purchasing', icon: PackagePlus,
-    items: [erp('suppliers'), erp('purchase-orders'), erp('purchase-returns')],
+    id: 'purchasing', label: 'Purchasing', icon: PackagePlus, flat: true,
+    items: [page('/hub/purchasing', 'Purchasing', null, { legacyAny: ['products'], multiloc: true })],
   },
   {
     id: 'delivery', label: 'Delivery', icon: Truck,
@@ -76,21 +79,20 @@ const NAV_GROUPS = [
     id: 'finance', label: 'Finance', icon: Wallet,
     items: [
       page('/hub/expenses', 'Expenses & Assets', 'expenses.view'),
-      erp('cash-accounts'), erp('cash-transfers'), erp('daily-cash'), erp('daybook'), erp('fixed-assets'), erp('capital'),
-      erp('pnl'), erp('balance-sheet'), erp('stock-value'),
+      page('/hub/cash', 'Cash & Bank', null, { legacyAny: ['analytics'], multiloc: true }),
     ],
   },
   {
-    id: 'reports', label: 'Reports', icon: BarChart3,
-    items: [
-      page('/hub/reports', 'Reports', 'reports.operational'),
-      erp('sales-report'), erp('fast-moving'), erp('dead-stock'), erp('purchase-report'), erp('pos-reports'),
-    ],
+    id: 'reports', label: 'Reports', icon: BarChart3, flat: true,
+    items: [page('/hub/reports', 'Reports', 'reports.operational', { legacyAny: ['analytics'] })],
   },
-  { id: 'pos', label: 'POS', icon: Landmark, items: [erp('cashiers')] },
   {
-    id: 'store', label: 'Online Store', icon: Store,
-    items: ['abandoned-carts', 'b2b-quotes', 'reviews', 'coupons', 'theme'].map(store),
+    id: 'pos', label: 'POS', icon: Landmark, flat: true,
+    items: [page('/hub/pos-admin', 'POS & Shifts', null, { legacyAny: ['orders', 'analytics'], multiloc: true })],
+  },
+  {
+    id: 'store', label: 'Online Store', icon: Store, flat: true,
+    items: [page('/hub/store', 'Online Store', null, { legacyAny: ['coupons', 'reviews', 'orders', 'settings'] })],
   },
   {
     id: 'admin', label: 'Admin', icon: ShieldCheck,
@@ -105,13 +107,13 @@ const NAV_GROUPS = [
 const COLLAPSE_KEY = 'femnia-hub-nav-collapsed-v1';
 
 function visibleItem(access, item) {
-  if (!access) return false;
-  if (item.screen) return canOpenScreen(access, item.screen);
-  if (item.storeScreen) return canOpenStoreScreen(access, item.storeScreen);
+  if (!access || access.status !== 'active') return false;
+  if (item.multiloc && !MULTILOC) return false;
   if (item.deliveryOnly) return access.roles.includes('delivery');
   if (item.adminOnly) return access.isAdmin; // settings are written by Admins only
-  if (item.staffOnly) return access.isAdmin || access.roles.includes('staff');
-  return can(access, item.permission);
+  if (access.isAdmin) return true;
+  if (item.permission && can(access, item.permission)) return true;
+  return Boolean(item.legacyAny?.some((k) => access.legacy?.includes(k)));
 }
 
 export function AppShell({ children }) {

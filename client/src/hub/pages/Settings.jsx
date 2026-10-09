@@ -11,6 +11,7 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { FemniaLogo } from '@/hub/components/Brand';
+import { LocationsPanel } from '@/hub/components/LocationsPanel';
 import { CatalogueReplaceCard } from '@/hub/components/CatalogueReplaceCard';
 import { FundingAccountsCard } from '@/hub/components/FundingAccountsCard';
 import { DatabaseBackupCard } from '@/hub/components/DatabaseBackupCard';
@@ -43,6 +44,7 @@ const SECTIONS = [
   { key: 'inventory', label: 'Inventory' },
   { key: 'printing', label: 'Printing' },
   { key: 'lists', label: 'Lists' },
+  { key: 'locations', label: 'Locations' },
   { key: 'backup', label: 'Backup' },
 ];
 
@@ -137,7 +139,11 @@ export default function SettingsPage() {
   const access = useQuery(accessQuery);
   const settings = useQuery(appSettingsQuery);
   // Kept above the form so a save or refresh (which remounts it) keeps them.
-  const [section, setSection] = useState('business');
+  // ?tab= opens a section directly (e.g. /hub/settings?tab=locations).
+  const [section, setSection] = useState(() => {
+    const wanted = new URLSearchParams(window.location.search).get('tab');
+    return SECTIONS.some((x) => x.key === wanted) ? wanted : 'business';
+  });
   const backup = useMutation({
     mutationFn: exportFullBackup,
     onSuccess: (result) => toast.success(`Backup downloaded — ${result.filename}`),
@@ -565,6 +571,8 @@ function SettingsForm({ saved, isAdmin, onRefresh, section, setSection, backup }
           </CardContent>
         </Card>
       )}
+
+      {section === 'locations' && <LocationsPanel />}
 
       {section === 'backup' && isAdmin && <DatabaseBackupCard />}
       {section === 'backup' && isAdmin && <CatalogueReplaceCard backupFilename={backup.data?.filename ?? null} />}

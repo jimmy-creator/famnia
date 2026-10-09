@@ -64,7 +64,7 @@ export const admin = (req, res, next) => {
     // (keys like "orders.create") are not let into the old admin endpoints
     // this guards — storefront settings, coupons, order status.
     const perms = req.user.permissions || [];
-    if (perms.some((p) => LEGACY_KEYS.includes(p))) {
+    if (perms.length && LEGACY_KEYS.some((k) => hasPermission(req.user, k))) {
       next();
     } else {
       res.status(403).json({ message: 'No permissions assigned' });

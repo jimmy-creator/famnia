@@ -45,6 +45,7 @@ import {
 // samples, display, corrections, supplier returns — are not a loss).
 const STOCK_LOSS_REASONS = ['Damaged', 'Lost', 'Expired', 'Defective'];
 import { protect, admin } from '../middleware/auth.js';
+import { hasPermission } from '../hub/permissions.js';
 import { ensureDepreciation } from '../services/depreciationJob.js';
 import { localDate, rangeStart, rangeEnd } from '../utils/dates.js';
 
@@ -60,8 +61,8 @@ const pad2 = (n) => String(n).padStart(2, '0');
 export const dateOnly = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 export const monthKeyLocal = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
 
-const hasFinanceAccess = (req) =>
-  req.user.role === 'admin' || (req.user.permissions || []).includes('analytics');
+// Admins, classic 'analytics' staff, and hub staff whose permissions imply it.
+const hasFinanceAccess = (req) => req.user.role === 'admin' || hasPermission(req.user, 'analytics');
 
 // ─── Seed default cash accounts ────────────────────────────────────
 // Exported so the server can call it on boot. Idempotent: only inserts
@@ -176,7 +177,7 @@ router.get('/cash-accounts/:id/transactions', protect, async (req, res) => {
 router.get('/expense-categories', protect, async (req, res) => {
   try {
     // The wastage form offers these too, so inventory staff may read them.
-    if (!hasFinanceAccess(req) && !(req.user.permissions || []).includes('products')) {
+    if (!hasFinanceAccess(req) && !hasPermission(req.user, 'products')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     const rows = await ExpenseCategory.findAll({ order: [['name', 'ASC']] });

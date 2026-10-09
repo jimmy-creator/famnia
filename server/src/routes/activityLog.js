@@ -13,12 +13,13 @@ import { Op } from 'sequelize';
 import { ActivityLog, User, Location } from '../models/index.js';
 import { protect } from '../middleware/auth.js';
 import { rangeStart, rangeEnd } from '../utils/dates.js';
+import { hasPermission } from '../hub/permissions.js';
 
 const router = Router();
 
 const canView = (req) =>
   req.user.role === 'admin'
-  || (req.user.permissions || []).includes('analytics');
+  || hasPermission(req.user, 'analytics');
 
 router.get('/', protect, async (req, res) => {
   try {

@@ -33,6 +33,7 @@ import {
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
 import { rangeStart, rangeEnd } from '../utils/dates.js';
+import { hasPermission } from '../hub/permissions.js';
 
 const router = Router();
 
@@ -66,7 +67,7 @@ export async function computeBalance(supplierId) {
 
 router.get('/', protect, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+    if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     const where = {};
@@ -138,7 +139,7 @@ router.delete('/:id', protect, admin, async (req, res) => {
 });
 
 // ─── Statement ─────────────────────────────────────────────────────
-const canPurchase = (req) => req.user.role === 'admin' || (req.user.permissions || []).includes('products');
+const canPurchase = (req) => req.user.role === 'admin' || hasPermission(req.user, 'products');
 
 // Lines of goods actually bought (partly or fully received POs), oldest
 // first, so later rows win when collapsing to "last bought".

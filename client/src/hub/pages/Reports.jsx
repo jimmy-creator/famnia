@@ -1,8 +1,18 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Download, FileSpreadsheet, Lock } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
+import {
+  BalanceSheetReport,
+  DeadStockReport,
+  FastMovingReport,
+  PnlReport,
+  PurchasesReport,
+  SalesAnalysisReport,
+  StockValueReport,
+} from '@/hub/components/ReportsAnalysis';
 import { EmptyState, ErrorState, Kpi, LoadingRows, PageHeader } from '@/hub/components/shared';
 import { Button } from '@/hub/ui/button';
 import { Input } from '@/hub/ui/input';
@@ -18,6 +28,7 @@ import {
   stockInQuery,
   stockOutQuery,
 } from '@/hub/lib/api';
+import { MULTILOC, canAnalytics } from '@/hub/lib/apiReportsExtra';
 import { computeConsignment } from '@/hub/lib/consignment';
 import { LIABILITY_STATUS_LABELS, money } from '@/hub/lib/expenses';
 import { downloadFile, toCsv } from '@/hub/lib/format';
@@ -95,6 +106,9 @@ function orderConsignment(order) {
     partnerTotal: round2(totals.partnerTotal),
   };
 }
+
+/** Tabs served by components/ReportsAnalysis — own filters, own CSV export. */
+const ERP_TABS = new Set(['sales-analysis', 'fast-moving', 'dead-stock', 'purchases', 'pnl', 'balance-sheet', 'stock-value']);
 
 const CHART_COLORS = ['#4A2040', '#8C5A82', '#B98AAE', '#D8B4CE', '#EDE4F2', '#A97C50'];
 
@@ -228,6 +242,7 @@ function profitLines(f) {
 
 export default function ReportsPage() {
   useHubTitle('Reports — FEMNIA Hub');
+  const queryClient = useQueryClient();
   const access = useQuery(accessQuery).data ?? null;
   const orders = useQuery(ordersQuery);
   const products = useQuery(productsQuery);
@@ -241,6 +256,7 @@ export default function ReportsPage() {
   const canAssets = canFinancial || can(access, 'assets.view');
   const canLiabilities = canFinancial || can(access, 'liabilities.view');
   const canCost = can(access, 'products.view_cost');
+  const canErp = canAnalytics(access);
 
   // Only fetch what the API will actually serve this account.
   const expenses = useQuery({ ...expensesQuery, enabled: Boolean(access) && canExpenses });
@@ -250,7 +266,49 @@ export default function ReportsPage() {
 
   const [preset, setPreset] = useState('This month');
   const [range, setRange] = useState(() => ({ from: monthStartIso(), to: todayIso() }));
-  const [tab, setTab] = useState('sales');
+  // The tab lives in ?tab= so each report is linkable (old /admin/erp links land here).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const setTab = (key) => setSearchParams({ tab: key }, { replace: true });
+
+  const tabGroups = [
+    {
+      label: 'Hub',
+      tabs: [
+        { key: 'sales', label: 'Sales', visible: canOperational },
+        { key: 'product-sales', label: 'Product Sales', visible: canOperational },
+        { key: 'inventory', label: 'Inventory', visible: canOperational },
+        { key: 'profit', label: 'Profit', visible: canFinancial },
+        { key: 'expenses', label: 'Expenses & Assets', visible: canFinancial || can(access, 'expenses.view') },
+        { key: 'liabilities', label: 'Liabilities', visible: can(access, 'liabilities.view') },
+        { key: 'payments', label: 'Payments', visible: canOperational && can(access, 'payments.view') },
+      ],
+    },
+    {
+      label: 'Sales & stock analysis',
+      tabs: [
+        { key: 'sales-analysis', label: 'Sales analysis', visible: canErp },
+        { key: 'fast-moving', label: 'Fast moving', visible: canErp },
+        { key: 'dead-stock', label: 'Dead stock', visible: canErp },
+        { key: 'purchases', label: 'Purchases', visible: canErp && MULTILOC },
+      ],
+    },
+    {
+      label: 'Accounts',
+      tabs: [
+        { key: 'pnl', label: 'Profit & Loss (cash)', visible: canErp && MULTILOC },
+        { key: 'balance-sheet', label: 'Balance sheet', visible: canErp && MULTILOC },
+        { key: 'stock-value', label: 'Stock value', visible: canErp && MULTILOC },
+      ],
+    },
+  ]
+    .map((g) => ({ ...g, tabs: g.tabs.filter((t) => t.visible) }))
+    .filter((g) => g.tabs.length);
+  const visibleKeys = tabGroups.flatMap((g) => g.tabs.map((t) => t.key));
+  const wanted = searchParams.get('tab') || 'sales';
+  const tab = visibleKeys.includes(wanted) ? wanted : visibleKeys[0];
+  const isErpTab = ERP_TABS.has(tab);
+  // Reports with their own date controls (or none) hide the shared range bar.
+  const usesRange = !['fast-moving', 'dead-stock', 'balance-sheet', 'stock-value'].includes(tab);
   const [psSearch, setPsSearch] = useState('');
   const [psCategory, setPsCategory] = useState('All');
   const [psSort, setPsSort] = useState('quantity');
@@ -283,16 +341,6 @@ export default function ReportsPage() {
     setPreset(p);
     setRange((cur) => rangeFor(p, cur));
   };
-
-  const tabs = [
-    { key: 'sales', label: 'Sales', visible: canOperational },
-    { key: 'product-sales', label: 'Product Sales', visible: canOperational },
-    { key: 'inventory', label: 'Inventory', visible: canOperational },
-    { key: 'profit', label: 'Profit', visible: canFinancial },
-    { key: 'expenses', label: 'Expenses & Assets', visible: canFinancial || can(access, 'expenses.view') },
-    { key: 'liabilities', label: 'Liabilities', visible: can(access, 'liabilities.view') },
-    { key: 'payments', label: 'Payments', visible: canOperational && can(access, 'payments.view') },
-  ];
 
   /* --------------------------------- exports --------------------------------- */
   /** Primary table for the active tab — shared by the Excel and CSV exports. */
@@ -461,7 +509,7 @@ export default function ReportsPage() {
   const error = orders.error ?? products.error ?? stockIn.error ?? null;
 
   if (!access) return <LoadingRows count={4} />;
-  if (!canOperational && !canFinancial) {
+  if (!visibleKeys.length) {
     return (
       <div className="mx-auto max-w-3xl">
         <PageHeader title="Reports" />
@@ -474,8 +522,12 @@ export default function ReportsPage() {
     <div className="mx-auto max-w-7xl">
       <PageHeader
         title="Reports"
-        subtitle={ESTIMATE_NOTE}
+        subtitle={isErpTab ? 'Figures from the store ledger — the same numbers as the till and accounts.' : ESTIMATE_NOTE}
         onRefresh={() => {
+          if (isErpTab) {
+            void queryClient.invalidateQueries({ queryKey: ['femnia', 'reports-extra'] });
+            return;
+          }
           orders.refetch();
           products.refetch();
           stockIn.refetch();
@@ -488,7 +540,7 @@ export default function ReportsPage() {
         }}
         refreshing={orders.isFetching || products.isFetching}
         actions={
-          canExport ? (
+          canExport && !isErpTab ? (
             <>
               <Button size="sm" variant="outline" className="h-10" onClick={exportExcel}>
                 <FileSpreadsheet className="mr-2 size-4" /> Export Excel
@@ -501,8 +553,42 @@ export default function ReportsPage() {
         }
       />
 
+      {/* Tabs, grouped so the many reports stay findable */}
+      <div className="no-print mb-4 space-y-2">
+        {tabGroups.map((g) => (
+          <div key={g.label} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+            {tabGroups.length > 1 && (
+              <span className="w-44 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {g.label}
+              </span>
+            )}
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {g.tabs.map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  className={cn(
+                    'shrink-0 rounded-xl border px-3 py-2 text-sm font-medium transition-colors',
+                    tab === t.key
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border bg-card text-foreground hover:bg-secondary',
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Date filters */}
-      <div className="no-print card-surface mb-4 flex flex-col gap-3 p-3 sm:flex-row sm:items-end sm:justify-between">
+      <div
+        className={cn(
+          'no-print card-surface mb-4 flex flex-col gap-3 p-3 sm:flex-row sm:items-end sm:justify-between',
+          !usesRange && 'hidden',
+        )}
+      >
         <div className="flex flex-wrap gap-2">
           {RANGE_PRESETS.map((p) => (
             <button
@@ -541,27 +627,21 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="no-print mb-4 flex gap-2 overflow-x-auto pb-1">
-        {tabs
-          .filter((t) => t.visible)
-          .map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={cn(
-                'shrink-0 rounded-xl border px-3 py-2 text-sm font-medium transition-colors',
-                tab === t.key
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-card text-foreground hover:bg-secondary',
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-      </div>
-
-      {error ? (
+      {tab === 'sales-analysis' ? (
+        <SalesAnalysisReport range={range} />
+      ) : tab === 'fast-moving' ? (
+        <FastMovingReport />
+      ) : tab === 'dead-stock' ? (
+        <DeadStockReport />
+      ) : tab === 'purchases' ? (
+        <PurchasesReport range={range} />
+      ) : tab === 'pnl' ? (
+        <PnlReport range={range} />
+      ) : tab === 'balance-sheet' ? (
+        <BalanceSheetReport />
+      ) : tab === 'stock-value' ? (
+        <StockValueReport />
+      ) : error ? (
         <ErrorState
           section="reports"
           message={error.message}

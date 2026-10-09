@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 
 import { Toaster } from '@/hub/ui/sonner';
@@ -28,8 +28,15 @@ import SettingsPage from '@/hub/pages/Settings';
 import ExpensesPage from '@/hub/pages/Expenses';
 import DashboardPage from '@/hub/pages/Dashboard';
 import ReportsPage from '@/hub/pages/Reports';
-import StoreScreenPage from '@/hub/pages/StoreScreen';
-import ErpScreenPage from '@/hub/pages/ErpScreen';
+import PurchasingPage from '@/hub/pages/Purchasing';
+import StorePage from '@/hub/pages/Store';
+import CategoriesPage from '@/hub/pages/Categories';
+import CashBankPage from '@/hub/pages/CashBank';
+import PosAdminPage from '@/hub/pages/Pos';
+import StockCountsPage from '@/hub/pages/StockCounts';
+import WastagePage from '@/hub/pages/Wastage';
+import TransfersPage from '@/hub/pages/Transfers';
+import { hubPathForMScreen, hubPathForSScreen } from '@/hub/lib/legacyRoutes';
 
 const FONTS_HREF =
   'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap';
@@ -52,6 +59,11 @@ function useHubTheme() {
     }
     return () => root.classList.remove('hub-theme');
   }, []);
+}
+
+function LegacyRedirect({ kind }) {
+  const { screen } = useParams();
+  return <Navigate to={kind === "s" ? hubPathForSScreen(screen) : hubPathForMScreen(screen)} replace />;
 }
 
 function Protected() {
@@ -115,9 +127,17 @@ export default function HubApp() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="back-office" element={<Navigate to="/hub/dashboard" replace />} />
-          <Route path="store" element={<Navigate to="/hub/s/abandoned-carts" replace />} />
-          <Route path="s/:screen" element={<StoreScreenPage />} />
-          <Route path="m/:screen" element={<ErpScreenPage />} />
+          <Route path="purchasing" element={<PurchasingPage />} />
+          <Route path="store" element={<StorePage />} />
+          <Route path="categories" element={<CategoriesPage />} />
+          <Route path="cash" element={<CashBankPage />} />
+          <Route path="pos-admin" element={<PosAdminPage />} />
+          <Route path="stock-counts" element={<StockCountsPage />} />
+          <Route path="wastage" element={<WastagePage />} />
+          <Route path="transfers" element={<TransfersPage />} />
+          {/* interim wrapper URLs from the merge — now native pages */}
+          <Route path="s/:screen" element={<LegacyRedirect kind="s" />} />
+          <Route path="m/:screen" element={<LegacyRedirect kind="m" />} />
           {PENDING.map(([path, title, note]) => (
             <Route key={path} path={path} element={<ComingSoon title={title} note={note} />} />
           ))}

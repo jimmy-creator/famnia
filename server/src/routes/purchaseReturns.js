@@ -28,6 +28,7 @@ import { protect, admin } from '../middleware/auth.js';
 import { rangeStart, rangeEnd } from '../utils/dates.js';
 import { lineKey, parseVariantIndex, totalsByKey } from '../utils/lines.js';
 import { generatePurchaseReturnPdf } from '../services/purchaseDocs.js';
+import { hasPermission } from '../hub/permissions.js';
 
 const router = Router();
 
@@ -36,7 +37,7 @@ const genReturnNumber = () =>
 
 router.get('/', protect, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+    if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     const where = {};
@@ -85,7 +86,7 @@ router.get('/:id', protect, async (req, res) => {
 // PDF (opens in the browser to print or save) — goes with the stock to the supplier.
 router.get('/:id/pdf', protect, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+    if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     const row = await PurchaseReturn.findByPk(req.params.id, {
@@ -110,7 +111,7 @@ router.get('/:id/pdf', protect, async (req, res) => {
 });
 
 router.post('/', protect, async (req, res) => {
-  if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('products')) {
+  if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
     return res.status(403).json({ message: 'Forbidden' });
   }
   const t = await sequelize.transaction();

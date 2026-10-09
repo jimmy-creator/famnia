@@ -32,6 +32,7 @@ import { protect, requirePermission } from '../middleware/auth.js';
 import { refundValuer } from '../utils/refund.js';
 import { rangeStart, rangeEnd } from '../utils/dates.js';
 import { dp } from '../utils/money.js';
+import { hasPermission } from '../hub/permissions.js';
 
 const router = Router();
 
@@ -56,7 +57,7 @@ async function authEither(req, res, next) {
       }
       // Otherwise only admin or staff with the orders permission — a lookup
       // returns the customer's name, phone and address.
-      if (user.role === 'admin' || (user.role === 'staff' && (user.permissions || []).includes('orders'))) {
+      if (user.role === 'admin' || (user.role === 'staff' && hasPermission(user, 'orders'))) {
         return next();
       }
       return res.status(403).json({ message: 'Not authorised' });
@@ -423,7 +424,7 @@ router.post('/', authEither, async (req, res) => {
 // ─── Admin list ────────────────────────────────────────────────────
 router.get('/', protect, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('orders')) {
+    if (req.user.role !== 'admin' && !hasPermission(req.user, 'orders')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     const where = {};
@@ -456,7 +457,7 @@ router.get('/', protect, async (req, res) => {
 
 router.get('/:id', protect, async (req, res) => {
   try {
-    if (req.user.role !== 'admin' && !(req.user.permissions || []).includes('orders')) {
+    if (req.user.role !== 'admin' && !hasPermission(req.user, 'orders')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     const row = await SalesReturn.findByPk(req.params.id, {

@@ -26,11 +26,12 @@ import sequelize from '../config/database.js';
 import { rollup } from '../utils/posTotals.js';
 import { rangeStart, rangeEnd } from '../utils/dates.js';
 import { dp } from '../utils/money.js';
+import { hasPermission } from '../hub/permissions.js';
 
 // Shift history is POS money data: a cashier sees their own, staff need the
 // analytics permission, customers see nothing.
 const canSeeAllShifts = (user) =>
-  user.role === 'admin' || (user.role === 'staff' && (user.permissions || []).includes('analytics'));
+  user.role === 'admin' || (user.role === 'staff' && hasPermission(user, 'analytics'));
 
 const router = Router();
 
