@@ -414,6 +414,8 @@ export async function decrementOnlineStock(order) {
   if (process.env.FEATURE_MULTILOC !== 'true') return false;
   const onlineLocId = await getOnlineLocationId();
   if (!onlineLocId) return false;
+  // The staff hub already took (or put back) this order's stock — never twice.
+  if (order.stockState === 'deducted' || order.stockState === 'restored') return true;
 
   const items = Array.isArray(order.items) ? order.items : [];
   const touched = new Set();

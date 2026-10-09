@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { accessQuery, assignDeliveries, deliveryStaffQuery, ordersQuery, qk } from '@/hub/lib/api';
 import { QAR } from '@/hub/lib/format';
 import { can } from '@/hub/lib/permissions';
+import { dayOf } from '@/hub/lib/reports';
 import { useHubTitle } from '@/hub/lib/useHubTitle';
 
 const TABS = [
@@ -92,7 +93,8 @@ export default function DeliveryPage() {
       if (fulfilment !== 'All' && o.fulfilmentMethod !== fulfilment) return false;
       if (staffFilter === 'Unassigned' && o.assignedTo) return false;
       if (staffFilter !== 'All' && staffFilter !== 'Unassigned' && o.assignedTo !== staffFilter) return false;
-      const dated = String(o.deliveryDate ?? o.orderDate ?? '').slice(0, 10);
+      // deliveryDate is a store-day string already; orderDate is a UTC timestamp → store day.
+      const dated = o.deliveryDate ? String(o.deliveryDate).slice(0, 10) : dayOf(o.orderDate);
       if (from && dated < from) return false;
       if (to && dated > to) return false;
       if (!q) return true;

@@ -214,7 +214,6 @@ function Denied({ what }) {
   );
 }
 
-/** Profit lines, including our non-cash depreciation / stock-loss lines so net reconciles. */
 function profitLines(f) {
   const lines = [
     ['Product sales (delivery charges excluded)', f.productSales],
@@ -222,8 +221,6 @@ function profitLines(f) {
     ['Gross profit', f.grossProfit],
     ['Daily expenses (assets excluded)', f.expenses],
   ];
-  if (f.depreciation) lines.push(['Depreciation of assets (non-cash)', f.depreciation]);
-  if (f.stockLosses) lines.push(['Stock losses — wastage & count variances (non-cash)', f.stockLosses]);
   lines.push(['Estimated net profit', f.netProfit]);
   lines.push(['Delivery charges collected (not product revenue)', f.deliveryCharges]);
   return lines;
@@ -243,6 +240,7 @@ export default function ReportsPage() {
   const canExpenses = canFinancial || can(access, 'expenses.view');
   const canAssets = canFinancial || can(access, 'assets.view');
   const canLiabilities = canFinancial || can(access, 'liabilities.view');
+  const canCost = can(access, 'products.view_cost');
 
   // Only fetch what the API will actually serve this account.
   const expenses = useQuery({ ...expensesQuery, enabled: Boolean(access) && canExpenses });
@@ -390,7 +388,7 @@ export default function ReportsPage() {
           p.size ?? '',
           p.color ?? '',
           p.currentStock,
-          p.currentStock * p.costPrice,
+          canCost ? p.currentStock * p.costPrice : '',
           p.currentStock * p.sellingPriceQar,
           p.stockStatus,
         ]),
@@ -811,7 +809,7 @@ export default function ReportsPage() {
                 <Kpi label="SKUs" value={inventory.skuCount} />
                 <Kpi label="Active SKUs" value={inventory.activeCount} />
                 <Kpi label="Units in stock" value={inventory.units} />
-                <Kpi label="Cost value" value={money(inventory.costValue)} />
+                {canCost && <Kpi label="Cost value" value={money(inventory.costValue)} />}
                 <Kpi label="Retail value" value={money(inventory.retailValue)} />
                 <Kpi label="Low stock" value={inventory.lowStock.length} tone="warn" />
                 <Kpi label="Out of stock" value={inventory.outOfStock.length} tone="danger" />

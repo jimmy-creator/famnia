@@ -36,12 +36,16 @@ const isoDay = (d) =>
 const day = (v) =>
   v ? new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
-/** Local calendar day of a timestamp or a YYYY-MM-DD date. */
+/**
+ * Store calendar day (Asia/Qatar, via lib/storeTime) of a timestamp, or a
+ * YYYY-MM-DD date as is. isoDay above is only for calendar arithmetic on
+ * day strings, where the browser's own zone cancels out.
+ */
 const localDay = (v) => {
   if (!v) return '';
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? '' : isoDay(d);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-CA');
 };
 
 /** Inclusive [from, to] ISO-day range for the chosen period around `anchor`. */
@@ -70,7 +74,7 @@ export default function DeliveryReportsPage() {
   const staff = useQuery(deliveryStaffQuery);
 
   const [period, setPeriod] = useState('daily');
-  const [anchor, setAnchor] = useState(() => isoDay(new Date()));
+  const [anchor, setAnchor] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [driverFilter, setDriverFilter] = useState('all');
 
   const { from, to } = periodRange(period, anchor);

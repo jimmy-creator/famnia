@@ -535,7 +535,7 @@ function SettingsForm({ saved, isAdmin, onRefresh, section, setSection, backup }
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Downloads one Excel file with a separate sheet for Products, Inventory, Stock In, Stock Out, Stock
-              Adjustments, Orders, Order Items, Returns, Customers, Payments, Expenses, Assets and Audit Logs. This
+              Adjustments, Orders, Order Items, Returns, Customers, Payments, Expenses, Assets, Liabilities, Reimbursements and Audit Logs. This
               only reads your records — nothing is changed, deleted or recalculated.
             </p>
             {isAdmin ? (

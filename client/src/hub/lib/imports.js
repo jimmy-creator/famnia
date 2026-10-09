@@ -155,6 +155,7 @@ export async function validateImport(kind, grid, mapping, products) {
   const todayIso = today();
   const seen = new Map();
   const seenCodes = new Map();
+  const seenCombos = new Map();
   const autoCodes = kind !== 'stock_in' && body.length ? await nextProductCodes(body.length) : [];
   let autoCodeAt = 0;
   const rows = [];
@@ -211,6 +212,24 @@ export async function validateImport(kind, grid, mapping, products) {
       if (sellingPrice === null || sellingPrice < 0) messages.push('Selling Price must be a number of 0 or more.');
       if (reorderLevel !== null && (!Number.isInteger(reorderLevel) || reorderLevel < 0)) {
         messages.push('Reorder Level must be a whole number of 0 or more.');
+      }
+      // Rows with a size or colour join the product of the same name and
+      // category, so that size/colour must be new for it (rows with neither
+      // become separate products and can't clash).
+      const rowSize = optional(at('size'));
+      const rowColor = optional(at('color'));
+      if ((rowSize || rowColor) && text(at('name')) && text(at('category'))) {
+        const lc = (v) => String(v ?? '').trim().toLowerCase();
+        const combo = [text(at('name')), text(at('category')), rowSize, rowColor].map(lc).join('|');
+        const clash = products.find((p) => p.variantIndex !== null && p.variantIndex !== undefined
+          && [p.name, p.category, p.size, p.color].map(lc).join('|') === combo);
+        if (clash) {
+          messages.push(`${text(at('name'))} already has a ${[rowSize, rowColor].filter(Boolean).join(' / ')} variant (${clash.sku}).`);
+        } else if (seenCombos.has(combo)) {
+          messages.push(`Same size and colour as row ${seenCombos.get(combo)} for this product.`);
+        } else {
+          seenCombos.set(combo, index + 2);
+        }
       }
       if (rawCode && !productCode) {
         messages.push('Product Code must contain digits only.');

@@ -207,10 +207,7 @@ export const setStaffPermissions = (member, permissions) =>
   send('put', `/hub/staff/${member.id}/permissions`, { permissions });
 /** Resolves { changed, settings }. */
 export const saveAppSettings = (next) => send('put', '/hub/settings', next);
-export const saveDeliveryPaymentModes = async (modes) => {
-  const current = await get('/hub/settings');
-  return send('put', '/hub/settings', { ...current, deliveryPaymentModes: modes });
-};
+export const saveDeliveryPaymentModes = (modes) => send('put', '/hub/settings/delivery-payment-modes', { modes });
 /** { sheets: [{ name, rows: [object] }] } — read-only export. */
 export const fetchBackup = () => get('/hub/backup');
 export const cataloguePreviewQuery = { queryKey: qk.cataloguePreview, queryFn: () => get('/hub/catalogue-replace/preview') };

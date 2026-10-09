@@ -89,6 +89,20 @@ function notSelf(req, user, what) {
   if (user.id === req.user.id) throw bad(`You cannot change your own ${what}.`, 403);
 }
 
+/**
+ * Admin accounts are managed by Admins only. "Manage staff" alone must never
+ * reach one — creating an Admin, or resetting / switching off an existing
+ * Admin, would hand over full control.
+ */
+function adminTargetGuard(req, role) {
+  if (role === 'admin' && req.user.role !== 'admin') throw bad('Only an Admin can manage Admin accounts.', 403);
+}
+
+/** Business settings and the full data export are the Admin's alone. */
+const adminOnlySettings = (req, res, next) => (req.user.role === 'admin'
+  ? next()
+  : res.status(403).json({ message: 'Only an Admin can change business settings.' }));
+
 const MANAGE = ['admin.manage_staff', 'admin.change_permissions'];
 
 // ════════════════════════════════════════════════════════════════════
@@ -115,6 +129,7 @@ function staffInput(b) {
 router.post('/staff', need('admin.manage_staff'), wrap(async (req, res) => {
   const b = req.body || {};
   const { fullName, role, phone, permissions } = staffInput(b);
+  adminTargetGuard(req, role);
   const username = String(b.username || '').trim().toLowerCase();
   const uProblem = usernameProblem(username);
   if (uProblem) throw bad(uProblem);
@@ -141,6 +156,7 @@ const emailConfigured = () => Boolean(process.env.SMTP_EMAIL && process.env.SMTP
 router.post('/staff/invite', need('admin.manage_staff'), wrap(async (req, res) => {
   const b = req.body || {};
   const { fullName, role, phone, permissions } = staffInput(b);
+  adminTargetGuard(req, role);
   const email = String(b.email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw bad('Enter a valid email address.');
   if (!emailConfigured()) {
@@ -166,6 +182,7 @@ router.post('/staff/invite', need('admin.manage_staff'), wrap(async (req, res) =
 
 router.post('/staff/:id/reset-password', need('admin.manage_staff'), wrap(async (req, res) => {
   const user = await findStaff(req.params.id);
+  adminTargetGuard(req, user.role);
   const password = String(req.body?.password || '').trim() || newTemporaryPassword();
   const problem = passwordProblem(password);
   if (problem) throw bad(problem);
@@ -183,6 +200,7 @@ router.patch('/staff/:id/status', need('admin.manage_staff'), wrap(async (req, r
   if (!STATUSES.includes(status)) throw bad('Choose a valid status.');
   const user = await findStaff(req.params.id);
   notSelf(req, user, 'account status');
+  adminTargetGuard(req, user.role);
   const from = user.status || 'active';
   if (from === status) return res.json({ ok: true });
   if (user.role === 'admin' && from === 'active' && status !== 'active' && (await activeAdminCount()) <= 1) {
@@ -199,13 +217,14 @@ router.patch('/staff/:id/status', need('admin.manage_staff'), wrap(async (req, r
   res.json({ ok: true });
 }));
 
-router.patch('/staff/:id/role', need('admin.change_permissions', 'admin.manage_staff'), wrap(async (req, res) => {
+router.patch('/staff/:id/role', need('admin.change_permissions'), wrap(async (req, res) => {
   const role = req.body?.role;
   if (!STAFF_ROLES.includes(role)) throw bad('Choose a valid role.');
   const user = await findStaff(req.params.id);
   notSelf(req, user, 'role');
   if (user.role === role) return res.json({ ok: true });
   if (role === 'admin' && req.user.role !== 'admin') throw bad('Only an Admin can make someone an Admin.', 403);
+  adminTargetGuard(req, user.role);
   if (user.role === 'admin' && (user.status || 'active') === 'active' && (await activeAdminCount()) <= 1) {
     throw bad('The last active Admin cannot be downgraded.');
   }
@@ -239,7 +258,7 @@ function describe(details) {
   return JSON.stringify(details).slice(0, 500);
 }
 
-router.get('/activity', need('admin.view_audit', 'admin.manage_staff'), wrap(async (req, res) => {
+router.get('/activity', need('admin.view_audit'), wrap(async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 1000);
   const rows = await ActivityLog.findAll({
     order: [['createdAt', 'DESC'], ['id', 'DESC']],
@@ -309,7 +328,7 @@ function normaliseSettings(input, previous) {
   if (!['100x130', '100x150'].includes(next.labelSize)) errors.labelSize = 'Choose a label size.';
   for (const f of ['invoiceFooter', 'labelFooter']) if (next[f].length > 200) errors[f] = 'Keep the footer under 200 characters.';
   for (const f of ['courierNames', 'categories', 'sizes', 'colours', 'paymentMethods', 'paymentHolders', 'deliveryPaymentModes']) {
-    if (!next[f].length) errors[f] = 'Add at least one entry.';
+    if (!next[f].length) errors[f] = f === 'courierNames' ? 'Add at least one courier or driver.' : 'Add at least one entry.';
   }
   return { next, errors };
 }
@@ -317,7 +336,7 @@ function normaliseSettings(input, previous) {
 const asText = (v) => (Array.isArray(v) ? v.join(', ') : String(v));
 
 /** Only changed keys are written; each change goes into the activity log. */
-router.put('/settings', need('admin.settings'), wrap(async (req, res) => {
+router.put('/settings', adminOnlySettings, wrap(async (req, res) => {
   const previous = await loadAppSettings();
   const { next, errors } = normaliseSettings(req.body || {}, previous);
   if (Object.keys(errors).length) {
@@ -333,6 +352,23 @@ router.put('/settings', need('admin.settings'), wrap(async (req, res) => {
   res.json({ changed: changes.length, settings: await loadAppSettings() });
 }));
 
+/** Delivery payment modes on their own, so an unrelated invalid setting can't block the save. */
+router.put('/settings/delivery-payment-modes', adminOnlySettings, wrap(async (req, res) => {
+  const raw = Array.isArray(req.body?.modes) ? req.body.modes : [];
+  const modes = [];
+  for (const m of raw.map((x) => String(x).trim().slice(0, 30)).filter(Boolean)) {
+    if (!modes.some((x) => x.toLowerCase() === m.toLowerCase())) modes.push(m);
+  }
+  if (!modes.length) throw bad('Keep at least one payment mode.');
+  const previous = (await loadAppSettings()).deliveryPaymentModes;
+  await Setting.upsert({ key: SETTING_KEYS.deliveryPaymentModes, value: modes.join(', ') });
+  if (asText(previous) !== asText(modes)) {
+    await hubLog(req, 'Setting updated', 'Settings', SETTING_KEYS.deliveryPaymentModes,
+      `${SETTING_LABELS.deliveryPaymentModes}: "${asText(previous)}" → "${asText(modes)}"`);
+  }
+  res.json({ ok: true, modes });
+}));
+
 // ════════════════════════════════════════════════════════════════════
 // Backup (export only — reads, never writes)
 // ════════════════════════════════════════════════════════════════════
@@ -341,7 +377,7 @@ const OUT_KINDS = ['stock_out', 'wastage', 'supplier_return', 'transfer_out'];
 
 const plain = (row) => (row && typeof row.get === 'function' ? row.get({ plain: true }) : row);
 
-router.get('/backup', need('admin.settings'), wrap(async (req, res) => {
+router.get('/backup', adminOnlySettings, wrap(async (req, res) => {
   const [skus, movements, orders, returns, customers, expenses, assets, activity, orderAudit, productAudit, staffUsers] = await Promise.all([
     listSkus({ showCost: true }),
     StockMovement.findAll({ order: [['createdAt', 'ASC'], ['id', 'ASC']], raw: true }),

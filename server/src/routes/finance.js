@@ -37,7 +37,7 @@ import sequelize from '../config/database.js';
 import {
   CashAccount, CashTransaction, ExpenseCategory, Expense, CashTransfer,
   Location, User, Order, SalesReturn, Product, ProductStock,
-  FixedAsset, DepreciationEntry, Wastage, StockCount, HubExpenseEntry,
+  FixedAsset, DepreciationEntry, Wastage, StockCount, HubExpenseEntry, OrderReturn,
   writeCashTxn, getCashAccountBalance,
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
@@ -639,6 +639,32 @@ export async function computePnl({ from, to, locationId = null }) {
         // back in stock with COGS never reversed, and shows up as a
         // balance-sheet difference rather than being silently absorbed.
         if (it.costPrice != null) refundCogs += parseFloat(it.costPrice) * qty;
+      }
+    }
+    // Hub returns (OrderReturn) on paid orders: the returned units' line value
+    // comes off revenue, and their cost comes back off COGS when they went
+    // back into stock (a written-off return keeps its cost as a loss).
+    if (!locationFilter.locationId) {
+      const hubReturns = await OrderReturn.findAll({
+        where: { createdAt: { [Op.between]: [from, to] } },
+        attributes: ['orderId', 'lineIndex', 'quantity', 'restock'],
+        raw: true,
+      });
+      if (hubReturns.length) {
+        const paidOrders = await Order.findAll({
+          where: { id: [...new Set(hubReturns.map((r) => r.orderId))], paymentStatus: 'paid' },
+          attributes: ['id', 'items'],
+        });
+        const byId = new Map(paidOrders.map((o) => [o.id, o]));
+        for (const r of hubReturns) {
+          const item = (byId.get(r.orderId)?.items || [])[r.lineIndex];
+          if (!item) continue;
+          const sold = parseInt(item.quantity, 10) || 0;
+          const qty = parseInt(r.quantity, 10) || 0;
+          const lineTotal = item.lineTotal != null ? parseFloat(item.lineTotal) : (parseFloat(item.price) || 0) * sold;
+          if (sold > 0) refunds += (lineTotal / sold) * qty;
+          if (r.restock && item.costPrice != null) refundCogs += parseFloat(item.costPrice) * qty;
+        }
       }
     }
 

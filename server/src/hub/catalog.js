@@ -78,6 +78,9 @@ export function skuFields(product, variantIndex) {
     batchNumber: (v ? v.batchNumber : product.batchNumber) || null,
     sourceCountry: (v ? v.sourceCountry : product.sourceCountry) || null,
     wholesaler: (v ? v.wholesaler : product.wholesaler) || null,
+    // Per-SKU supplier and image live on the variant; the product's are the fallback.
+    supplier: (v && v.supplier) || product.preferredSupplier?.name || null,
+    image: (v && v.image) || (Array.isArray(product.images) && product.images[0]) || null,
   };
 }
 
@@ -174,8 +177,8 @@ export function flattenSku(product, variantIndex, { totals, stock, settings, sup
     profitPercent: cost > 0 ? round2(((f.sellingPrice - cost) / cost) * 100) : 0,
     shelfLocation: f.shelfLocation,
     reorderLevel,
-    supplier: supplierName || null,
-    imageUrl: (Array.isArray(product.images) && product.images[0]) || null,
+    supplier: (variantIndex != null && product.variants?.[variantIndex]?.supplier) || supplierName || null,
+    imageUrl: f.image,
     stockStatus: status,
     replenishQuantity: status === 'In Stock' ? 0 : Math.max(reorderLevel * settings.reorderMultiplier - current, 0),
     notes: f.notes,

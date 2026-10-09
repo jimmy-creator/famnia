@@ -186,7 +186,8 @@ router.post('/expenses', need('expenses.add', 'assets.add'), wrap(async (req, re
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.date || ''))) throw bad('Date is required.');
   const fundingSource = FUNDING_SOURCES.includes(b.fundingSource) ? b.fundingSource : null;
   if (!fundingSource) throw bad('Choose where the money came from.');
-  const paymentMethod = PAYMENT_METHODS.includes(b.paymentMethod) ? b.paymentMethod : 'Cash';
+  if (b.paymentMethod && !PAYMENT_METHODS.includes(b.paymentMethod)) throw bad('Choose a valid payment method.');
+  const paymentMethod = b.paymentMethod || 'Cash';
   const personal = fundingSource === PERSONAL_FUNDING_SOURCE;
   const person = clean(b.purchasePerson, 120);
   if (personal && !person) throw bad('Purchase person is required when the payment was made personally.');
@@ -252,8 +253,9 @@ router.patch('/expenses/:id/purchased-by', need('expenses.edit', 'assets.edit'),
   const next = clean(req.body?.purchasedBy, 120);
   if (!next) throw bad('Enter the person who made this purchase.');
   const before = entry.purchasedBy || entry.purchasePerson || 'Not Recorded';
+  if (next === before) return res.json({ purchasedBy: next });
   await entry.update({ purchasedBy: next });
-  await hubLog(req, 'Purchased by updated', 'Expenses & Assets', entry.reference, `${before} → ${next}`);
+  await hubLog(req, 'Purchased by corrected', 'Expenses & Assets', entry.reference, `${before} → ${next}`);
   res.json({ purchasedBy: next });
 }));
 
@@ -319,7 +321,8 @@ router.post('/liabilities/:id/reimburse', need('liabilities.reimburse', 'liabili
     if (!(amount > 0)) throw bad('Enter a valid amount.');
     if (amount > outstanding + 0.001) throw bad(`Amount cannot exceed the outstanding balance of QAR ${outstanding.toFixed(2)}.`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.paidOn || ''))) throw bad('Enter the date it was paid.');
-    const paymentMethod = PAYMENT_METHODS.includes(b.paymentMethod) ? b.paymentMethod : 'Cash';
+    if (b.paymentMethod && !PAYMENT_METHODS.includes(b.paymentMethod)) throw bad('Choose a valid payment method.');
+    const paymentMethod = b.paymentMethod || 'Cash';
     const fundingSource = COMPANY_FUNDING_SOURCES.includes(b.fundingSource) ? b.fundingSource : METHOD_DEFAULT_SOURCE[paymentMethod];
     const account = await accountForSource(fundingSource, t);
     const entry = await HubExpenseEntry.findByPk(liability.entryId, { transaction: t });

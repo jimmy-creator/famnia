@@ -26,8 +26,10 @@ const router = Router();
 
 // ── plumbing ────────────────────────────────────────────────────────
 const wrap = (fn) => wrapAs('hubCatalog', fn);
+// Collapses runs of spaces/tabs but keeps line breaks (multi-line notes and reasons).
 const clean = (v) => {
-  const s = v === undefined || v === null ? '' : String(v).replace(/\s+/g, ' ').trim();
+  const s = v === undefined || v === null ? ''
+    : String(v).replace(/\r\n?/g, '\n').replace(/[^\S\n]+/g, ' ').replace(/ *\n */g, '\n').trim();
   return s || null;
 };
 const money = (v) => {
@@ -161,6 +163,8 @@ router.get('/skus/:key/history', need('inventory.view_history'), wrap(async (req
     }),
   ]);
   const names = await namesById([...moves.map((m) => m.createdBy), ...changes.map((c) => c.changedBy)]);
+  // Cost is removed from the data, not just hidden, without "View cost values".
+  const showCost = can(req, 'products.view_cost');
   let running = 0;
   const movements = moves.map((m) => {
     const before = running;
@@ -176,13 +180,13 @@ router.get('/skus/:key/history', need('inventory.view_history'), wrap(async (req
       reason: m.reason || null,
       notes: m.notes || null,
       supplier: m.supplier || null,
-      cost: m.unitCost === null ? null : parseFloat(m.unitCost),
+      cost: !showCost || m.unitCost === null ? null : parseFloat(m.unitCost),
       by: m.createdBy ? names.get(m.createdBy) ?? null : null,
     };
   }).reverse();
   res.json({
     movements,
-    fieldChanges: changes.map((c) => ({
+    fieldChanges: changes.filter((c) => showCost || c.field !== 'Cost price').map((c) => ({
       id: c.id,
       createdAt: c.createdAt,
       field: c.field,
@@ -241,20 +245,29 @@ router.get('/batches', need(...VIEW_SKUS), wrap(async (req, res) => {
 }));
 
 router.get('/suppliers', need(...VIEW_SKUS), wrap(async (req, res) => {
-  const [suppliers, moves] = await Promise.all([
+  // Active supplier records, products' default suppliers (incl. per-size ones)
+  // and suppliers named on Stock In receipts — not wholesalers or returns.
+  const [suppliers, moves, products] = await Promise.all([
     Supplier.findAll({ where: { active: true }, attributes: ['name'], raw: true }),
     StockMovement.findAll({
-      attributes: ['supplier', 'wholesaler'],
-      where: { [Op.or]: [{ supplier: { [Op.ne]: null } }, { wholesaler: { [Op.ne]: null } }] },
-      group: ['supplier', 'wholesaler'],
+      attributes: ['supplier'],
+      where: { kind: 'stock_in', supplier: { [Op.ne]: null } },
+      group: ['supplier'],
       raw: true,
+    }),
+    Product.findAll({
+      attributes: ['id', 'variants'],
+      include: [{ model: Supplier, as: 'preferredSupplier', attributes: ['name'] }],
     }),
   ]);
   const names = new Set();
   for (const s of suppliers) if (s.name?.trim()) names.add(s.name.trim());
-  for (const m of moves) {
-    if (m.supplier?.trim()) names.add(m.supplier.trim());
-    if (m.wholesaler?.trim()) names.add(m.wholesaler.trim());
+  for (const m of moves) if (m.supplier?.trim()) names.add(m.supplier.trim());
+  for (const p of products) {
+    if (p.preferredSupplier?.name?.trim()) names.add(p.preferredSupplier.name.trim());
+    for (const v of Array.isArray(p.variants) ? p.variants : []) {
+      if (v && !v.archived && typeof v.supplier === 'string' && v.supplier.trim()) names.add(v.supplier.trim());
+    }
   }
   res.json([...names].sort((a, b) => a.localeCompare(b)));
 }));
@@ -300,7 +313,10 @@ async function createSkuGroup({ base, skus, transaction, importBatchId = null })
       options, sku: s.sku, barcode: s.productCode, price: s.sellingPrice, costPrice: s.costPrice, stock: 0,
       active: s.isActive !== false,
     };
-    for (const k of ['rack', 'shelfLocation', 'batchNumber', 'sourceCountry', 'wholesaler']) if (s[k]) v[k] = s[k];
+    for (const k of ['rack', 'shelfLocation', 'batchNumber', 'sourceCountry', 'wholesaler', 'notes', 'supplier', 'description', 'designModel']) {
+      if (s[k]) v[k] = s[k];
+    }
+    if (s.imageUrl) v.image = s.imageUrl;
     if (s.reorderLevel !== undefined && s.reorderLevel !== null) v.reorderLevel = s.reorderLevel;
     if (importBatchId) v.importBatchId = importBatchId;
     return v;
@@ -421,6 +437,14 @@ router.post('/products', need('products.add'), wrap(async (req, res) => {
   const imageUrl = clean(b.imageUrl);
   if (imageUrl && !/^(https:\/\/|\/uploads\/)/i.test(imageUrl)) throw bad('Product Image URL must be a secure https:// link.');
   const reorderLevel = Math.max(0, parseInt(b.reorderLevel, 10) || 0);
+  // The form's product-level fields belong to every SKU it creates, including
+  // SKUs appended to an existing product of the same name and category.
+  for (const it of items) {
+    Object.assign(it, {
+      isActive: b.isActive !== false, reorderLevel, notes: clean(b.notes), supplier: clean(b.supplier), imageUrl,
+      description: clean(b.description), designModel: clean(b.designModel),
+    });
+  }
 
   const t = await sequelize.transaction();
   let placed;
@@ -461,14 +485,42 @@ router.put('/skus/:key', need('products.edit'), wrap(async (req, res) => {
   const isAdmin = req.user.role === 'admin';
   const t = await sequelize.transaction();
   let changes = [];
+  let newKey = req.params.key;
   let sku;
   try {
-    const { product, variantIndex } = await loadSku(req.params.key, { transaction: t, lock: t.LOCK.UPDATE });
+    const loaded = await loadSku(req.params.key, { transaction: t, lock: t.LOCK.UPDATE });
+    const { product } = loaded;
+    let { variantIndex } = loaded;
     const before = skuFields(product, variantIndex);
     sku = before.sku;
     const lock = await skuLock(product, variantIndex);
-    const variants = hasVariants(product) ? product.variants.map((v) => ({ ...v })) : null;
-    const v = variantIndex == null ? null : variants[variantIndex];
+    let variants = hasVariants(product) ? product.variants.map((v) => ({ ...v })) : null;
+    let v = variantIndex == null ? null : variants[variantIndex];
+
+    // A single-SKU product given a size / colour becomes a one-variant product
+    // (admin only, and only while it has no history — the same rule as sizes).
+    const wantsOptions = (b.size !== undefined && clean(b.size)) || (b.color !== undefined && clean(b.color));
+    if (!v && isAdmin && wantsOptions) {
+      if (lock.hasHistory) throw bad('This product has transaction history. Create a new SKU for a different size or colour.');
+      const variant = {
+        options: {}, sku: before.sku, barcode: product.barcode || null, price: before.sellingPrice,
+        costPrice: before.costPrice, stock: parseInt(product.stock, 10) || 0, active: true,
+      };
+      for (const k of ['rack', 'shelfLocation', 'notes', 'batchNumber', 'sourceCountry', 'wholesaler', 'importBatchId']) {
+        if (product[k]) variant[k] = product[k];
+      }
+      if (product.reorderLevel !== null && product.reorderLevel !== undefined) variant.reorderLevel = product.reorderLevel;
+      // Stock, ledger and change log move with the SKU. Bulk updates on purpose:
+      // ProductStock and its ledger rows move together, so no movement is due.
+      const from = { productId: product.id, variantIndex: { [Op.is]: null } };
+      await ProductStock.update({ variantIndex: 0 }, { where: from, transaction: t, hooks: false });
+      await StockMovement.update({ variantIndex: 0 }, { where: from, transaction: t, hooks: false });
+      await ProductAuditLog.update({ variantIndex: 0 }, { where: from, transaction: t, hooks: false });
+      variants = [variant];
+      v = variant;
+      variantIndex = 0;
+      changes.push({ field: 'Converted to size / colour SKU', oldValue: null, newValue: before.sku });
+    }
     const setSku = (field, value) => {
       if (v) v[field] = value;
       else product[field] = value;
@@ -531,9 +583,14 @@ router.put('/skus/:key', need('products.edit'), wrap(async (req, res) => {
     }
     if (b.supplier !== undefined) {
       const name = clean(b.supplier);
-      if (track('Default supplier', product.preferredSupplier?.name ?? null, name)) {
-        const supplier = await supplierByName(name, t);
-        product.preferredSupplierId = supplier?.id ?? null;
+      if (track('Default supplier', before.supplier, name)) {
+        if (v) {
+          // One size's supplier — the variant's own; the other sizes keep theirs.
+          v.supplier = name;
+        } else {
+          const supplier = await supplierByName(name, t);
+          product.preferredSupplierId = supplier?.id ?? null;
+        }
       }
     }
     if (b.costPrice !== undefined && b.costPrice !== null && can(req, 'products.edit_cost') && can(req, 'products.view_cost')) {
@@ -562,14 +619,18 @@ router.put('/skus/:key', need('products.edit'), wrap(async (req, res) => {
     }
     if (b.imageUrl !== undefined) {
       const url = clean(b.imageUrl);
-      const current = (Array.isArray(product.images) && product.images[0]) || null;
+      const current = before.image;
       if (url !== current) {
         if (!can(req, 'products.images')) throw bad('You do not have image permission.', 403);
         if (url && !/^(https:\/\/|\/uploads\/)/i.test(url)) throw bad('Use an uploaded image or a secure https:// link.');
         track('Product image', current, url);
-        const rest = Array.isArray(product.images) ? product.images.slice(1) : [];
-        product.images = url ? [url, ...rest] : rest;
-        product.changed('images', true);
+        if (v) {
+          v.image = url;
+        } else {
+          const rest = Array.isArray(product.images) ? product.images.slice(1) : [];
+          product.images = url ? [url, ...rest] : rest;
+          product.changed('images', true);
+        }
       }
     }
 
@@ -581,12 +642,22 @@ router.put('/skus/:key', need('products.edit'), wrap(async (req, res) => {
       }
       await product.save({ transaction: t });
       await audit(product, variantIndex, sku, changes, req.user.id, t);
+      // Name and category belong to the product, so every other size changed too.
+      const shared = changes.filter((c) => c.field === 'Product name' || c.field === 'Category');
+      if (shared.length && variants) {
+        for (const { variantIndex: other } of skuEntries(product)) {
+          if (other === variantIndex) continue;
+          await audit(product, other, displaySku(product, other), shared, req.user.id, t);
+        }
+      }
     }
+    newKey = skuKey(product.id, variantIndex);
     await t.commit();
   } catch (err) {
     if (!t.finished) await t.rollback();
     throw err;
   }
+  if (newKey !== req.params.key) await recomputeAfter([parseInt(newKey, 10)]);
   if (changes.length) {
     await hubLog(req, 'Product edited', 'Products', sku,
       changes.map((c) => `${c.field}: ${c.oldValue ?? '—'} → ${c.newValue ?? '—'}`).join('; '));
@@ -594,7 +665,7 @@ router.put('/skus/:key', need('products.edit'), wrap(async (req, res) => {
       await hubLog(req, 'Price changed', 'Products', sku);
     }
   }
-  res.json({ key: req.params.key, sku, changes: changes.length });
+  res.json({ key: newKey, sku, changes: changes.length });
 }));
 
 router.post('/skus/:key/active', need('products.deactivate'), wrap(async (req, res) => {
@@ -641,11 +712,14 @@ router.delete('/skus/:key', need('products.deactivate'), wrap(async (req, res) =
 router.post('/skus/:key/adjust', need('inventory.adjust'), wrap(async (req, res) => {
   const { systemQuantity, countedQuantity, reason, notes, idempotencyKey } = req.body || {};
   const counted = Number(countedQuantity);
-  if (!Number.isInteger(counted) || counted < 0) throw bad('Counted quantity cannot be negative.');
+  if (!Number.isFinite(counted) || counted < 0) throw bad('Counted quantity cannot be negative.');
+  if (!Number.isInteger(counted)) throw bad('Counted quantity must be a whole number.');
   if (!clean(reason)) throw bad('Choose a reason for this adjustment.');
   const key = clean(idempotencyKey);
-  if (key && (await StockMovement.findOne({ where: { idempotencyKey: key }, attributes: ['id', 'reference', 'quantity'] }))) {
-    return res.json({ duplicate: true, difference: 0, resulting: counted });
+  const prior = key ? await StockMovement.findOne({ where: { idempotencyKey: key }, attributes: ['id', 'reference', 'quantity'] }) : null;
+  if (prior) {
+    // A repeat of an adjustment already recorded: report what it did.
+    return res.json({ duplicate: true, reference: prior.reference, difference: prior.quantity, resulting: counted });
   }
   const { product, variantIndex } = await loadSku(req.params.key);
   const f = skuFields(product, variantIndex);
@@ -735,16 +809,23 @@ router.patch('/stock-in/:id/batch', need('inventory.batch_edit'), wrap(async (re
 // ════════════════════════════════════════════════════════════════════
 // Stock In / Stock Out
 // ════════════════════════════════════════════════════════════════════
+// The lists carry every movement the Inventory "Stock In" / "Manual Out"
+// columns count, so their totals add up to the same figures.
+const IN_LIST_KINDS = ['stock_in', 'return', 'cancel_restock'];
+const OUT_LIST_KINDS = ['stock_out', 'wastage', 'supplier_return'];
+
 router.get('/stock-in', need('inventory.view', 'inventory.stock_in'), wrap(async (req, res) => {
   const rows = await StockMovement.findAll({
-    where: { kind: 'stock_in' }, order: [['createdAt', 'DESC'], ['id', 'DESC']], limit: 500,
+    where: { kind: IN_LIST_KINDS }, order: [['createdAt', 'DESC'], ['id', 'DESC']], limit: 500,
   });
   const [detail, names] = await Promise.all([skuDetails(rows), namesById(rows.map((r) => r.createdBy))]);
+  const showCost = can(req, 'products.view_cost');
   res.json(rows.map((r) => {
-    const unitCost = r.unitCost === null ? null : parseFloat(r.unitCost);
+    const unitCost = !showCost || r.unitCost === null ? null : parseFloat(r.unitCost);
     return {
       ...detail(r.productId, r.variantIndex),
       id: r.id,
+      type: TYPE_LABELS[r.kind] || 'Stock In',
       reference: r.reference || `IN-${r.id}`,
       date: r.txnDate,
       quantity: r.quantity,
@@ -767,12 +848,13 @@ router.get('/stock-in', need('inventory.view', 'inventory.stock_in'), wrap(async
 
 router.get('/stock-out', need('inventory.view', 'inventory.stock_out'), wrap(async (req, res) => {
   const rows = await StockMovement.findAll({
-    where: { kind: 'stock_out' }, order: [['createdAt', 'DESC'], ['id', 'DESC']], limit: 500,
+    where: { kind: OUT_LIST_KINDS }, order: [['createdAt', 'DESC'], ['id', 'DESC']], limit: 500,
   });
   const [detail, names] = await Promise.all([skuDetails(rows), namesById(rows.map((r) => r.createdBy))]);
   res.json(rows.map((r) => ({
     ...detail(r.productId, r.variantIndex),
     id: r.id,
+    type: TYPE_LABELS[r.kind] || 'Manual Stock Out',
     reference: r.reference || `OUT-${r.id}`,
     date: r.txnDate,
     quantity: -r.quantity,
@@ -786,6 +868,12 @@ router.get('/stock-out', need('inventory.view', 'inventory.stock_out'), wrap(asy
     createdAt: r.createdAt,
   })));
 }));
+
+/** Stock In / Stock Out references are unique per kind (a replay is caught earlier by its idempotency key). */
+async function assertReferenceFree(kind, reference, transaction) {
+  const taken = await StockMovement.findOne({ where: { kind, reference }, attributes: ['id'], transaction });
+  if (taken) throw bad(`Reference ${reference} is already used. Use a new reference.`);
+}
 
 async function duplicateResult(idempotencyKey, reference, key) {
   if (!idempotencyKey) return null;
@@ -819,6 +907,7 @@ router.post('/stock-in', need('inventory.stock_in'), wrap(async (req, res) => {
   try {
     await applyStockDelta({ productId: product.id, variantIndex, delta: 0, transaction: t, ctx: {} });
     previous = await skuStock(product.id, variantIndex, t);
+    await assertReferenceFree('stock_in', reference, t);
     await applyStockDelta({
       productId: product.id, variantIndex, delta: qty, transaction: t,
       ctx: {
@@ -832,14 +921,27 @@ router.post('/stock-in', need('inventory.stock_in'), wrap(async (req, res) => {
     // Historical Stock In rows are never rewritten.
     if (b.updateProductDefaults) {
       let touched = false;
-      if (clean(b.supplier)) {
-        const supplier = await supplierByName(b.supplier, t);
-        if (supplier && supplier.id !== product.preferredSupplierId) {
-          product.preferredSupplierId = supplier.id;
+      const variants = hasVariants(product) ? product.variants.map((v) => ({ ...v })) : null;
+      const supplierName = clean(b.supplier);
+      if (supplierName && supplierName !== f.supplier) {
+        if (variants) {
+          // A size's default supplier is plain text on the variant.
+          variants[variantIndex].supplier = supplierName;
           touched = true;
+        } else {
+          // Only "Manage suppliers" may add a supplier record; others can pick an existing one.
+          const supplier = can(req, 'suppliers.manage')
+            ? await supplierByName(supplierName, t)
+            : await Supplier.findOne({
+              where: sequelize.where(sequelize.fn('LOWER', sequelize.col('name')), supplierName.toLowerCase()),
+              transaction: t,
+            });
+          if (supplier && supplier.id !== product.preferredSupplierId) {
+            product.preferredSupplierId = supplier.id;
+            touched = true;
+          }
         }
       }
-      const variants = hasVariants(product) ? product.variants.map((v) => ({ ...v })) : null;
       for (const k of ['rack', 'shelfLocation']) {
         const val = clean(b[k]);
         if (!val || val === f[k]) continue;
@@ -891,6 +993,7 @@ router.post('/stock-out', need('inventory.stock_out'), wrap(async (req, res) => 
   try {
     const row = await applyStockDelta({ productId: product.id, variantIndex, delta: 0, transaction: t, ctx: {} });
     previous = await skuStock(product.id, variantIndex, t);
+    await assertReferenceFree('stock_out', reference, t);
     if (qty > previous || qty > row.quantity) {
       throw bad(`Only ${Math.min(previous, row.quantity)} unit(s) are in stock for ${f.sku}. Stock cannot go negative.`);
     }
@@ -983,7 +1086,8 @@ router.post('/imports/:kind', wrap(async (req, res, next) => {
   const used = await usedIdentifiers();
   const failures = [];
   const seen = new Set();
-  const seenCodes = new Set();
+  const seenCodes = new Map(); // code → SKU that took it in this file
+  const seenCombos = new Set();
   const newRows = [];
   const stockRows = [];
   for (const raw of input) {
@@ -998,6 +1102,8 @@ router.post('/imports/:kind', wrap(async (req, res, next) => {
       color: clean(raw.color),
       costPrice: money(raw.costPrice) ?? 0,
       sellingPrice: money(raw.sellingPrice) ?? 0,
+      rawCost: money(raw.costPrice),
+      rawPrice: money(raw.sellingPrice),
       quantity: Number(raw.quantity),
       reorderLevel: Number.isInteger(Number(raw.reorderLevel)) ? Number(raw.reorderLevel) : 3,
       supplier: clean(raw.supplier),
@@ -1020,7 +1126,10 @@ router.post('/imports/:kind', wrap(async (req, res, next) => {
     let message = null;
     if (!row.sku) message = 'SKU Code is missing.';
     else if (seen.has(row.sku)) message = 'Duplicate SKU inside this file.';
+    else if (target === 'NEW PRODUCT' && Number.isFinite(row.quantity) && row.quantity < 0) message = 'Opening Stock cannot be negative.';
     else if (!Number.isInteger(row.quantity) || row.quantity < 0) message = 'Quantity must be a whole number.';
+    else if (row.rawCost !== null && row.rawCost < 0) message = 'Cost Price cannot be negative.';
+    else if (target === 'NEW PRODUCT' && row.rawPrice !== null && row.rawPrice < 0) message = 'Selling Price cannot be negative.';
     else if (target === 'NEW PRODUCT' && (existing || used.skus.has(row.sku))) message = 'This SKU already exists.';
     else if (target === 'NEW PRODUCT' && (!row.name || !row.category)) message = 'Product Name and Category are required.';
     else if (target === 'STOCK IN' && !existing) message = 'Unknown SKU.';
@@ -1029,12 +1138,24 @@ router.post('/imports/:kind', wrap(async (req, res, next) => {
     if (!message && target === 'NEW PRODUCT') {
       try {
         row.productCode = normalizeProductCode(row.productCode);
-      } catch {
-        message = 'Product Code must contain digits only.';
+      } catch (err) {
+        message = err.message.startsWith('Product Code is required') ? 'Product Code is required.' : 'Product Code must contain digits only.';
       }
-      if (!message && (used.codes.has(row.productCode) || seenCodes.has(row.productCode))) {
-        message = `Product Code ${row.productCode} is already used.`;
+      if (!message && used.codes.has(row.productCode)) {
+        message = `Product Code ${row.productCode} is already used by ${used.codes.get(row.productCode).sku}.`;
+      } else if (!message && seenCodes.has(row.productCode)) {
+        message = `Product Code ${row.productCode} is already used by ${seenCodes.get(row.productCode)} in this file.`;
       }
+    }
+    // A size / colour that the product (existing or earlier in this file) already has.
+    if (!message && target === 'NEW PRODUCT' && (row.size || row.color)) {
+      const gk = `${row.name.toLowerCase()}|${(row.category || '').toLowerCase()}`;
+      const combo = `${gk}|${(row.size || '').toLowerCase()}|${(row.color || '').toLowerCase()}`;
+      const clash = skus.find((s) => s.variantIndex !== null
+        && `${String(s.name).toLowerCase()}|${String(s.category || '').toLowerCase()}|${(s.size || '').toLowerCase()}|${(s.color || '').toLowerCase()}` === combo);
+      if (clash) message = `${row.name} already has a ${[row.size, row.color].filter(Boolean).join(' / ')} variant (${clash.sku}).`;
+      else if (seenCombos.has(combo)) message = `Two rows give ${row.name} the same size and colour (${[row.size, row.color].filter(Boolean).join(' / ')}).`;
+      else seenCombos.add(combo);
     }
     seen.add(row.sku);
     if (message) {
@@ -1042,7 +1163,7 @@ router.post('/imports/:kind', wrap(async (req, res, next) => {
       continue;
     }
     if (target === 'NEW PRODUCT') {
-      seenCodes.add(row.productCode);
+      seenCodes.set(row.productCode, row.sku);
       newRows.push(row);
     } else {
       if (row.unitCostDefaulted) row.costPrice = existing.costPrice;
@@ -1063,10 +1184,13 @@ router.post('/imports/:kind', wrap(async (req, res, next) => {
   const t = await sequelize.transaction();
   const touched = [];
   try {
-    // New products: rows sharing a name and category become one product with variants.
+    // New products: rows with a size or colour that share a name and category
+    // become one product with variants; a row with neither is its own product.
     const groups = new Map();
     for (const row of applyNew) {
-      const gk = `${row.name.toLowerCase()}|${(row.category || '').toLowerCase()}`;
+      const gk = row.size || row.color
+        ? `${row.name.toLowerCase()}|${(row.category || '').toLowerCase()}`
+        : `single|${row.sku}`;
       if (!groups.has(gk)) groups.set(gk, []);
       groups.get(gk).push(row);
     }
@@ -1079,10 +1203,12 @@ router.post('/imports/:kind', wrap(async (req, res, next) => {
           imageUrl: first.imageUrl, rack: first.rack, shelfLocation: first.shelfLocation,
           batchNumber: first.batchNumber, sourceCountry: first.sourceCountry, wholesaler: first.wholesaler,
         },
+        // Every row keeps its own details on its SKU.
         skus: rows.map((r) => ({
           sku: r.sku, productCode: r.productCode, size: r.size, color: r.color, costPrice: r.costPrice,
           sellingPrice: r.sellingPrice, rack: r.rack, shelfLocation: r.shelfLocation, reorderLevel: r.reorderLevel,
           isActive: r.active, batchNumber: r.batchNumber, sourceCountry: r.sourceCountry, wholesaler: r.wholesaler,
+          notes: r.notes, supplier: r.supplier, imageUrl: r.imageUrl, description: r.description, designModel: r.designModel,
         })),
         transaction: t,
         importBatchId: batch.id,
@@ -1199,8 +1325,10 @@ router.post('/imports/:id/reverse', need('imports.reverse'), wrap(async (req, re
       let cleared = 0;
       for (const product of candidates) {
         const whole = product.importBatchId === batch.id;
+        // Only the SKUs this import created — a size added later by hand to an
+        // imported product keeps its stock and stays active.
         const indexes = hasVariants(product)
-          ? product.variants.map((v, i) => (v && (whole || v.importBatchId === batch.id) ? i : -1)).filter((i) => i >= 0)
+          ? product.variants.map((v, i) => (v && v.importBatchId === batch.id ? i : -1)).filter((i) => i >= 0)
           : (whole ? [null] : []);
         for (const variantIndex of indexes) {
           const lock = await skuLock(product, variantIndex);
@@ -1218,7 +1346,10 @@ router.post('/imports/:id/reverse', need('imports.reverse'), wrap(async (req, re
           }
           deactivated += 1;
         }
-        if (whole) product.active = false;
+        // The product itself is switched off only when nothing else of it remains live.
+        const othersLive = hasVariants(product)
+          && product.variants.some((v, i) => v && !v.archived && v.active !== false && !indexes.includes(i));
+        if (whole && !othersLive) product.active = false;
         if (hasVariants(product)) {
           product.variants = product.variants.map((v, i) => (indexes.includes(i) ? { ...v, active: false } : v));
           product.changed('variants', true);

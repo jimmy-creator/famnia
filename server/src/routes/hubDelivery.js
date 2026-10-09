@@ -4,6 +4,7 @@ import { Order, OrderAuditLog, User } from '../models/index.js';
 import { protect } from '../middleware/auth.js';
 import { bad, hubLog, need, wrap as wrapAs } from '../hub/http.js';
 import { loadAppSettings } from '../hub/settings.js';
+import { localDate } from '../utils/dates.js';
 import { SALES_PAYMENT_METHODS, adoptLegacy, clean, round2, syncLegacy, toSalesOrder } from '../hub/sales.js';
 
 /**
@@ -114,8 +115,12 @@ router.post('/delivery/:number/update', need('delivery.my_deliveries'), wrap(asy
     if (before.paymentStatus !== b.paymentStatus) changes.push({ field: 'Payment status', oldValue: before.paymentStatus, newValue: b.paymentStatus });
     if (before.amountReceived !== collected) changes.push({ field: 'Amount collected', oldValue: String(before.amountReceived), newValue: String(collected) });
     if (note && note !== (before.deliveryNotes || '')) changes.push({ field: 'Delivery note', oldValue: before.deliveryNotes, newValue: note });
-    const mode = clean(b.paymentMode, 40);
-    if (mode && SALES_PAYMENT_METHODS.includes(mode) && mode !== before.paymentMode) {
+    const mode = clean(b.paymentMode, 30);
+    const allowedModes = [...SALES_PAYMENT_METHODS, ...(await loadAppSettings()).deliveryPaymentModes];
+    if (mode && !allowedModes.some((m) => m.toLowerCase() === mode.toLowerCase())) {
+      throw bad('That payment mode is not in the delivery payment modes list.');
+    }
+    if (mode && mode !== before.paymentMode) {
       changes.push({ field: 'Payment method', oldValue: before.paymentMode, newValue: mode });
       order.hubPaymentMode = mode;
     }
@@ -123,7 +128,7 @@ router.post('/delivery/:number/update', need('delivery.my_deliveries'), wrap(asy
     order.hubStatus = nextStatus;
     order.hubPaymentStatus = b.paymentStatus;
     order.amountReceived = collected;
-    if (b.paymentStatus === 'Paid' && !order.paymentDate) order.paymentDate = new Date().toISOString().slice(0, 10);
+    if (b.paymentStatus === 'Paid' && !order.paymentDate) order.paymentDate = localDate();
     if (note) order.deliveryNotes = note;
     syncLegacy(order);
     await order.save({ transaction: t });

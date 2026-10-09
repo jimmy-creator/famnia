@@ -74,9 +74,14 @@ export const login = async (req, res) => {
     const token = generateToken(user.id);
     // Hub "Remember me on this device" unticked → a browser-session cookie.
     const { maxAge, ...sessionOnly } = cookieOptions;
-    res.cookie('token', token, req.body.remember === false ? sessionOnly : cookieOptions);
+    const remember = req.body.remember !== false;
+    res.cookie('token', token, remember ? cookieOptions : sessionOnly);
+    // Remembered so a later password change re-issues the same kind of cookie.
+    res.cookie('remember', remember ? '1' : '0', remember ? cookieOptions : sessionOnly);
 
-    if (HUB_ROLES.includes(user.role)) {
+    // Sign-ins are recorded for working accounts; a pending or switched-off
+    // account only reaches its gate screen.
+    if (HUB_ROLES.includes(user.role) && (user.status || 'active') === 'active') {
       await user.update({ lastLoginAt: new Date() });
       logActivity({ userId: user.id, action: 'Login', entityType: 'Auth', ip: req.ip });
     }
@@ -89,6 +94,7 @@ export const login = async (req, res) => {
 
 export const logout = (req, res) => {
   res.cookie('token', '', { httpOnly: true, expires: new Date(0) });
+  res.cookie('remember', '', { httpOnly: true, expires: new Date(0) });
   res.json({ message: 'Logged out' });
 };
 
@@ -100,7 +106,19 @@ export const getProfile = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const { name, phone, address } = req.body;
-    await req.user.update({ name, phone, address });
+    const patch = {};
+    if (name !== undefined) {
+      const n = String(name ?? '').trim();
+      if (n.length < 2 || n.length > 100) return res.status(400).json({ message: 'Enter your full name.' });
+      patch.name = n;
+    }
+    if (phone !== undefined) {
+      const p = String(phone ?? '').trim();
+      if (p && !/^[0-9+\-\s()]{6,24}$/.test(p)) return res.status(400).json({ message: 'Enter a valid phone number.' });
+      patch.phone = p || null;
+    }
+    if (address !== undefined) patch.address = address;
+    await req.user.update(patch);
     res.json(req.user);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -192,7 +210,8 @@ export const resetPassword = async (req, res) => {
 // the passwordChangedAt check in `protect`, which signs out other devices.
 async function setNewPassword(req, res, user, password) {
   await user.update({ password, mustChangePassword: false, passwordChangedAt: new Date() });
-  res.cookie('token', generateToken(user.id), cookieOptions);
+  const { maxAge, ...sessionOnly } = cookieOptions;
+  res.cookie('token', generateToken(user.id), req.cookies?.remember === '0' ? sessionOnly : cookieOptions);
   logActivity({ userId: user.id, action: 'Password changed', entityType: 'Auth', ip: req.ip });
 }
 

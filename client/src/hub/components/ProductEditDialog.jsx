@@ -93,8 +93,6 @@ function ProductEditDialogForm({ product, open, onClose }) {
   }, [product, productCode, name, category, rack, shelf, supplier, price, cost, canEditCost, reorder, notes, size, color, isActive, imagePath, pendingFile]);
 
   const variantLocked = lock.data?.hasHistory ?? true;
-  // Size and colour belong to a variant; a product without variants has none to edit.
-  const hasVariant = product?.variantIndex !== null && product?.variantIndex !== undefined;
 
   const save = useMutation({
     mutationFn: async () => {
@@ -114,7 +112,8 @@ function ProductEditDialogForm({ product, open, onClose }) {
         notes: notes || null,
         isActive,
         imageUrl: nextImage,
-        ...(variantLocked || !hasVariant ? {} : { size: size || null, color: color || null }),
+        // A single-SKU product given a size / colour becomes a one-size product (new key).
+        ...(variantLocked ? {} : { size: size || null, color: color || null }),
       });
     },
     onSuccess: async (result) => {
@@ -123,6 +122,7 @@ function ProductEditDialogForm({ product, open, onClose }) {
         result.changes ? `Product updated (${result.changes} field${result.changes === 1 ? '' : 's'})` : 'No changes to save',
       );
       await invalidateStock(client, product.key);
+      if (result.key && result.key !== product.key) await invalidateStock(client, result.key);
       onClose();
     },
     onError: (error) => toast.error(error.message),
@@ -254,7 +254,7 @@ function ProductEditDialogForm({ product, open, onClose }) {
                   <Input
                     value={size}
                     onChange={(event) => setSize(event.target.value)}
-                    disabled={variantLocked || !isAdmin || !hasVariant}
+                    disabled={variantLocked || !isAdmin}
                     className="h-11"
                   />
                 </Labelled>
@@ -262,7 +262,7 @@ function ProductEditDialogForm({ product, open, onClose }) {
                   <Input
                     value={color}
                     onChange={(event) => setColor(event.target.value)}
-                    disabled={variantLocked || !isAdmin || !hasVariant}
+                    disabled={variantLocked || !isAdmin}
                     className="h-11"
                   />
                 </Labelled>

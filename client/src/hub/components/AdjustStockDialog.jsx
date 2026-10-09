@@ -39,8 +39,9 @@ function AdjustForm({ product, onClose }) {
   const difference = counted === '' ? 0 : Number(counted) - product.currentStock;
 
   const submit = useMutation({
+    // A count equal to the system figure still goes to the server, which
+    // answers "nothing to adjust" as an error (shown as such).
     mutationFn: async () => {
-      if (Number(counted) === product.currentStock) return { key: product.key, difference: 0 };
       return {
         key: product.key,
         ...(await adjustStock(product.key, {
@@ -53,11 +54,7 @@ function AdjustForm({ product, onClose }) {
       };
     },
     onSuccess: async (result) => {
-      toast.success(
-        result.difference === 0
-          ? 'Counted quantity matches system stock — no adjustment recorded'
-          : `Stock adjusted by ${result.difference > 0 ? '+' : ''}${result.difference}`,
-      );
+      toast.success(`Stock adjusted by ${result.difference > 0 ? '+' : ''}${result.difference}`);
       await invalidateStock(client, result.key);
       onClose();
     },

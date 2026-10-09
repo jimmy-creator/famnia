@@ -1,18 +1,18 @@
 import { Router } from 'express';
 import { Op } from 'sequelize';
-import { HubLiability, HubReimbursement, Order, StockMovement } from '../models/index.js';
+import {
+  Expense, HubExpenseEntry, HubLiability, HubReimbursement, Order, StockMovement,
+} from '../models/index.js';
 import { protect } from '../middleware/auth.js';
 import { bad, can, need, wrap as wrapAs } from '../hub/http.js';
 import { listSkus, skuKey } from '../hub/catalog.js';
-import { toSalesOrder } from '../hub/sales.js';
+import { mapItem, toSalesOrder } from '../hub/sales.js';
 import { loadAppSettings } from '../hub/settings.js';
-import { computePnl } from './finance.js';
 import { localDate, rangeEnd, rangeStart } from '../utils/dates.js';
 
 /**
- * FEMNIA Hub Dashboard and the server side of Reports. Sales figures are
- * computed the hub's way (order lines net of returns); the financial summary
- * comes from computePnl so it can never disagree with the classic P&L.
+ * FEMNIA Hub Dashboard and the server side of Reports, on the client's
+ * formulas: order lines net of returns, confirmed (not only paid) orders.
  */
 const router = Router();
 router.use(protect);
@@ -23,16 +23,26 @@ const num = (v) => parseFloat(v) || 0;
 const isConfirmed = (o) => o.status !== 'Draft' && o.status !== 'Cancelled';
 const canProfit = (req) => can(req, 'dashboard.profit_values') || can(req, 'reports.financial');
 
-/** Unit cost per `orderNumber|sku`, from the cost snapshotted on each order line. */
+/**
+ * Unit cost per `orderNumber|sku` (the SKU exactly as the order view shows
+ * it), qty-weighted across lines of the same SKU — the cost snapshotted on
+ * each line at the time of sale.
+ */
 function saleCostMap(orders) {
-  const map = {};
+  const totals = new Map();
   for (const o of orders) {
-    for (const it of Array.isArray(o.items) ? o.items : []) {
-      if (it.costPrice === undefined || it.costPrice === null) continue;
-      const sku = it.sku || (it.productId ? `P${it.productId}` : '');
-      map[`${o.orderNumber}|${sku}`] = round2(it.costPrice);
-    }
+    (Array.isArray(o.items) ? o.items : []).forEach((it, idx) => {
+      if (it.costPrice === undefined || it.costPrice === null) return;
+      const key = `${o.orderNumber}|${mapItem(it, idx).sku}`;
+      const qty = parseInt(it.quantity, 10) || 0;
+      const t = totals.get(key) || { qty: 0, cost: 0 };
+      t.qty += qty;
+      t.cost += qty * num(it.costPrice);
+      totals.set(key, t);
+    });
   }
+  const map = {};
+  for (const [key, t] of totals) map[key] = t.qty > 0 ? round2(t.cost / t.qty) : 0;
   return map;
 }
 
@@ -41,20 +51,57 @@ router.get('/reports/sale-costs', need('reports.financial', 'dashboard.profit_va
   res.json(saleCostMap(orders));
 }));
 
+/**
+ * The hub's Profit summary, on the client's formula: every confirmed order
+ * (not just paid ones) by its sale date, lines net of returned units, COGS
+ * at the cost recorded on the line, less the period's daily expenses
+ * (assets are never expenses). The classic P&L in Back Office stays
+ * cash-based (paid orders only) — the two answer different questions.
+ */
 router.get('/reports/financial-summary', need('reports.financial'), wrap(async (req, res) => {
   const from = String(req.query.from || '');
   const to = String(req.query.to || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) throw bad('Choose a date range.');
-  const p = await computePnl({ from: rangeStart(from), to: rangeEnd(to) });
+  const [orders, skus, hubExpenses, hubRefs] = await Promise.all([
+    Order.findAll({ where: { createdAt: { [Op.between]: [rangeStart(from), rangeEnd(to)] } } }),
+    listSkus({ showCost: true }),
+    HubExpenseEntry.sum('amount', { where: { entryType: 'expense', txnDate: { [Op.between]: [from, to] } } }),
+    HubExpenseEntry.findAll({ where: { entryType: 'expense', expenseId: { [Op.ne]: null } }, attributes: ['expenseId'], raw: true }),
+  ]);
+  // Expenses booked in Back Office directly (not through the hub) count too;
+  // hub entries' own Expense rows are already in hubExpenses.
+  const classicExpenses = await Expense.sum('amount', {
+    where: {
+      status: 'paid',
+      expenseDate: { [Op.between]: [from, to] },
+      ...(hubRefs.length ? { id: { [Op.notIn]: hubRefs.map((r) => r.expenseId) } } : {}),
+    },
+  });
+  const costBySku = new Map(skus.map((s) => [s.sku, s.costPrice]));
+  let sales = 0;
+  let cogs = 0;
+  let delivery = 0;
+  for (const o of orders) {
+    const v = toSalesOrder(o);
+    if (!isConfirmed(v)) continue;
+    delivery += v.deliveryCharge;
+    (Array.isArray(o.items) ? o.items : []).forEach((it, idx) => {
+      const line = v.items[idx];
+      if (!line || line.quantity <= 0) return;
+      const netQty = line.quantity - Math.min(line.returnedQty, line.quantity);
+      const unitCost = it.costPrice !== undefined && it.costPrice !== null ? num(it.costPrice) : (costBySku.get(line.sku) ?? 0);
+      sales += (line.lineTotal / line.quantity) * netQty;
+      cogs += unitCost * netQty;
+    });
+  }
+  const expenses = num(hubExpenses) + num(classicExpenses);
   res.json({
-    productSales: round2(p.productRevenue - p.refunds),
-    deliveryCharges: round2(p.deliveryIncome),
-    cogs: round2(p.cogs),
-    grossProfit: round2(p.grossProfit),
-    expenses: round2(p.expenses),
-    netProfit: round2(p.netProfit),
-    depreciation: round2(p.depreciation),
-    stockLosses: round2(p.stockLosses),
+    productSales: round2(sales),
+    deliveryCharges: round2(delivery),
+    cogs: round2(cogs),
+    grossProfit: round2(sales - cogs),
+    expenses: round2(expenses),
+    netProfit: round2(sales - cogs - expenses),
   });
 }));
 
@@ -105,7 +152,7 @@ router.get('/dashboard', need('dashboard.view'), wrap(async (req, res) => {
     const liabs = await HubLiability.findAll({ attributes: ['amount', 'reimbursed', 'status'], raw: true });
     totalLiabilities = round2(liabs.filter((l) => l.status !== 'paid').reduce((s, l) => s + Math.max(num(l.amount) - num(l.reimbursed), 0), 0));
   }
-  if (profit) {
+  if (profit || can(req, 'liabilities.view')) {
     const returnedByOrder = new Map();
     for (const o of orders) {
       for (const it of o.items) {
@@ -179,7 +226,10 @@ router.get('/dashboard', need('dashboard.view'), wrap(async (req, res) => {
       outOfStockCount: skus.filter((p) => p.stockStatus === 'Out of Stock').length,
     },
     ...(cash ? { cash } : {}),
-    recentOrders: orders.slice(0, 6),
+    recentOrders: orders.slice(0, 6).map((o) => (salesValues ? o : {
+      id: o.id, channel: o.channel, customerName: o.customerName, orderDate: o.orderDate, status: o.status,
+      paymentMode: o.paymentMode, fulfilmentMethod: o.fulfilmentMethod, items: [],
+    })),
     lowStock: skus.filter((p) => p.stockStatus !== 'In Stock').sort((a, b) => a.currentStock - b.currentStock).slice(0, 8),
     topSelling: [...top.values()].map((t) => ({ ...t, revenue: salesValues ? round2(t.revenue) : 0 }))
       .sort((a, b) => b.quantity - a.quantity).slice(0, 6),

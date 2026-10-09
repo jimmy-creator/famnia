@@ -60,7 +60,10 @@ export function stockDeducted(order) {
   if (order.stockState) return order.stockState === 'deducted';
   if (order.channel === 'pos') return order.orderStatus !== 'cancelled';
   if (order.orderStatus === 'cancelled') return false;      // legacy cancel routes restore stock
-  return order.paymentMethod === 'cod' || order.paymentStatus === 'paid' || order.paymentStatus === 'refunded';
+  // Checkout takes stock straight away for COD and bank transfer
+  // (orderController); gateway orders only once payment is verified.
+  return ['cod', 'bank_transfer'].includes(order.paymentMethod)
+    || order.paymentStatus === 'paid' || order.paymentStatus === 'refunded';
 }
 
 function hubStatusOf(order) {

@@ -203,6 +203,7 @@ export default function StockInPage() {
                   </span>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
+                  {row.type && row.type !== 'Stock In' ? `${row.type} · ` : ''}
                   {row.reference} · {row.date} · {row.supplier ?? 'Not Assigned'}
                   {[row.batchNumber, row.sourceCountry].filter(Boolean).length
                     ? ` · ${[row.batchNumber, row.sourceCountry].filter(Boolean).join(' ')}`
@@ -251,7 +252,8 @@ export default function StockInPage() {
                     <td className="px-4 py-3">{row.supplier ?? 'Not Assigned'}</td>
                     <td className="px-4 py-3">{[row.batchNumber, row.sourceCountry].filter(Boolean).join(' ') || '—'}</td>
                     <td className="px-4 py-3">{row.receivedBy ?? '—'}</td>
-                    <td className="px-4 py-3">Confirmed</td>
+                    {/* Returns and cancellation restocks also add stock — the column says which. */}
+                    <td className="px-4 py-3">{row.type && row.type !== 'Stock In' ? row.type : 'Confirmed'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -287,8 +289,8 @@ export default function StockInPage() {
               <Row label="Notes" value={detail.notes ?? '—'} />
               <Row label="Created By" value={detail.createdByName ?? '—'} />
               <Row label="Created" value={new Date(detail.createdAt).toLocaleString()} />
-              <Row label="Status" value="Confirmed" />
-              {canEditBatch && (
+              <Row label="Status" value={detail.type && detail.type !== 'Stock In' ? detail.type : 'Confirmed'} />
+              {canEditBatch && (!detail.type || detail.type === 'Stock In') && (
                 <Button
                   variant="outline"
                   className="h-11 w-full"

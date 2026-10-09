@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { User } from '../models/index.js';
-import { HUB_ROLES, hasPermission } from '../hub/permissions.js';
+import { HUB_ROLES, LEGACY_KEYS, hasPermission } from '../hub/permissions.js';
 
 // Endpoints a hub account may still call while it is not active or still
 // holds a temporary password — just enough for the hub's gate screens to
@@ -38,7 +38,9 @@ export const protect = async (req, res, next) => {
 
     if (HUB_ROLES.includes(req.user.role)) {
       const path = req.originalUrl.split('?')[0];
-      if (!GATE_ALLOWED.has(path)) {
+      // The profile is readable at the gate (to explain the state), not editable.
+      const gateOk = GATE_ALLOWED.has(path) && (path !== '/api/auth/profile' || req.method === 'GET');
+      if (!gateOk) {
         if (req.user.status && req.user.status !== 'active') {
           return res.status(403).json({ message: 'Your account is not active.', code: 'ACCOUNT_INACTIVE' });
         }
@@ -58,9 +60,11 @@ export const admin = (req, res, next) => {
   if (req.user && req.user.role === 'admin') {
     next();
   } else if (req.user && req.user.role === 'staff') {
-    // Staff must have at least one permission
+    // Staff need at least one classic-admin permission. Hub-only staff
+    // (keys like "orders.create") are not let into the old admin endpoints
+    // this guards — storefront settings, coupons, order status.
     const perms = req.user.permissions || [];
-    if (perms.length > 0) {
+    if (perms.some((p) => LEGACY_KEYS.includes(p))) {
       next();
     } else {
       res.status(403).json({ message: 'No permissions assigned' });

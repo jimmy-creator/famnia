@@ -768,7 +768,8 @@ function OrderBody({ data }) {
         )}
 
         {/* Draft actions: sticky so Confirm is always reachable. */}
-        {isDraft && !readOnly && (
+        {/* An online order still awaiting payment is confirmed by the store checkout, never here. */}
+        {isDraft && !readOnly && data.channel !== 'Online' && (
           <div className="sticky bottom-0 -mx-4 mt-2 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
             <div className="flex flex-wrap gap-2">
               {(canUpdate || canPayments) && (

@@ -73,7 +73,9 @@ export function AppShell({ children }) {
       {NAV.filter(({ to, permission }) =>
         to === '/hub/my-deliveries'
           ? Boolean(access.data?.roles.includes('delivery'))
-          : !access.data || can(access.data, permission),
+          : to === '/hub/settings'
+            ? Boolean(access.data?.isAdmin) // settings are written by Admins only
+            : !access.data || can(access.data, permission),
       ).map(({ to, label, icon }) => {
         const Icon = icon;
         const active = pathname === to || pathname.startsWith(`${to}/`);

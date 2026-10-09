@@ -124,7 +124,7 @@ export default function StockOutPage() {
                   </span>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  {row.reference} · {row.date} · {row.reason}
+                  {row.type && row.type !== 'Manual Stock Out' ? `${row.type} · ` : ''}{row.reference} · {row.date} · {row.reason}
                 </p>
               </button>
             ))}
@@ -161,7 +161,7 @@ export default function StockOutPage() {
                     <td className="px-4 py-3">{row.size ?? '—'}</td>
                     <td className="px-4 py-3">{row.color ?? '—'}</td>
                     <td className="px-4 py-3 text-right font-semibold text-destructive">−{row.quantity}</td>
-                    <td className="px-4 py-3">{row.reason}</td>
+                    <td className="px-4 py-3">{row.type && row.type !== 'Manual Stock Out' ? `${row.type} · ${row.reason}` : row.reason}</td>
                     <td className="px-4 py-3">{row.supplier ?? '—'}</td>
                     <td className="px-4 py-3">{row.handledBy ?? '—'}</td>
                     <td className="px-4 py-3">Confirmed</td>

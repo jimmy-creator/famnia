@@ -4,7 +4,9 @@ import sequelize from '../config/database.js';
 import { Counter, Order, OrderAuditLog, OrderReturn, Product, ProductStock, User } from '../models/index.js';
 import { protect } from '../middleware/auth.js';
 import { bad, can, hubLog, need, wrap as wrapAs } from '../hub/http.js';
+import { HUB_ROLES } from '../hub/permissions.js';
 import { loadAppSettings } from '../hub/settings.js';
+import { localDate } from '../utils/dates.js';
 import {
   applyStockDelta, hasVariants, recomputeAfter, skuFields, skuStock, stockLocationId,
 } from '../hub/catalog.js';
@@ -24,6 +26,21 @@ router.use(protect);
 const wrap = (fn) => wrapAs('hubSales', fn);
 
 const VIEW_ORDERS = ['orders.view_all', 'orders.view_own', 'invoices.view', 'delivery.view', 'customers.history'];
+
+/**
+ * Once an order is Delivered and Paid only an Admin may change its status or
+ * payment — on every path (fulfilment, cancel, returns, delivery update).
+ */
+function deliveredPaidLock(req, view) {
+  if (view.status === 'Delivered' && view.paymentStatus === 'Paid' && req.user.role !== 'admin') {
+    throw bad('Only an Admin can change a delivery that is already Delivered and Paid.', 403);
+  }
+}
+
+/** Active hub accounts only (customers have no business reading hub settings). */
+const staffOnly = (req, res, next) => (HUB_ROLES.includes(req.user.role)
+  ? next()
+  : res.status(403).json({ message: 'Staff access only' }));
 
 // ── helpers ─────────────────────────────────────────────────────────
 async function view(order, settings) {
@@ -91,7 +108,7 @@ const LEGACY_METHOD = {
 // ════════════════════════════════════════════════════════════════════
 // Settings (read; the Settings screen arrives later)
 // ════════════════════════════════════════════════════════════════════
-router.get('/settings', wrap(async (req, res) => {
+router.get('/settings', staffOnly, wrap(async (req, res) => {
   res.json(await loadAppSettings());
 }));
 
@@ -313,6 +330,9 @@ router.post('/orders/confirm', need('orders.confirm'), wrap(async (req, res) => 
       const v = toSalesOrder(existing);
       if (v.status !== 'Draft') throw bad(`Order ${existing.orderNumber} is already confirmed. Use Update Fulfilment & Payment instead.`);
       if (existing.channel === 'pos') throw bad('Till sales are managed at the till.');
+      // Online orders take their stock at checkout / payment; confirming one
+      // here would deduct it a second time.
+      if (existing.channel !== 'staff') throw bad('Online orders are confirmed by the store checkout, not here.');
     }
 
     // The form's lines are the confirmed snapshot (a reopened draft resubmits them).
@@ -358,6 +378,7 @@ router.post('/orders/confirm', need('orders.confirm'), wrap(async (req, res) => 
       confirmedAt: new Date(),
       idempotencyKey: key,
       stockState: 'deducted',
+      paymentMethod: LEGACY_METHOD[header.hubPaymentMode] || 'other',
     };
     if (existing) {
       order = existing;
@@ -460,12 +481,12 @@ router.patch('/orders/:number/fulfilment', need('orders.update_delivery', 'payme
   const changes = Object.entries(patch)
     .filter(([col, value]) => String(previous[col] ?? '') !== String(value ?? ''))
     .map(([col, value]) => ({ field: FIELD_LABELS[col] ?? col, oldValue: str(previous[col]), newValue: str(value) }));
-  if (before.status === 'Delivered' && before.paymentStatus === 'Paid' && req.user.role !== 'admin'
-    && ((patch.hubStatus ?? 'Delivered') !== 'Delivered' || (patch.hubPaymentStatus ?? 'Paid') !== 'Paid')) {
-    throw bad('Only an Admin can change a delivery that is already Delivered and Paid.', 403);
+  if ((patch.hubStatus ?? 'Delivered') !== 'Delivered' || (patch.hubPaymentStatus ?? 'Paid') !== 'Paid') {
+    deliveredPaidLock(req, before);
   }
   Object.assign(order, patch);
-  if (patch.hubPaymentStatus === 'Paid' && !order.paymentDate) order.paymentDate = new Date().toISOString().slice(0, 10);
+  if (patch.hubPaymentMode && order.channel === 'staff') order.paymentMethod = LEGACY_METHOD[patch.hubPaymentMode] || 'other';
+  if (patch.hubPaymentStatus === 'Paid' && !order.paymentDate) order.paymentDate = localDate();
   syncLegacy(order);
   await order.save();
   await auditOrder(req, order.id, changes);
@@ -586,7 +607,9 @@ router.post('/orders/:number/correct-prices', need('orders.edit_prices'), wrap(a
   });
   const subtotal = round2(finalLines.reduce((s, l) => s + l.lineTotal, 0));
   const deliveryCharge = before.fulfilmentMethod === 'Customer Pickup' ? 0 : round2(Math.max(Number(b.deliveryCharge) || 0, 0));
-  const grandTotal = round2(subtotal + deliveryCharge);
+  // Web orders keep a coupon / bill discount on the header (hub orders store 0 there).
+  const headerDiscount = round2(Math.max(parseFloat(order.discount) || 0, 0));
+  const grandTotal = round2(Math.max(subtotal + deliveryCharge - headerDiscount, 0));
 
   order.items = order.items.map((it, idx) => {
     const l = finalLines[idx];
@@ -631,8 +654,10 @@ router.post('/orders/:number/returns', need('orders.returns'), wrap(async (req, 
     const before = toSalesOrder(order);
     if (before.status === 'Draft') throw bad('Draft orders never deducted stock, so nothing to return.');
     if (before.status === 'Cancelled') throw bad('Cancelled orders cannot take returns.');
+    deliveredPaidLock(req, before);
     adoptLegacy(order, before);
     const items = order.items.map((it) => ({ ...it }));
+    const restockedLines = new Set();
     for (const line of rows) {
       const idx = parseInt(line.lineIndex, 10);
       const item = items[idx];
@@ -658,6 +683,7 @@ router.post('/orders/:number/returns', need('orders.returns'), wrap(async (req, 
         });
         touched.push(productId);
         restocked += 1;
+        restockedLines.add(idx);
       }
       await OrderReturn.create({
         orderId: order.id, lineIndex: idx, productId, variantIndex, sku: item.sku, quantity: qty,
@@ -673,7 +699,8 @@ router.post('/orders/:number/returns', need('orders.returns'), wrap(async (req, 
     await order.save({ transaction: t });
     await auditOrder(req, order.id, rows.map((l) => {
       const item = items[parseInt(l.lineIndex, 10)];
-      return { field: `Return · ${item.sku}`, oldValue: null, newValue: `${l.quantity} · ${l.reason}${l.restock ? ' · restocked' : ' · not restocked'}` };
+      const done = restockedLines.has(parseInt(l.lineIndex, 10));
+      return { field: `Return · ${item.sku}`, oldValue: null, newValue: `${l.quantity} · ${l.reason}${done ? ' · restocked' : ' · not restocked'}` };
     }), t);
     await t.commit();
   } catch (err) {
@@ -702,6 +729,7 @@ router.post('/orders/:number/cancel', need('orders.cancellations'), wrap(async (
     const before = toSalesOrder(order);
     fromStatus = before.status;
     if (before.status === 'Cancelled') throw bad('This order is already cancelled.');
+    deliveredPaidLock(req, before);
     adoptLegacy(order, before);
     alreadyRestored = Boolean(order.restockedAt) || order.stockState === 'restored';
     shouldRestore = restock && before.stockDeducted && !alreadyRestored;
@@ -878,7 +906,9 @@ router.post('/customers', need('customers.add', 'orders.create'), wrap(async (re
     if (req.body?.reuse) return res.json({ customer: mapCustomer(duplicate, settings.customerPrefix), existed: true });
     throw bad(`This mobile number already belongs to ${duplicate.name} (${customerCode(duplicate.id, settings.customerPrefix)}).`);
   }
-  if (!req.body?.reuse && !can(req, 'customers.add')) throw bad('You do not have permission to add customers.', 403);
+  // Reusing an existing customer is part of taking an order; creating a new
+  // one needs "Add customers", as in the client's app.
+  if (!can(req, 'customers.add')) throw bad('You do not have permission to add customers.', 403);
   const user = await User.create({ ...input, role: 'customer' });
   const code = customerCode(user.id, settings.customerPrefix);
   await hubLog(req, 'Customer created', 'Customers', code, `${input.name} · ${input.phone}`);

@@ -5,7 +5,11 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
-import { protect, admin } from '../middleware/auth.js';
+import { protect, requirePermission } from '../middleware/auth.js';
+
+// Product images (hub "Upload product images", classic products), category
+// images and storefront banners/theme (classic settings / categories).
+const uploadGuard = requirePermission('products.images', 'products', 'categories', 'settings');
 import { uploadsDir } from '../config/uploadsDir.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -94,7 +98,7 @@ async function getOrCreateOg(filename) {
 const router = Router();
 
 // Upload single image
-router.post('/', protect, admin, upload.single('image'), async (req, res) => {
+router.post('/', protect, uploadGuard, upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ message: 'No image file provided' });
@@ -110,7 +114,7 @@ router.post('/', protect, admin, upload.single('image'), async (req, res) => {
 });
 
 // Upload multiple images (up to 5)
-router.post('/multiple', protect, admin, upload.array('images', 5), async (req, res) => {
+router.post('/multiple', protect, uploadGuard, upload.array('images', 5), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ message: 'No image files provided' });

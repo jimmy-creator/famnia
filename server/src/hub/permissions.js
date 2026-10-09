@@ -180,16 +180,22 @@ export const HUB_ROLES = ['admin', 'staff', 'delivery'];
  * is retired, a hub permission implies the legacy key that covers it, so
  * staff created in the hub can still reach the endpoints those screens use.
  */
+// Only hub keys with the same reach imply a legacy key: the legacy keys
+// also guard writes (delete products, edit locations, refund orders, post
+// expenses), so a view-only hub key must never open them.
 const LEGACY_EQUIVALENTS = {
-  products: ['products.', 'inventory.', 'suppliers.', 'imports.'],
-  orders: ['orders.', 'delivery.view', 'delivery.assign', 'invoices.', 'payments.'],
-  customers: ['customers.'],
-  analytics: ['reports.', 'dashboard.sales_values', 'dashboard.profit_values', 'expenses.', 'assets.', 'liabilities.'],
+  products: ['products.add', 'products.edit', 'inventory.adjust', 'imports.new_products', 'imports.mixed'],
+  orders: ['orders.cancellations', 'orders.returns', 'payments.edit'],
+  customers: ['customers.edit'],
+  analytics: ['reports.financial'],
   settings: ['admin.settings'],
   categories: ['products.edit', 'products.add'],
   coupons: ['admin.settings'],
   reviews: ['products.edit'],
 };
+
+/** The classic admin's own permission keys. */
+export const LEGACY_KEYS = Object.keys(LEGACY_EQUIVALENTS);
 
 /** True when the user holds `key`, either directly or via a hub key that implies it. */
 export function hasPermission(user, key) {
