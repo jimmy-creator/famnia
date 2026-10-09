@@ -32,6 +32,8 @@ function CustomerDialogForm({ open, customer, onClose, onSaved }) {
   const [address, setAddress] = useState(customer?.address ?? '');
   const [notes, setNotes] = useState(customer?.notes ?? '');
   const [busy, setBusy] = useState(false);
+  // A web customer who signed up with an email only can be edited without a mobile.
+  const phoneOptional = Boolean(customer?.id) && !customer?.phone;
 
   const save = async () => {
     setBusy(true);
@@ -66,7 +68,7 @@ function CustomerDialogForm({ open, customer, onClose, onSaved }) {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <Label htmlFor="c-phone">Mobile number</Label>
+              <Label htmlFor="c-phone">Mobile number{phoneOptional ? ' (optional)' : ''}</Label>
               <Input
                 id="c-phone"
                 inputMode="tel"
@@ -104,7 +106,7 @@ function CustomerDialogForm({ open, customer, onClose, onSaved }) {
           <Button variant="outline" className="h-11" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button className="h-11" onClick={() => void save()} disabled={busy || !name.trim() || !phone.trim()}>
+          <Button className="h-11" onClick={() => void save()} disabled={busy || !name.trim() || (!phoneOptional && !phone.trim())}>
             {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
             {customer ? 'Save changes' : 'Create customer'}
           </Button>

@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { Printer, Search } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Loader2, Printer, Search, Usb } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -7,7 +7,24 @@ import { Button } from '@/hub/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/hub/ui/dialog';
 import { Input } from '@/hub/ui/input';
 import { Label } from '@/hub/ui/label';
-import { batchIndexQuery } from '@/hub/lib/api';
+import { accessQuery, batchIndexQuery, get, qk, updateProduct } from '@/hub/lib/api';
+import { can } from '@/hub/lib/permissions';
+import {
+  SHOP_LABEL_CSS,
+  SHOP_LABEL_SIZES,
+  SHOP_SHOW_DEFAULT,
+  SHOP_SHOW_OPTIONS,
+  drawShopLabelCanvas,
+  printShopLabels,
+  shopLabelHtml,
+} from '@/hub/lib/shopLabels';
+import {
+  getDevice as getLabelPrinter,
+  isSupported as usbSupported,
+  printLabelImages,
+  requestDevice as pairLabelPrinter,
+} from '@/lib/thermalPrinter';
+import { CURRENCY } from '@/hub/lib/format';
 import {
   DEFAULT_SHEET,
   FOUR_BY_SIX_LABEL,
@@ -20,7 +37,9 @@ import {
 import { QAR } from '@/hub/lib/format';
 
 const PRINT_SETTINGS_KEY = 'femnia-barcode-label-presets-v1';
-const FORMATS = ['thermal-30x20', 'thermal-4x6', 'a4', 'custom'];
+const FORMATS = ['thermal-30x20', 'thermal-4x6', 'a4', 'custom', 'shop'];
+const labelExtrasQuery = { queryKey: ['femnia', 'label-extras'], queryFn: () => get('/hub/label-extras'), staleTime: 60_000 };
+const round3 = (n) => Math.round((parseFloat(n) || 0) * 1000) / 1000;
 const availableStock = (product) => Math.max(0, Math.round(product.currentStock ?? 0));
 const inRange = (v, lo, hi) => Number(v) >= lo && Number(v) <= hi;
 
@@ -56,6 +75,30 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
   );
   const [batch, setBatch] = useState('__all__');
   const batchIndex = useQuery({ ...batchIndexQuery, enabled: open });
+  // Shop label (the classic label designer's layout).
+  const [shopSizeId, setShopSizeId] = useState(
+    SHOP_LABEL_SIZES.some((s) => s.id === saved?.shopSizeId) ? saved.shopSizeId : 'l6040',
+  );
+  const [shopLayout, setShopLayout] = useState(saved?.shopLayout === 'sheet' ? 'sheet' : 'roll');
+  const [shopShow, setShopShow] = useState({ ...SHOP_SHOW_DEFAULT, ...(saved?.shopShow ?? {}) });
+  const shop = format === 'shop';
+  const extras = useQuery({ ...labelExtrasQuery, enabled: open && shop });
+  const access = useQuery(accessQuery).data ?? null;
+  const canEditPrice = can(access, 'products.edit_price');
+  const client = useQueryClient();
+  const [usbReady, setUsbReady] = useState(false);
+  const [usbBusy, setUsbBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open || !shop || !usbSupported()) return;
+    let live = true;
+    getLabelPrinter('barcode')
+      .then((h) => live && setUsbReady(Boolean(h)))
+      .catch(() => live && setUsbReady(false));
+    return () => {
+      live = false;
+    };
+  }, [open, shop]);
 
   useEffect(() => {
     try {
@@ -64,12 +107,13 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
         JSON.stringify({
           format, showPrice, customWidthMm, customHeightMm,
           thermalSmallWidthMm, thermalSmallHeightMm, thermalSmallShiftXMm, thermalSmallShiftYMm,
+          shopSizeId, shopLayout, shopShow,
         }),
       );
     } catch {
       /* storage unavailable — settings last for this session only */
     }
-  }, [format, showPrice, customWidthMm, customHeightMm, thermalSmallWidthMm, thermalSmallHeightMm, thermalSmallShiftXMm, thermalSmallShiftYMm]);
+  }, [format, showPrice, customWidthMm, customHeightMm, thermalSmallWidthMm, thermalSmallHeightMm, thermalSmallShiftXMm, thermalSmallShiftYMm, shopSizeId, shopLayout, shopShow]);
 
   const batchNumbers = useMemo(() => batchIndex.data?.numbers ?? {}, [batchIndex.data]);
   const printable = useMemo(() => products.filter((product) => product.isActive && product.productCode), [products]);
@@ -158,8 +202,54 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
   const previewWidth = format === 'thermal-4x6' ? 'min(100%, 267px)' : `${labelSize.widthMm * previewScale}px`;
   const previewHeight = format === 'thermal-4x6' ? '400px' : `${labelSize.heightMm * previewScale}px`;
 
-  const print = () => {
+  // ── Shop labels: one entry per label, with the sticker price per product ──
+  const shopSize = SHOP_LABEL_SIZES.find((s) => s.id === shopSizeId) ?? SHOP_LABEL_SIZES[2];
+  const stickerPrice = (product) => selected[product.key]?.sellPrice ?? (product.sellingPriceQar ?? 0).toFixed(2);
+  const shopItems = chosen.flatMap((product) => {
+    const extra = extras.data?.[product.productId] ?? {};
+    const item = {
+      name: product.name,
+      nameAr: extra.nameAr ?? null,
+      comparePrice: extra.comparePrice ?? null,
+      code: product.sku,
+      barcode: product.productCode ?? '',
+      sellPrice: stickerPrice(product),
+    };
+    const count = Math.max(0, Math.min(Math.floor(selected[product.key]?.quantity ?? 0), 500));
+    return Array.from({ length: count }, () => item);
+  });
+  // Sticker prices that differ from the selling price are saved to the SKU
+  // before printing, so the till and the website charge what the label says.
+  const priceChanges = shop && shopShow.price && canEditPrice
+    ? chosen.filter((p) => selected[p.key]?.sellPrice !== undefined && round3(selected[p.key].sellPrice) !== round3(p.sellingPriceQar))
+    : [];
+
+  const applyPrices = async () => {
+    const badPrice = priceChanges.find((p) => !(round3(selected[p.key].sellPrice) > 0));
+    if (badPrice) {
+      toast.error(`${badPrice.name}: enter a selling price above 0`);
+      return false;
+    }
     try {
+      for (const p of priceChanges) await updateProduct(p.key, { sellingPriceQar: round3(selected[p.key].sellPrice) });
+    } catch (error) {
+      toast.error(`${error.message} — nothing printed.`);
+      return false;
+    }
+    if (priceChanges.length) {
+      toast.success(`Selling price updated for ${priceChanges.length} product${priceChanges.length === 1 ? '' : 's'}`);
+      void client.invalidateQueries({ queryKey: qk.products });
+    }
+    return true;
+  };
+
+  const print = async () => {
+    try {
+      if (shop) {
+        if (!(await applyPrices())) return;
+        printShopLabels(shopItems, shopSize, shopLayout, shopShow, CURRENCY);
+        return;
+      }
       printBarcodeLabels(stickers, format, customSize, thermalSmallSize, thermalSmallShift);
     } catch (error) {
       toast.error(error.message);
@@ -167,13 +257,43 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
   };
 
   const printTest = () => {
-    if (!preview) return;
     try {
+      if (shop) {
+        if (shopItems[0]) printShopLabels([shopItems[0]], shopSize, 'roll', shopShow, CURRENCY);
+        return;
+      }
+      if (!preview) return;
       printSingleTestLabel(preview, format, customSize, thermalSmallSize, thermalSmallShift);
     } catch (error) {
       toast.error(error.message);
     }
   };
+
+  const pairUsb = async () => {
+    try {
+      const handle = await pairLabelPrinter('barcode');
+      setUsbReady(true);
+      toast.success(`Paired: ${handle.device.productName || 'label printer'}`);
+    } catch (error) {
+      if (error?.name !== 'NotFoundError') toast.error(error.message || 'Pairing cancelled');
+    }
+  };
+
+  const printUsb = async () => {
+    if (!shopItems.length) return;
+    if (!(await applyPrices())) return;
+    setUsbBusy(true);
+    try {
+      await printLabelImages(shopItems.map((item) => drawShopLabelCanvas(item, shopSize, shopShow, CURRENCY)));
+      toast.success(`Sent ${shopItems.length} label${shopItems.length === 1 ? '' : 's'} to the printer`);
+    } catch (error) {
+      toast.error(error.message || 'Direct print failed');
+    } finally {
+      setUsbBusy(false);
+    }
+  };
+
+  const printCount = shop ? shopItems.length : stickers.length;
 
   const numberInput = (value, setter, min, max, step, fallback) => (
     <Input
@@ -282,9 +402,22 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
                   key={product.key}
                   product={product}
                   quantity={selected[product.key]?.quantity ?? 0}
-                  onChange={(quantity) => setSelected((previous) => ({ ...previous, [product.key]: { quantity } }))}
+                  onChange={(quantity) =>
+                    setSelected((previous) => ({ ...previous, [product.key]: { ...previous[product.key], quantity } }))
+                  }
+                  price={shop && shopShow.price && canEditPrice ? stickerPrice(product) : null}
+                  onPriceChange={(sellPrice) =>
+                    setSelected((previous) => ({ ...previous, [product.key]: { ...previous[product.key], sellPrice } }))
+                  }
                 />
               ))}
+              {priceChanges.length > 0 && (
+                <p className="rounded-md border-l-4 border-primary bg-secondary/40 p-3 text-xs text-foreground">
+                  Printing will change the selling price of {priceChanges.length} product
+                  {priceChanges.length === 1 ? '' : 's'} to the sticker price — the till and the website will charge it from
+                  then on.
+                </p>
+              )}
             </div>
           )}
 
@@ -301,13 +434,74 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
                   <option value="thermal-4x6">Thermal 4×6 in (100×150 mm)</option>
                   <option value="a4">A4 — 30×20 mm grid</option>
                   <option value="custom">Custom size</option>
+                  <option value="shop">Shop label — 40×25 to 80×50 mm, Arabic name, USB printer</option>
                 </select>
               </div>
-              <label className="flex h-11 items-center gap-2 text-sm">
-                <input type="checkbox" checked={showPrice} onChange={(event) => setShowPrice(event.target.checked)} className="size-4" />
-                Show price in QAR
-              </label>
+              {!shop && (
+                <label className="flex h-11 items-center gap-2 text-sm">
+                  <input type="checkbox" checked={showPrice} onChange={(event) => setShowPrice(event.target.checked)} className="size-4" />
+                  Show price in QAR
+                </label>
+              )}
             </div>
+            {shop && (
+              <div className="mt-4 space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">Label size</Label>
+                    <select
+                      value={shopSizeId}
+                      onChange={(event) => setShopSizeId(event.target.value)}
+                      className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      {SHOP_LABEL_SIZES.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">Layout</Label>
+                    <select
+                      value={shopLayout}
+                      onChange={(event) => setShopLayout(event.target.value)}
+                      className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="roll">Roll — one label per page (label printer)</option>
+                      <option value="sheet">Sheet — A4, labels side by side</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">Show on label</Label>
+                  <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+                    {SHOP_SHOW_OPTIONS.map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          className="size-4"
+                          checked={Boolean(shopShow[key])}
+                          onChange={(event) => setShopShow((s) => ({ ...s, [key]: event.target.checked }))}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {usbSupported() && (
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    {usbReady ? (
+                      <span className="text-muted-foreground">USB label printer connected.</span>
+                    ) : (
+                      <Button type="button" variant="outline" className="h-10" onClick={pairUsb}>
+                        <Usb className="mr-2 size-4" /> Connect label printer
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
             {format === 'thermal-30x20' && (
               <div className="mt-4 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
@@ -362,18 +556,41 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
               </div>
             )}
             <p className="mt-3 text-xs text-muted-foreground">
-              {format === 'a4'
-                ? `${grid.columns} × ${grid.rows} = ${grid.perPage} labels per A4 page. ${stickers.length} total across ${pageCount} page${pageCount === 1 ? '' : 's'}.`
-                : `One label per page. ${stickers.length} total across ${pageCount} page${pageCount === 1 ? '' : 's'}.`}
+              {shop
+                ? `${shopItems.length} label${shopItems.length === 1 ? '' : 's'} at ${shopSize.label}, ${shopLayout === 'roll' ? 'one per page' : 'on A4 sheets'}.`
+                : format === 'a4'
+                  ? `${grid.columns} × ${grid.rows} = ${grid.perPage} labels per A4 page. ${stickers.length} total across ${pageCount} page${pageCount === 1 ? '' : 's'}.`
+                  : `One label per page. ${stickers.length} total across ${pageCount} page${pageCount === 1 ? '' : 's'}.`}
             </p>
             <p className="mt-2 text-xs font-medium text-foreground">In the print dialog, set margins to None and scale to 100%.</p>
           </div>
 
           <div className="rounded-xl border border-border p-4">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Live label preview</p>
-            <style>{STICKER_CSS(labelSize)}</style>
+            <style>{shop ? SHOP_LABEL_CSS : STICKER_CSS(labelSize)}</style>
             <div className="flex min-h-44 items-center justify-center overflow-hidden rounded-md bg-secondary/50 p-4">
-              {preview ? (
+              {shop ? (
+                shopItems[0] ? (
+                  <div
+                    style={{
+                      width: `${shopSize.width * Math.min(320 / shopSize.width, 220 / shopSize.height) * 0.2645}mm`,
+                      height: `${shopSize.height * Math.min(320 / shopSize.width, 220 / shopSize.height) * 0.2645}mm`,
+                    }}
+                  >
+                    <div
+                      className="border border-foreground shadow-sm"
+                      style={{
+                        width: `${shopSize.width}mm`,
+                        transform: `scale(${Math.min(320 / shopSize.width, 220 / shopSize.height) * 0.2645})`,
+                        transformOrigin: 'top left',
+                      }}
+                      dangerouslySetInnerHTML={{ __html: shopLabelHtml(shopItems[0], shopSize, shopShow, CURRENCY) }}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Select a product to preview its label.</p>
+                )
+              ) : preview ? (
                 <div
                   className="sticker border border-foreground shadow-sm"
                   style={{ width: previewWidth, height: previewHeight }}
@@ -394,11 +611,17 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
             <Button type="button" variant="outline" className="h-11" onClick={onClose}>
               Close
             </Button>
-            <Button type="button" variant="outline" className="h-11" disabled={!preview} onClick={printTest}>
+            <Button type="button" variant="outline" className="h-11" disabled={shop ? !shopItems.length : !preview} onClick={printTest}>
               <Printer className="mr-2 size-4" /> Print test label
             </Button>
-            <Button type="button" className="h-11" disabled={!stickers.length} onClick={print}>
-              <Printer className="mr-2 size-4" /> Print {stickers.length || ''} label{stickers.length === 1 ? '' : 's'}
+            {shop && usbReady && (
+              <Button type="button" variant="outline" className="h-11" disabled={!printCount || usbBusy} onClick={printUsb}>
+                {usbBusy ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Usb className="mr-2 size-4" />}
+                {usbBusy ? 'Sending…' : `USB · ${printCount} label${printCount === 1 ? '' : 's'}`}
+              </Button>
+            )}
+            <Button type="button" className="h-11" disabled={!printCount} onClick={print}>
+              <Printer className="mr-2 size-4" /> Print {printCount || ''} label{printCount === 1 ? '' : 's'}
             </Button>
           </div>
         </div>
@@ -407,10 +630,16 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
   );
 }
 
-function SelectedRow({ product, quantity, onChange }) {
+function SelectedRow({ product, quantity, onChange, price, onPriceChange }) {
   const update = (value) => onChange(Math.min(Math.max(Math.floor(value), 0), 500));
   return (
-    <div className="grid gap-2 rounded-md bg-secondary/40 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <div
+      className={
+        price === null
+          ? 'grid gap-2 rounded-md bg-secondary/40 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center'
+          : 'grid gap-2 rounded-md bg-secondary/40 p-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center'
+      }
+    >
       <div className="min-w-0 text-sm">
         <p className="truncate font-medium">
           <span className="font-mono text-xs text-primary">{product.productCode}</span> {product.name}
@@ -420,6 +649,21 @@ function SelectedRow({ product, quantity, onChange }) {
           {product.color ? ` · ${product.color}` : ''}
         </p>
       </div>
+      {price !== null && (
+        <label className="flex min-w-0 flex-col gap-1 sm:items-end">
+          <span className="text-xs font-medium text-muted-foreground">Sticker price (QAR)</span>
+          <Input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step="0.01"
+            value={price}
+            onChange={(event) => onPriceChange(event.target.value)}
+            className="h-10 w-full sm:w-28"
+            aria-label={`Sticker price for ${product.name}`}
+          />
+        </label>
+      )}
       <div className="flex min-w-0 flex-col gap-1 sm:items-end">
         <span className="text-xs font-medium text-muted-foreground">Labels to print</span>
         <div className="grid w-full grid-cols-[2.5rem_minmax(4rem,1fr)_2.5rem] gap-1 sm:w-40">

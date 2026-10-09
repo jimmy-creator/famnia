@@ -586,9 +586,9 @@ function HeroBannerEditor() {
 
 // Store-admin screens the FEMNIA Hub has no replacement for. In `embedded`
 // mode (/hub/store) only these are offered, inside the hub shell.
-const EMBED_TABS = ['categories', 'abandoned', 'b2bquotes', 'reviews', 'coupons', 'theme'];
+const EMBED_TABS = ['abandoned', 'b2bquotes', 'reviews', 'coupons', 'theme']; // categories live in Catalogue → Categories
 
-export default function Admin({ embedded = false }) {
+export default function Admin({ embedded = false, legacy = null }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { currentTheme, changeTheme, themes: themeOptions } = useTheme();
@@ -600,7 +600,7 @@ export default function Admin({ embedded = false }) {
   const [tab, setTab] = useState(() => {
     if (embedded) {
       const wanted = new URLSearchParams(window.location.search).get('tab');
-      return EMBED_TABS.includes(wanted) ? wanted : 'categories';
+      return EMBED_TABS.includes(wanted) ? wanted : 'abandoned';
     }
     if (user?.role === 'staff' && user?.permissions?.length > 0) {
       const permToTab = { analytics: 'dashboard', products: 'products', orders: 'orders', categories: 'categories', customers: 'customers', coupons: 'coupons', reviews: 'reviews', settings: 'theme' };
@@ -712,7 +712,7 @@ export default function Admin({ embedded = false }) {
   const isStaff = user?.role === 'staff';
   const userPerms = user?.permissions || [];
 
-  const hasAccess = (perm) => isAdmin || userPerms.includes(perm);
+  const hasAccess = (perm) => isAdmin || userPerms.includes(perm) || Boolean(legacy?.includes(perm));
 
   // ─── Sidebar nav structure ──────────────────────────────────────
   // `show` is computed per render so role/feature gating stays live.

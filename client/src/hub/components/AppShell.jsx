@@ -3,25 +3,20 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
   BarChart3,
+  ChevronRight,
   Boxes,
-  ClipboardList,
   ExternalLink,
-  FileBarChart,
   Home,
   Landmark,
   LogOut,
   Menu,
   Package,
-  PackageMinus,
   PackagePlus,
-  Printer,
-  Settings as SettingsIcon,
   ShoppingCart,
   Store,
   Truck,
   ShieldCheck,
   UserRound,
-  Users,
   Wallet,
   X,
 } from 'lucide-react';
@@ -31,25 +26,91 @@ import { accessQuery } from '@/hub/lib/api';
 import { can } from '@/hub/lib/permissions';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
+import { ERP_SCREENS, canOpenScreen } from '@/hub/lib/erpScreens';
 
-const NAV = [
-  { to: '/hub/dashboard', label: 'Dashboard', icon: Home, permission: 'dashboard.view' },
-  { to: '/hub/pos', label: 'New Sales Order', icon: ShoppingCart, permission: 'orders.create' },
-  { to: '/hub/orders', label: 'Sales Orders', icon: ClipboardList, permission: 'orders.view_all' },
-  { to: '/hub/products', label: 'Products', icon: Package, permission: 'products.view' },
-  { to: '/hub/inventory', label: 'Inventory', icon: Boxes, permission: 'inventory.view' },
-  { to: '/hub/stock-in', label: 'Stock In', icon: PackagePlus, permission: 'inventory.stock_in' },
-  { to: '/hub/stock-out', label: 'Stock Out', icon: PackageMinus, permission: 'inventory.stock_out' },
-  { to: '/hub/customers', label: 'Customers', icon: Users, permission: 'customers.view' },
-  { to: '/hub/delivery', label: 'Delivery', icon: Truck, permission: 'delivery.view' },
-  { to: '/hub/my-deliveries', label: 'My Deliveries', icon: Truck, permission: 'delivery.my_deliveries' },
-  { to: '/hub/delivery-reports', label: 'Delivery Reports', icon: FileBarChart, permission: 'delivery.view' },
-  { to: '/hub/invoices', label: 'Invoices & Labels', icon: Printer, permission: 'invoices.view' },
-  { to: '/hub/expenses', label: 'Expenses & Assets', icon: Wallet, permission: 'expenses.view' },
-  { to: '/hub/reports', label: 'Reports', icon: BarChart3, permission: 'reports.operational' },
-  { to: '/hub/staff', label: 'Staff & Permissions', icon: ShieldCheck, permission: 'admin.manage_staff' },
-  { to: '/hub/settings', label: 'Settings', icon: SettingsIcon, permission: 'admin.settings' },
+// One menu for the whole back office. Items are either hub pages (gated on a
+// hub permission) or our ERP screens at /hub/m/:screen (gated on the classic
+// area the server checks — see erpScreens.js).
+const page = (to, label, permission, extra = {}) => ({ to, label, permission, ...extra });
+const erp = (screen) => ({ to: `/hub/m/${screen}`, label: ERP_SCREENS[screen].title, screen });
+
+const NAV_GROUPS = [
+  { id: 'home', items: [page('/hub/dashboard', 'Dashboard', 'dashboard.view')], icon: Home, flat: true },
+  {
+    id: 'sales', label: 'Sales', icon: ShoppingCart,
+    items: [
+      page('/hub/pos', 'New Sales Order', 'orders.create'),
+      page('/hub/orders', 'Sales Orders', 'orders.view_all'),
+      page('/hub/customers', 'Customers', 'customers.view'),
+      page('/hub/invoices', 'Invoices & Labels', 'invoices.view'),
+      erp('till-returns'),
+    ],
+  },
+  {
+    id: 'catalogue', label: 'Catalogue', icon: Package,
+    items: [page('/hub/products', 'Products', 'products.view'), erp('categories')],
+  },
+  {
+    id: 'inventory', label: 'Inventory', icon: Boxes,
+    items: [
+      page('/hub/inventory', 'Inventory', 'inventory.view'),
+      page('/hub/stock-in', 'Stock In', 'inventory.stock_in'),
+      page('/hub/stock-out', 'Stock Out', 'inventory.stock_out'),
+      erp('stock-counts'), erp('wastage'), erp('transfers'), erp('stock-on-hand'), erp('locations'), erp('reorder'),
+    ],
+  },
+  {
+    id: 'purchasing', label: 'Purchasing', icon: PackagePlus,
+    items: [erp('suppliers'), erp('purchase-orders'), erp('purchase-returns')],
+  },
+  {
+    id: 'delivery', label: 'Delivery', icon: Truck,
+    items: [
+      page('/hub/delivery', 'Delivery', 'delivery.view'),
+      page('/hub/my-deliveries', 'My Deliveries', null, { deliveryOnly: true }),
+      page('/hub/delivery-reports', 'Delivery Reports', 'delivery.view'),
+    ],
+  },
+  {
+    id: 'finance', label: 'Finance', icon: Wallet,
+    items: [
+      page('/hub/expenses', 'Expenses & Assets', 'expenses.view'),
+      erp('cash-accounts'), erp('cash-transfers'), erp('daily-cash'), erp('daybook'), erp('fixed-assets'), erp('capital'),
+      erp('pnl'), erp('balance-sheet'), erp('stock-value'),
+    ],
+  },
+  {
+    id: 'reports', label: 'Reports', icon: BarChart3,
+    items: [
+      page('/hub/reports', 'Reports', 'reports.operational'),
+      erp('sales-report'), erp('fast-moving'), erp('dead-stock'), erp('purchase-report'), erp('pos-reports'),
+    ],
+  },
+  { id: 'pos', label: 'POS', icon: Landmark, items: [erp('cashiers')] },
+  {
+    id: 'store', label: 'Online Store', icon: Store,
+    items: [page('/hub/store', 'Carts, Coupons & Theme', null, { staffOnly: true })],
+  },
+  {
+    id: 'admin', label: 'Admin', icon: ShieldCheck,
+    items: [
+      page('/hub/staff', 'Staff & Permissions', 'admin.manage_staff'),
+      page('/hub/settings', 'Settings', null, { adminOnly: true }),
+      page('/hub/staff?tab=activity', 'Activity Log', 'admin.view_audit'),
+    ],
+  },
 ];
+
+const COLLAPSE_KEY = 'femnia-hub-nav-collapsed-v1';
+
+function visibleItem(access, item) {
+  if (!access) return false;
+  if (item.screen) return canOpenScreen(access, item.screen);
+  if (item.deliveryOnly) return access.roles.includes('delivery');
+  if (item.adminOnly) return access.isAdmin; // settings are written by Admins only
+  if (item.staffOnly) return access.isAdmin || access.roles.includes('staff');
+  return can(access, item.permission);
+}
 
 export function AppShell({ children }) {
   const [open, setOpen] = useState(false);
@@ -58,6 +119,25 @@ export function AppShell({ children }) {
   const queryClient = useQueryClient();
   const { pathname } = useLocation();
   const access = useQuery(accessQuery);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return new Set(JSON.parse(window.localStorage.getItem(COLLAPSE_KEY) ?? '[]'));
+    } catch {
+      return new Set();
+    }
+  });
+  const toggleGroup = (id) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next]));
+      } catch {
+        /* storage unavailable — collapse state lives for this visit */
+      }
+      return next;
+    });
 
   const logout = async () => {
     try {
@@ -68,66 +148,58 @@ export function AppShell({ children }) {
     }
   };
 
+  const isActive = (to) => pathname === to || pathname.startsWith(`${to}/`);
+  const link = ({ to, label }, Icon) => (
+    <Link
+      key={to}
+      to={to}
+      onClick={() => setOpen(false)}
+      className={cn(
+        'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+        isActive(to) ? 'bg-primary text-primary-foreground shadow-sm' : 'text-foreground/80 hover:bg-secondary hover:text-primary',
+      )}
+    >
+      {Icon ? <Icon className="size-4 shrink-0" /> : <span className="ml-1.5 mr-0.5 size-1.5 shrink-0 rounded-full bg-current opacity-60" />}
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+
   const nav = (
     <nav className="flex flex-col gap-1">
-      {NAV.filter(({ to, permission }) =>
-        to === '/hub/my-deliveries'
-          ? Boolean(access.data?.roles.includes('delivery'))
-          : to === '/hub/settings'
-            ? Boolean(access.data?.isAdmin) // settings are written by Admins only
-            : !access.data || can(access.data, permission),
-      ).map(({ to, label, icon }) => {
-        const Icon = icon;
-        const active = pathname === to || pathname.startsWith(`${to}/`);
+      {NAV_GROUPS.map((group) => {
+        const items = group.items.filter((item) => visibleItem(access.data, item));
+        if (!items.length) return null;
+        if (group.flat) return items.map((item) => link(item, group.icon));
+        // A group is open when it holds the current page, whatever was saved.
+        const holdsActive = items.some((item) => isActive(item.to));
+        const isOpen = holdsActive || !collapsed.has(group.id);
+        const Icon = group.icon;
         return (
-          <Link
-            key={to}
-            to={to}
-            onClick={() => setOpen(false)}
-            className={cn(
-              'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
-              active ? 'bg-primary text-primary-foreground shadow-sm' : 'text-foreground/80 hover:bg-secondary hover:text-primary',
-            )}
-          >
-            <Icon className="size-4 shrink-0" />
-            <span className="truncate">{label}</span>
-          </Link>
+          <div key={group.id} className="mt-2">
+            <button
+              type="button"
+              onClick={() => toggleGroup(group.id)}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-primary"
+              aria-expanded={isOpen}
+            >
+              <Icon className="size-3.5" />
+              <span className="flex-1 text-left">{group.label}</span>
+              <ChevronRight className={cn('size-3.5 transition-transform', isOpen && 'rotate-90')} />
+            </button>
+            {isOpen && <div className="mt-0.5 flex flex-col gap-0.5">{items.map((item) => link(item, null))}</div>}
+          </div>
         );
       })}
     </nav>
   );
 
-  // Our own features the design has no screen for, shown inside the hub
-  // (the classic pages render embedded). The old admin stays one click away
-  // until it is retired.
-  const extraLink = (to, label, icon) => {
-    const Icon = icon;
-    const active = pathname === to;
-    return (
-      <Link
-        to={to}
-        onClick={() => setOpen(false)}
-        className={cn(
-          'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
-          active ? 'bg-primary text-primary-foreground shadow-sm' : 'text-foreground/80 hover:bg-secondary hover:text-primary',
-        )}
-      >
-        <Icon className="size-4 shrink-0" />
-        <span className="truncate">{label}</span>
-      </Link>
-    );
-  };
+  // The classic admin stays reachable while the team moves over.
   const classic =
     access.data && (access.data.isAdmin || access.data.roles.includes('staff')) ? (
-      <div className="mt-4 border-t border-border pt-4">
-        <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">More</p>
-        <div className="flex flex-col gap-1">
-          {extraLink('/hub/back-office', 'Back Office', Landmark)}
-          {extraLink('/hub/store', 'Online Store', Store)}
-        </div>
+      <div className="mt-4 border-t border-border pt-3">
         <a
-          href="/admin/erp"
-          className="mt-1 flex items-center gap-3 rounded-xl px-3 py-2 text-xs text-muted-foreground hover:bg-secondary hover:text-primary"
+          href="/admin"
+          className="flex items-center gap-3 rounded-xl px-3 py-2 text-xs text-muted-foreground hover:bg-secondary hover:text-primary"
         >
           <ExternalLink className="size-3.5 shrink-0" /> Classic admin
         </a>

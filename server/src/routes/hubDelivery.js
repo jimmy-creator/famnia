@@ -5,7 +5,7 @@ import { protect } from '../middleware/auth.js';
 import { bad, hubLog, need, wrap as wrapAs } from '../hub/http.js';
 import { loadAppSettings } from '../hub/settings.js';
 import { localDate } from '../utils/dates.js';
-import { SALES_PAYMENT_METHODS, adoptLegacy, clean, round2, syncLegacy, toSalesOrder } from '../hub/sales.js';
+import { SALES_PAYMENT_METHODS, adoptLegacy, clean, emailStatusChange, round2, syncLegacy, toSalesOrder } from '../hub/sales.js';
 
 /**
  * FEMNIA Hub delivery: the board's assignment, and the delivery staff's own
@@ -83,11 +83,13 @@ router.post('/delivery/:number/update', need('delivery.my_deliveries'), wrap(asy
   const t = await sequelize.transaction();
   let order;
   const changes = [];
+  let previousOrderStatus = null;
   try {
     order = await Order.findOne({ where: { orderNumber: req.params.number }, transaction: t, lock: t.LOCK.UPDATE });
     if (!order) throw bad('This delivery no longer exists.', 404);
     if (order.assignedTo !== req.user.id && !isAdmin(req)) throw bad('This delivery is not assigned to you.', 403);
     const before = toSalesOrder(order);
+    previousOrderStatus = order.orderStatus;
     if (before.status === 'Draft' || before.status === 'Cancelled' || order.channel === 'pos') {
       throw bad('This delivery can no longer be updated.');
     }
@@ -138,6 +140,7 @@ router.post('/delivery/:number/update', need('delivery.my_deliveries'), wrap(asy
     if (!t.finished) await t.rollback();
     throw err;
   }
+  await emailStatusChange(order, previousOrderStatus); // web customers hear about it, as with staff updates
   await hubLog(req, 'Delivery updated', 'Delivery', order.orderNumber,
     changes.length ? changes.map((c) => `${c.field}: ${c.oldValue ?? '—'} → ${c.newValue ?? '—'}`).join('; ') : 'no field changes');
   res.json({ ok: true });

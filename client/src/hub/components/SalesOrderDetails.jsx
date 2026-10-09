@@ -21,7 +21,6 @@ import { Textarea } from '@/hub/ui/textarea';
 import {
   accessQuery,
   appSettingsQuery,
-  cancelSalesOrder,
   confirmSalesOrder,
   correctOrderPricing,
   orderAuditQuery,
@@ -32,6 +31,8 @@ import {
   updateFulfilmentAndPayment,
   updateOrderContact,
 } from '@/hub/lib/api';
+import { cancelOrderWithEmail } from '@/hub/lib/apiOrders';
+import { WebOrderPanel } from '@/hub/components/WebOrderPanel';
 import { computeConsignment } from '@/hub/lib/consignment';
 import { invalidateSales } from '@/hub/lib/invalidate';
 import { can } from '@/hub/lib/permissions';
@@ -134,6 +135,9 @@ function OrderBody({ data }) {
   const [cancelRestock, setCancelRestock] = useState(true);
   /** Draft-only: reveals the fulfilment & payment fields before confirming. */
   const [editDraft, setEditDraft] = useState(false);
+  /** Online orders: the classic "your order is now …" email on a status change. */
+  const isWeb = data.channel === 'Online';
+  const [emailCustomer, setEmailCustomer] = useState(true);
 
   const canUpdate = can(access.data, 'orders.update_delivery');
   const canPayments = can(access.data, 'payments.edit');
@@ -167,10 +171,13 @@ function OrderBody({ data }) {
               paymentNotes,
             }
           : {}),
+        ...(isWeb ? { emailCustomer } : {}),
       }),
     onSuccess: async (result) => {
       await refresh();
-      toast.success(result.changes ? `Saved ${result.changes} change(s). Stock was not affected.` : 'Nothing changed.');
+      toast.success(result.changes ? `Saved ${result.changes} change(s). Stock was not affected.` : 'Nothing changed.', {
+        description: result.emailed ? 'The customer was emailed about the new status.' : undefined,
+      });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Could not update the order.'),
   });
@@ -199,7 +206,7 @@ function OrderBody({ data }) {
   });
 
   const cancel = useMutation({
-    mutationFn: () => cancelSalesOrder(data.id, cancelReason, cancelRestock),
+    mutationFn: () => cancelOrderWithEmail(data.id, cancelReason, cancelRestock, isWeb ? emailCustomer : undefined),
     onSuccess: async (result) => {
       setCancelOpen(false);
       toast.success(result.restored ? 'Order cancelled and stock restored.' : 'Order cancelled.');
@@ -511,6 +518,9 @@ function OrderBody({ data }) {
           </div>
         </div>
 
+        {/* online orders: gateway & coupon, refunds, Shiprocket, PDF invoice */}
+        {isWeb && <WebOrderPanel data={data} onChanged={refresh} />}
+
         {/* fulfilment + payment */}
         {!readOnly && (canUpdate || canPayments) && (!isDraft || editDraft) && (
           <div className="card-surface space-y-3 p-4">
@@ -657,6 +667,12 @@ function OrderBody({ data }) {
               <p className="text-xs text-muted-foreground">These details are saved when you press Confirm Order below.</p>
             ) : (
               <>
+                {isWeb && (
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={emailCustomer} onCheckedChange={(v) => setEmailCustomer(v === true)} />
+                    Email the customer when the status changes
+                  </label>
+                )}
                 <Button className="h-11 w-full" disabled={save.isPending} onClick={() => save.mutate()}>
                   {save.isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
                   Save fulfilment &amp; payment

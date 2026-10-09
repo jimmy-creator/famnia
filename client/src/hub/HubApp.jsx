@@ -30,6 +30,7 @@ import DashboardPage from '@/hub/pages/Dashboard';
 import ReportsPage from '@/hub/pages/Reports';
 import BackOfficePage from '@/hub/pages/BackOffice';
 import StoreExtrasPage from '@/hub/pages/StoreExtras';
+import ErpScreenPage from '@/hub/pages/ErpScreen';
 
 const FONTS_HREF =
   'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap';
@@ -116,6 +117,7 @@ export default function HubApp() {
           <Route path="reports" element={<ReportsPage />} />
           <Route path="back-office" element={<BackOfficePage />} />
           <Route path="store" element={<StoreExtrasPage />} />
+          <Route path="m/:screen" element={<ErpScreenPage />} />
           {PENDING.map(([path, title, note]) => (
             <Route key={path} path={path} element={<ComingSoon title={title} note={note} />} />
           ))}

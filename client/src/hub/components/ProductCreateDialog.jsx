@@ -11,6 +11,8 @@ import { Textarea } from '@/hub/ui/textarea';
 import { createProductVariants, nextProductCodes, suppliersQuery } from '@/hub/lib/api';
 import { suggestSku } from '@/hub/lib/format';
 import { invalidateStock } from '@/hub/lib/invalidate';
+import { emptyStorefront, storefrontPayload } from '@/hub/lib/storefront';
+import { CategoryPicker, GalleryEditor, StorefrontFields } from '@/hub/components/ProductStorefrontFields';
 
 const emptyVariant = () => ({
   sku: '',
@@ -36,7 +38,6 @@ const emptyForm = () => ({
   reorderLevel: 3,
   notes: '',
   isActive: true,
-  imageUrl: '',
   batchNumber: '',
   sourceCountry: '',
   wholesaler: '',
@@ -47,6 +48,7 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
   const queryClient = useQueryClient();
   const suppliers = useQuery({ ...suppliersQuery, enabled: open });
   const [form, setForm] = useState(emptyForm);
+  const [sf, setSf] = useState(emptyStorefront);
   const [variants, setVariants] = useState([emptyVariant()]);
   const [saving, setSaving] = useState(false);
 
@@ -75,13 +77,22 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
 
   const reset = () => {
     setForm(emptyForm());
+    setSf(emptyStorefront());
     setVariants([emptyVariant()]);
   };
 
   const save = async (thenStockIn) => {
     setSaving(true);
     try {
-      const result = await createProductVariants({ ...form, imageUrl: form.imageUrl.trim() || null, variants });
+      const storefront = storefrontPayload(sf);
+      if (!storefront.images.length) delete storefront.images;
+      const result = await createProductVariants({
+        ...form,
+        category: sf.categories[0] ?? '',
+        imageUrl: null,
+        ...storefront,
+        variants,
+      });
       await invalidateStock(queryClient);
       toast.success(`Product saved — ${result.skus.length} SKU variant(s) created.`);
       reset();
@@ -107,9 +118,6 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Product Name *">
                 <Input value={form.name} onChange={(e) => set('name', e.target.value)} className="h-11" />
-              </Field>
-              <Field label="Category *">
-                <Input value={form.category} onChange={(e) => set('category', e.target.value)} className="h-11" />
               </Field>
               <Field label="Design / Model">
                 <Input value={form.designModel} onChange={(e) => set('designModel', e.target.value)} className="h-11" />
@@ -140,14 +148,6 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
               <Field label="Shelf Location">
                 <Input value={form.shelfLocation} onChange={(e) => set('shelfLocation', e.target.value)} className="h-11" />
               </Field>
-              <Field label="Product Image URL (optional)">
-                <Input
-                  value={form.imageUrl}
-                  onChange={(e) => set('imageUrl', e.target.value)}
-                  placeholder="https://…"
-                  className="h-11"
-                />
-              </Field>
               <Field label="Active">
                 <select
                   value={form.isActive ? 'yes' : 'no'}
@@ -159,12 +159,23 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
                 </select>
               </Field>
             </div>
+            <Field label="Categories *">
+              <CategoryPicker value={sf.categories} onChange={(categories) => setSf((prev) => ({ ...prev, categories }))} />
+            </Field>
             <Field label="Product Description">
               <Textarea value={form.description} onChange={(e) => set('description', e.target.value)} rows={2} />
             </Field>
             <Field label="Notes">
               <Textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={2} />
             </Field>
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-foreground">Storefront</h3>
+            <Field label="Images">
+              <GalleryEditor value={sf.images} onChange={(images) => setSf((prev) => ({ ...prev, images }))} />
+            </Field>
+            <StorefrontFields value={sf} onChange={setSf} />
           </section>
 
           <section className="space-y-3">
@@ -236,7 +247,7 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
                       size="sm"
                       className="h-9"
                       onClick={() =>
-                        setVariant(index, { sku: suggestSku(form.name, form.category, variant.size, variant.color, index) })
+                        setVariant(index, { sku: suggestSku(form.name, sf.categories[0] ?? '', variant.size, variant.color, index) })
                       }
                     >
                       <Wand2 className="mr-1 size-4" /> Generate SKU

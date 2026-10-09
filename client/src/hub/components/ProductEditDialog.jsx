@@ -21,6 +21,7 @@ import { Switch } from '@/hub/ui/switch';
 import { Textarea } from '@/hub/ui/textarea';
 import {
   accessQuery,
+  adjustStock,
   deleteProduct,
   productLockQuery,
   setProductActive,
@@ -29,6 +30,10 @@ import {
   uploadProductImage,
 } from '@/hub/lib/api';
 import { invalidateStock } from '@/hub/lib/invalidate';
+import { saveStorefront, storefrontQuery } from '@/hub/lib/apiProducts';
+import { newStockIdempotencyKey } from '@/hub/lib/format';
+import { storefrontForm, storefrontPayload } from '@/hub/lib/storefront';
+import { CategoryPicker, GalleryEditor, StorefrontFields } from '@/hub/components/ProductStorefrontFields';
 import { can } from '@/hub/lib/permissions';
 
 // Remounted on every opening (see the key), so the form starts from the
@@ -52,7 +57,6 @@ function ProductEditDialogForm({ product, open, onClose }) {
 
   const [productCode, setProductCode] = useState(product?.productCode ?? '');
   const [name, setName] = useState(product?.name ?? '');
-  const [category, setCategory] = useState(product?.category ?? '');
   const [rack, setRack] = useState(product?.rack ?? '');
   const [shelf, setShelf] = useState(product?.shelfLocation ?? '');
   const [supplier, setSupplier] = useState(product?.supplier ?? '');
@@ -67,6 +71,24 @@ function ProductEditDialogForm({ product, open, onClose }) {
   const [imagePreview, setImagePreview] = useState(product?.imageUrl ?? null);
   const [pendingFile, setPendingFile] = useState(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  // Storefront (product-level) fields load per product; `sf` stays null until edited.
+  const canAdjust = can(access, 'inventory.adjust');
+  const sfq = useQuery({ ...storefrontQuery(product?.productId), enabled: open && Boolean(product?.productId) });
+  const sfInitial = useMemo(
+    () => (sfq.data ? { ...storefrontForm(sfq.data), description: sfq.data.description ?? '', brand: sfq.data.brand ?? '' } : null),
+    [sfq.data],
+  );
+  const [sf, setSf] = useState(null);
+  const sfValue = sf ?? sfInitial;
+  const sfDirty = Boolean(sf && sfInitial && JSON.stringify(sf) !== JSON.stringify(sfInitial));
+  const [stock, setStock] = useState(String(product?.currentStock ?? 0));
+  const stockDirty = canAdjust && stock.trim() !== '' && Number(stock) !== Number(product?.currentStock ?? 0);
+  const isVariant = product?.variantIndex !== null && product?.variantIndex !== undefined;
+  const margin = (() => {
+    const c = Number(cost);
+    const p = Number(price);
+    return c > 0 && Number.isFinite(p) ? String(+((p / c - 1) * 100).toFixed(2)) : '';
+  })();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const lock = useQuery({ ...productLockQuery(product?.key ?? ''), enabled: open && Boolean(product?.key) });
@@ -76,7 +98,6 @@ function ProductEditDialogForm({ product, open, onClose }) {
     return (
       productCode !== (product.productCode ?? '') ||
       name !== product.name ||
-      category !== (product.category ?? '') ||
       rack !== (product.rack ?? '') ||
       shelf !== (product.shelfLocation ?? '') ||
       supplier !== (product.supplier ?? '') ||
@@ -88,9 +109,11 @@ function ProductEditDialogForm({ product, open, onClose }) {
       color !== (product.color ?? '') ||
       isActive !== product.isActive ||
       imagePath !== (product.imageUrl ?? null) ||
-      Boolean(pendingFile)
+      Boolean(pendingFile) ||
+      sfDirty ||
+      stockDirty
     );
-  }, [product, productCode, name, category, rack, shelf, supplier, price, cost, canEditCost, reorder, notes, size, color, isActive, imagePath, pendingFile]);
+  }, [product, productCode, name, rack, shelf, supplier, price, cost, canEditCost, reorder, notes, size, color, isActive, imagePath, pendingFile, sfDirty, stockDirty]);
 
   const variantLocked = lock.data?.hasHistory ?? true;
 
@@ -99,10 +122,9 @@ function ProductEditDialogForm({ product, open, onClose }) {
       if (!product) return null;
       let nextImage = imagePath;
       if (pendingFile) nextImage = await uploadProductImage(pendingFile);
-      return updateProduct(product.key, {
+      const result = await updateProduct(product.key, {
         productCode: productCode.trim() || null,
         name,
-        category: category || null,
         rack: rack || null,
         shelfLocation: shelf || null,
         supplier: supplier || null,
@@ -115,6 +137,26 @@ function ProductEditDialogForm({ product, open, onClose }) {
         // A single-SKU product given a size / colour becomes a one-size product (new key).
         ...(variantLocked ? {} : { size: size || null, color: color || null }),
       });
+      let changes = result.changes || 0;
+      if (sfDirty) {
+        // Send only what changed, so a field you may not edit (images, prices) is never touched.
+        const now = { ...storefrontPayload(sf), description: sf.description, brand: sf.brand || null };
+        const was = { ...storefrontPayload(sfInitial), description: sfInitial.description, brand: sfInitial.brand || null };
+        const patch = Object.fromEntries(Object.entries(now).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(was[k])));
+        const saved = await saveStorefront(product.productId, patch);
+        changes += saved.changes || 0;
+      }
+      if (stockDirty) {
+        await adjustStock(result.key || product.key, {
+          systemQuantity: product.currentStock,
+          countedQuantity: Number(stock),
+          reason: 'Physical Count Correction',
+          notes: 'Stock edited in the product form',
+          idempotencyKey: newStockIdempotencyKey('adj'),
+        });
+        changes += 1;
+      }
+      return { ...result, changes };
     },
     onSuccess: async (result) => {
       if (!result) return;
@@ -123,6 +165,7 @@ function ProductEditDialogForm({ product, open, onClose }) {
       );
       await invalidateStock(client, product.key);
       if (result.key && result.key !== product.key) await invalidateStock(client, result.key);
+      await client.invalidateQueries({ queryKey: ['femnia', 'storefront', product.productId] });
       onClose();
     },
     onError: (error) => toast.error(error.message),
@@ -187,7 +230,8 @@ function ProductEditDialogForm({ product, open, onClose }) {
           </DialogHeader>
 
           <div className="space-y-5">
-            {/* image */}
+            {/* a size / colour's own image (optional); the product gallery is below */}
+            {isVariant && (
             <section className="flex flex-wrap items-center gap-4">
               {imagePreview ? (
                 <img src={imagePreview} alt={name} className="size-24 rounded-2xl border border-border object-cover" />
@@ -227,8 +271,12 @@ function ProductEditDialogForm({ product, open, onClose }) {
                   <ImageOff className="mr-2 size-4" /> Remove
                 </Button>
                 {!canImages && <p className="w-full text-xs text-muted-foreground">You do not have image permission.</p>}
+                <p className="w-full text-xs text-muted-foreground">
+                  Image for this size / colour only. Leave empty to use the product gallery.
+                </p>
               </div>
             </section>
+            )}
 
             {/* locked identity */}
             <section className="rounded-2xl bg-secondary/50 p-4">
@@ -279,9 +327,6 @@ function ProductEditDialogForm({ product, open, onClose }) {
             <div className="grid gap-3 sm:grid-cols-2">
               <Labelled label="Product name">
                 <Input value={name} onChange={(event) => setName(event.target.value)} className="h-11" />
-              </Labelled>
-              <Labelled label="Category">
-                <Input value={category} onChange={(event) => setCategory(event.target.value)} className="h-11" />
               </Labelled>
               <Labelled label="Rack">
                 <Input value={rack} onChange={(event) => setRack(event.target.value)} className="h-11" />
@@ -338,9 +383,78 @@ function ProductEditDialogForm({ product, open, onClose }) {
               </Labelled>
             </div>
 
+            {(canViewCost && canEditPrice) || canAdjust ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {canViewCost && canEditPrice && (
+                  <Labelled label="Margin % (sets the selling price)">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={margin}
+                      onChange={(event) => {
+                        const c = Number(cost);
+                        const m = Number(event.target.value);
+                        if (c > 0 && Number.isFinite(m)) setPrice((c * (1 + m / 100)).toFixed(2));
+                      }}
+                      placeholder="Needs a cost price"
+                      className="h-11"
+                    />
+                  </Labelled>
+                )}
+                {canAdjust && (
+                  <Labelled label="Current stock">
+                    <Input
+                      type="number"
+                      min={0}
+                      step="1"
+                      value={stock}
+                      onChange={(event) => setStock(event.target.value)}
+                      className="h-11"
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      A change is saved as a counted stock adjustment in this product’s history.
+                    </p>
+                  </Labelled>
+                )}
+              </div>
+            ) : null}
+
             <Labelled label="Notes">
               <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
             </Labelled>
+
+            <section className="space-y-3 rounded-2xl border border-border p-4">
+              <h3 className="text-sm font-semibold text-foreground">Storefront · shared by every size / colour of {product.name}</h3>
+              {!sfValue ? (
+                <p className="text-xs text-muted-foreground">Loading…</p>
+              ) : (
+                <>
+                  <Labelled label="Categories">
+                    <CategoryPicker value={sfValue.categories} onChange={(categories) => setSf({ ...sfValue, categories })} />
+                  </Labelled>
+                  <Labelled label="Gallery">
+                    <GalleryEditor
+                      value={sfValue.images}
+                      onChange={(images) => setSf({ ...sfValue, images })}
+                      disabled={!canImages}
+                    />
+                  </Labelled>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Labelled label="Brand">
+                      <Input value={sfValue.brand} onChange={(event) => setSf({ ...sfValue, brand: event.target.value })} className="h-11" />
+                    </Labelled>
+                  </div>
+                  <Labelled label="Description">
+                    <Textarea
+                      rows={3}
+                      value={sfValue.description}
+                      onChange={(event) => setSf({ ...sfValue, description: event.target.value })}
+                    />
+                  </Labelled>
+                  <StorefrontFields value={sfValue} onChange={setSf} canEditPrice={canEditPrice} />
+                </>
+              )}
+            </section>
 
             <div className="flex items-center justify-between rounded-2xl border border-border p-4">
               <div>
@@ -382,7 +496,7 @@ function ProductEditDialogForm({ product, open, onClose }) {
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Editing a product never changes stock quantities or past sales — use Adjust Stock for quantity corrections.
+              Editing a product never changes past sales. A stock change here is recorded as a counted adjustment.
             </p>
           </div>
         </DialogContent>

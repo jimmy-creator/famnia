@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/hub/ui/dialog';
 import { BUSINESS, FemniaLogo } from '@/hub/components/Brand';
@@ -21,6 +22,165 @@ import { useHubTitle } from '@/hub/lib/useHubTitle';
 // Money KPIs come back null when the signed-in user may not see them; those
 // tiles are left out rather than shown as zero.
 const shown = (v) => v !== null && v !== undefined;
+
+const PRIMARY = 'var(--primary)';
+
+/**
+ * Figures merged in from the classic admin dashboard and the ERP overview:
+ * month growth, customers, purchase orders, cash in accounts, wastage, the
+ * revenue chart, order-status bars, payment methods and top sellers.
+ */
+function BusinessOverview({ o, topSelling, showSales }) {
+  const [period, setPeriod] = useState('days');
+  const chart = o.revenueChart[period];
+  const growth = o.growthPercent;
+  const maxStatus = Math.max(1, ...o.orderStatus.map((s) => s.count));
+  return (
+    <>
+      <section className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {shown(o.monthRevenue) && (
+          <Kpi
+            label="This Month"
+            value={QAR(o.monthRevenue)}
+            tone={growth !== null && growth < 0 ? 'warn' : 'good'}
+          />
+        )}
+        {shown(o.lastMonthRevenue) && (
+          <Kpi
+            label={growth === null ? 'Last Month' : `Last Month · ${growth >= 0 ? '↑' : '↓'} ${Math.abs(growth)}%`}
+            value={QAR(o.lastMonthRevenue)}
+          />
+        )}
+        {shown(o.avgBillToday) && <Kpi label="Avg Bill Today" value={QAR(o.avgBillToday)} />}
+        {shown(o.grossProfitToday) && (
+          <Kpi label={`Gross Profit Today · ${o.marginTodayPercent}%`} value={QAR(o.grossProfitToday)} tone="good" />
+        )}
+        <Kpi label="Customers" value={`${o.customers.total} · +${o.customers.newThisMonth} this month`} to="/hub/customers" />
+        <Kpi label="Open Purchase Orders" value={o.openPurchaseOrders} to="/hub/m/purchase-orders" />
+        {shown(o.cashInAccounts) && (
+          <Kpi label="Cash in Accounts" value={QAR(o.cashInAccounts)} tone={o.cashInAccounts < 0 ? 'danger' : 'default'} to="/hub/m/cash-accounts" />
+        )}
+        {shown(o.wastageThisMonth) && <Kpi label="Wastage This Month" value={QAR(o.wastageThisMonth)} tone="warn" to="/hub/m/wastage" />}
+        <Kpi label="To Reorder" value={o.reorderCount} tone={o.reorderCount > 0 ? 'warn' : 'default'} to="/hub/m/reorder" />
+      </section>
+
+      <div className="mt-6 grid gap-4 xl:grid-cols-3">
+        <section className="card-surface p-4 xl:col-span-2">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="section-title text-base font-semibold text-foreground">
+              {showSales ? 'Revenue' : 'Orders'}
+            </h2>
+            <div className="flex gap-1">
+              {[
+                ['days', 'Last 30 days'],
+                ['months', '12 months'],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setPeriod(key)}
+                  className={
+                    period === key
+                      ? 'rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground'
+                      : 'rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:text-primary'
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chart} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) => (period === 'days' ? v.slice(8) : v.slice(5))}
+                  interval={period === 'days' ? 2 : 0}
+                />
+                <YAxis tick={{ fontSize: 11 }} width={48} />
+                <Tooltip
+                  formatter={(value, name) => (name === 'revenue' ? [QAR(value), 'Revenue'] : [value, 'Orders'])}
+                  labelFormatter={(l) => l}
+                />
+                <Bar dataKey={showSales ? 'revenue' : 'orders'} fill={PRIMARY} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+
+        <section className="card-surface p-4">
+          <h2 className="mb-3 section-title text-base font-semibold text-foreground">Order Status</h2>
+          {o.orderStatus.length === 0 ? (
+            <EmptyState title="No orders yet" />
+          ) : (
+            <ul className="space-y-2">
+              {o.orderStatus.map((s) => (
+                <li key={s.status} className="text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-foreground">{s.status}</span>
+                    <span className="font-semibold text-primary">{s.count}</span>
+                  </div>
+                  <div className="mt-1 h-2 rounded-full bg-secondary">
+                    <div className="h-2 rounded-full bg-primary" style={{ width: `${(s.count / maxStatus) * 100}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="card-surface p-4">
+          <h2 className="mb-3 section-title text-base font-semibold text-foreground">Payment Methods</h2>
+          {o.paymentMethods.length === 0 ? (
+            <EmptyState title="No payments yet" />
+          ) : (
+            <ul className="divide-y divide-border text-sm">
+              {o.paymentMethods.map((p) => (
+                <li key={p.method} className="flex items-center justify-between py-2">
+                  <span className="text-foreground">{p.method}</span>
+                  <span className="text-muted-foreground">
+                    {p.orders} order{p.orders === 1 ? '' : 's'}
+                    {shown(p.revenue) && <span className="ml-2 font-medium text-foreground">{QAR(p.revenue)}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="card-surface p-4 xl:col-span-2">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="section-title text-base font-semibold text-foreground">Top Selling Products</h2>
+            <Link to="/hub/m/fast-moving" className="text-sm text-primary hover:underline">
+              Fast moving
+            </Link>
+          </div>
+          {topSelling.length === 0 ? (
+            <EmptyState title="No sales yet" />
+          ) : (
+            <ul className="divide-y divide-border text-sm">
+              {topSelling.map((t) => (
+                <li key={t.sku} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-foreground">{t.name}</p>
+                    <p className="text-xs text-muted-foreground">{t.sku}</p>
+                  </div>
+                  <span className="text-right text-muted-foreground">
+                    {t.quantity} sold
+                    {showSales && <span className="ml-2 font-medium text-foreground">{QAR(t.revenue)}</span>}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </>
+  );
+}
 
 export default function DashboardPage() {
   useHubTitle('Dashboard — FEMNIA Hub');
@@ -91,6 +251,8 @@ export default function DashboardPage() {
         <Kpi label="Low Stock SKUs" value={k.lowStockCount} tone="warn" to="/hub/inventory" />
         <Kpi label="Out of Stock SKUs" value={k.outOfStockCount} tone="danger" to="/hub/inventory" />
       </section>
+
+      {d.overview && <BusinessOverview o={d.overview} topSelling={d.topSelling} showSales={shown(k.totalSales)} />}
 
       <div className="mt-6 grid gap-4 xl:grid-cols-2">
         <section className="card-surface p-4">

@@ -14,6 +14,10 @@ import { SALES_ORDER_STATUSES } from '@/hub/lib/sales';
 import { useHubTitle } from '@/hub/lib/useHubTitle';
 
 const money = (v) => `QAR ${Number(v || 0).toFixed(2)}`;
+/** The storefront gateway behind an online order's payment. */
+const GATEWAY_LABELS = {
+  razorpay: 'Razorpay', paytm: 'Paytm', stripe: 'Stripe', nomod: 'Nomod', cod: 'COD', bank_transfer: 'Bank transfer',
+};
 
 /** Where the order came from: web checkout (Online), the till (POS) or staff (Staff). */
 function ChannelTag({ channel }) {
@@ -39,7 +43,7 @@ export default function SalesOrdersPage() {
       if (status !== 'All' && o.status !== status) return false;
       if (fulfilment !== 'All' && o.fulfilmentMethod !== fulfilment) return false;
       if (!q) return true;
-      return [o.id, o.customerName, o.customerCode, o.phone, o.area, o.trackingNumber, o.courier, o.channel]
+      return [o.id, o.customerName, o.customerCode, o.phone, o.email, o.area, o.trackingNumber, o.courier, o.channel, o.couponCode, o.paymentGateway]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
@@ -93,6 +97,8 @@ export default function SalesOrdersPage() {
                       Fulfilment: o.fulfilmentMethod,
                       Status: o.status,
                       Payment: o.paymentMode,
+                      Gateway: o.channel === 'Online' ? o.paymentGateway ?? '' : '',
+                      Coupon: o.couponCode ?? '',
                       'Payment status': o.paymentStatus,
                       'Grand total': o.grandTotal,
                       Received: o.amountReceived,
@@ -206,7 +212,11 @@ export default function SalesOrdersPage() {
                 </td>
                 <td className="p-3">
                   <p>{o.paymentMode}</p>
-                  <p className="text-xs text-muted-foreground">{o.paymentStatus}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {o.paymentStatus}
+                    {o.channel === 'Online' && o.paymentGateway ? ` · ${GATEWAY_LABELS[o.paymentGateway] ?? o.paymentGateway}` : ''}
+                    {o.couponCode ? ` · ${o.couponCode}` : ''}
+                  </p>
                 </td>
                 <td className="p-3 text-right">{money(o.grandTotal)}</td>
                 <td className="p-3 text-right">{money(o.remainingBalance)}</td>

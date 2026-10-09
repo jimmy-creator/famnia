@@ -106,6 +106,9 @@ const STEPS = [
   ['Orders.assignedTo index', () => addIndexIfMissing('Orders', 'order_assigned_to', ['assignedTo'])],
   ...[['altPhone', DataTypes.STRING(30)], ['area', DataTypes.STRING], ['landmark', DataTypes.STRING], ['customerNotes', DataTypes.TEXT]]
     .map(([col, type]) => [`Users.${col}`, () => addColumnIfMissing('Users', col, { type, allowNull: true })]),
+  // Hub expense/asset entries can be voided (kept for the audit trail).
+  ...[['voidedAt', DataTypes.DATE], ['voidReason', DataTypes.STRING(200)], ['voidedBy', DataTypes.INTEGER]]
+    .map(([col, type]) => [`HubExpenseEntries.${col}`, () => addColumnIfMissing('HubExpenseEntries', col, { type, allowNull: true })]),
 ];
 
 export async function runMigrations({ log = console.log } = {}) {

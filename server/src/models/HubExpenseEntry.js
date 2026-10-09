@@ -29,6 +29,10 @@ const HubExpenseEntry = sequelize.define('HubExpenseEntry', {
   fixedAssetId: { type: DataTypes.INTEGER, allowNull: true },
   idempotencyKey: { type: DataTypes.STRING(120), allowNull: true, unique: true },
   createdBy: { type: DataTypes.INTEGER, allowNull: true },
+  // Voided entries stay for the audit trail but drop out of lists, totals and P&L.
+  voidedAt: { type: DataTypes.DATE, allowNull: true },
+  voidReason: { type: DataTypes.STRING(200), allowNull: true },
+  voidedBy: { type: DataTypes.INTEGER, allowNull: true },
 }, {
   indexes: [{ fields: ['entryType', 'txnDate'] }],
 });

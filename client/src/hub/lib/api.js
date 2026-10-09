@@ -36,7 +36,7 @@ export const qk = {
   fundingAccounts: ['femnia', 'funding-accounts'],
 };
 
-const get = async (url) => (await api.get(url)).data;
+export const get = async (url) => (await api.get(url)).data;
 
 /** Who is signed in to the hub and what they may do (GET /api/hub/access). */
 export const accessQuery = {
@@ -78,7 +78,7 @@ export function errorMessage(err, fallback = 'Something went wrong') {
 }
 
 /** Rejects with an Error whose message is the server's, so callers can toast it. */
-async function send(method, url, body) {
+export async function send(method, url, body) {
   try {
     return (await api.request({ method, url, data: body })).data;
   } catch (err) {

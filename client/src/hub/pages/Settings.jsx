@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { FemniaLogo } from '@/hub/components/Brand';
 import { CatalogueReplaceCard } from '@/hub/components/CatalogueReplaceCard';
 import { FundingAccountsCard } from '@/hub/components/FundingAccountsCard';
+import { DatabaseBackupCard } from '@/hub/components/DatabaseBackupCard';
 import { ErrorState, Loading, PageHeader } from '@/hub/components/shared';
 import { Button } from '@/hub/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/hub/ui/card';
@@ -535,7 +536,9 @@ function SettingsForm({ saved, isAdmin, onRefresh, section, setSection, backup }
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Downloads one Excel file with a separate sheet for Products, Inventory, Stock In, Stock Out, Stock
-              Adjustments, Orders, Order Items, Returns, Customers, Payments, Expenses, Assets, Liabilities, Reimbursements and Audit Logs. This
+              Adjustments, Orders, Order Items, Returns, Customers, Payments, Expenses, Assets, Liabilities, Reimbursements, Suppliers,
+              Purchase Orders, Cash Accounts and Transactions, Capital, Coupons, Reviews, Categories, Locations, Shifts, Till Returns,
+              Stock Transfers and Audit Logs. This
               only reads your records — nothing is changed, deleted or recalculated.
             </p>
             {isAdmin ? (
@@ -563,6 +566,7 @@ function SettingsForm({ saved, isAdmin, onRefresh, section, setSection, backup }
         </Card>
       )}
 
+      {section === 'backup' && isAdmin && <DatabaseBackupCard />}
       {section === 'backup' && isAdmin && <CatalogueReplaceCard backupFilename={backup.data?.filename ?? null} />}
 
       {section === 'lists' && (

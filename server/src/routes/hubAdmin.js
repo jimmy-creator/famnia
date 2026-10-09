@@ -3,10 +3,11 @@ import { Router } from 'express';
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
-  ActivityLog, Expense, FixedAsset, HubExpenseEntry, HubLiability, HubReimbursement, Order, OrderAuditLog, OrderReturn,
-  Product, ProductAuditLog, Setting,
-  StockMovement, User,
+  ActivityLog, CapitalEntry, CashAccount, CashTransaction, CashierSession, Category, Coupon, Expense, FixedAsset,
+  HubExpenseEntry, HubLiability, HubReimbursement, Location, Order, OrderAuditLog, OrderReturn, Product,
+  ProductAuditLog, PurchaseOrder, Review, SalesReturn, Setting, StockMovement, StockTransfer, Supplier, User,
 } from '../models/index.js';
+import { rangeEnd, rangeStart } from '../utils/dates.js';
 import { protect } from '../middleware/auth.js';
 import { bad, hubLog, need, wrap as wrapAs } from '../hub/http.js';
 import { ALL_PERMISSIONS, HUB_ROLES, passwordProblem } from '../hub/permissions.js';
@@ -258,23 +259,62 @@ function describe(details) {
   return JSON.stringify(details).slice(0, 500);
 }
 
+/**
+ * The one activity log (hub and classic actions share the table): filters
+ * for date range (store days), action, module and manager overrides, plus the
+ * location / approving manager / reason / IP / details the ERP log showed.
+ * GET /hub/activity/options lists the actions and modules to filter by.
+ */
 router.get('/activity', need('admin.view_audit'), wrap(async (req, res) => {
-  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 1000);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 300, 1), 2000);
+  const where = {};
+  const day = /^\d{4}-\d{2}-\d{2}$/;
+  if (day.test(String(req.query.from || '')) || day.test(String(req.query.to || ''))) {
+    where.createdAt = {};
+    if (day.test(String(req.query.from || ''))) where.createdAt[Op.gte] = rangeStart(req.query.from);
+    if (day.test(String(req.query.to || ''))) where.createdAt[Op.lte] = rangeEnd(req.query.to);
+  }
+  if (req.query.action) where.action = String(req.query.action).slice(0, 120);
+  if (req.query.module) where.entityType = String(req.query.module).slice(0, 120);
+  if (req.query.overrides === 'true' || req.query.overrides === '1') where.managerOverrideBy = { [Op.ne]: null };
   const rows = await ActivityLog.findAll({
+    where,
     order: [['createdAt', 'DESC'], ['id', 'DESC']],
     limit,
-    include: [{ model: User, as: 'actor', attributes: ['name', 'email', 'username'] }],
+    include: [
+      { model: User, as: 'actor', attributes: ['name', 'email', 'username', 'role'] },
+      { model: User, as: 'approver', attributes: ['name', 'email', 'username'] },
+      { model: Location, attributes: ['name'] },
+    ],
   });
+  const who = (u) => (u ? u.name || u.username || u.email : null);
   res.set('Cache-Control', 'no-store');
   res.json(rows.map((r) => ({
     id: String(r.id),
     createdAt: r.createdAt,
-    staffName: r.actor ? r.actor.name || r.actor.username || r.actor.email : null,
+    staffName: who(r.actor),
+    staffRole: r.actor?.role ?? null,
     action: r.action,
     module: r.entityType || 'System',
     recordId: r.details?.recordId ?? (r.entityId != null ? String(r.entityId) : null),
     description: describe(r.details) || r.reason || null,
+    location: r.Location?.name ?? null,
+    approvedBy: who(r.approver),
+    reason: r.reason || null,
+    ip: r.ip || null,
+    details: r.details ?? null,
   })));
+}));
+
+router.get('/activity/options', need('admin.view_audit'), wrap(async (req, res) => {
+  const [actions, modules] = await Promise.all([
+    ActivityLog.findAll({ attributes: ['action'], group: ['action'], raw: true }),
+    ActivityLog.findAll({ attributes: ['entityType'], where: { entityType: { [Op.ne]: null } }, group: ['entityType'], raw: true }),
+  ]);
+  res.json({
+    actions: actions.map((a) => a.action).filter(Boolean).sort(),
+    modules: modules.map((m) => m.entityType).filter(Boolean).sort(),
+  });
 }));
 
 // ════════════════════════════════════════════════════════════════════
@@ -396,11 +436,28 @@ router.get('/backup', adminOnlySettings, wrap(async (req, res) => {
     HubLiability.findAll({ order: [['createdAt', 'ASC']], raw: true }),
     HubReimbursement.findAll({ order: [['paidOn', 'ASC'], ['id', 'ASC']], raw: true }),
   ]);
+  // The ERP side, so one export covers the whole business.
+  const byCreated = { order: [['createdAt', 'ASC']], raw: true };
+  const [suppliers, purchaseOrders, cashAccounts, cashTxns, capital, coupons, reviews, categories, locations, shifts,
+    tillReturns, transfers] = await Promise.all([
+    Supplier.findAll(byCreated),
+    PurchaseOrder.findAll(byCreated),
+    CashAccount.findAll(byCreated),
+    CashTransaction.findAll({ order: [['date', 'ASC'], ['id', 'ASC']], raw: true }),
+    CapitalEntry.findAll(byCreated),
+    Coupon.findAll(byCreated),
+    Review.findAll(byCreated),
+    Category.findAll(byCreated),
+    Location.findAll(byCreated),
+    CashierSession.findAll(byCreated),
+    SalesReturn.findAll(byCreated),
+    StockTransfer.findAll(byCreated),
+  ]);
   const settings = await loadAppSettings();
   const views = orders.map((o) => toSalesOrder(o, { customerPrefix: settings.customerPrefix }));
   const productRows = skus.map((s) => ({
     key: s.key, sku: s.sku, productCode: s.productCode, name: s.name, category: s.category, size: s.size, color: s.color,
-    costPrice: s.costPrice, sellingPrice: s.sellingPrice, reorderLevel: s.reorderLevel, rack: s.rack,
+    costPrice: s.costPrice, sellingPrice: s.sellingPriceQar, reorderLevel: s.reorderLevel, rack: s.rack,
     shelfLocation: s.shelfLocation, supplier: s.supplier, isActive: s.isActive,
   }));
   const inventoryRows = skus.map((s) => ({
@@ -432,6 +489,18 @@ router.get('/backup', adminOnlySettings, wrap(async (req, res) => {
     { name: 'Hub Asset Entries', rows: hubEntries.filter((e) => e.entryType === 'asset') },
     { name: 'Liabilities', rows: liabilities },
     { name: 'Reimbursements', rows: reimbursements },
+    { name: 'Suppliers', rows: suppliers },
+    { name: 'Purchase Orders', rows: purchaseOrders },
+    { name: 'Cash Accounts', rows: cashAccounts },
+    { name: 'Cash Transactions', rows: cashTxns },
+    { name: 'Capital', rows: capital },
+    { name: 'Coupons', rows: coupons },
+    { name: 'Reviews', rows: reviews },
+    { name: 'Categories', rows: categories },
+    { name: 'Locations', rows: locations },
+    { name: 'Shifts', rows: shifts },
+    { name: 'Till Returns', rows: tillReturns },
+    { name: 'Stock Transfers', rows: transfers },
     {
       name: 'Audit Logs',
       rows: [

@@ -12,9 +12,14 @@ import {
 } from '../hub/catalog.js';
 import {
   CONTACT_EDITABLE_STATUSES, FIELD_LABELS, RETURN_REASONS, SALES_ORDER_STATUSES, SALES_PAYMENT_METHODS,
-  SALES_PAYMENT_STATUSES, adoptLegacy, clean, computeTotals, customerCode, normalizePhone, round2, samePhone,
-  syncLegacy, toSalesOrder,
+  SALES_PAYMENT_STATUSES, adoptLegacy, clean, computeTotals, customerCode, emailStatusChange, normalizePhone, round2,
+  samePhone, syncLegacy, toSalesOrder,
 } from '../hub/sales.js';
+import { getPaymentGateway } from '../services/paymentGateway.js';
+import { SHIPROCKET_SHIP_ENABLED } from '../utils/shipAuth.js';
+import {
+  autoCreateShipment, cancelShipment, getInvoice as getShipInvoice, getLabel, getManifest, refreshTracking,
+} from '../services/shipping.js';
 
 /**
  * FEMNIA Hub sales: New Sales Order, Sales Orders, Customers, Invoices &
@@ -430,6 +435,7 @@ router.patch('/orders/:number/fulfilment', need('orders.update_delivery', 'payme
   if (order.channel === 'pos') throw bad('Till sales are managed at the till.');
   const before = await view(order);
   if (before.status === 'Draft') throw bad('Confirm the order before updating fulfilment or payment.');
+  const previousLegacyStatus = order.orderStatus;
   adoptLegacy(order, before);
 
   const patch = {};
@@ -494,7 +500,9 @@ router.patch('/orders/:number/fulfilment', need('orders.update_delivery', 'payme
     await hubLog(req, 'Sales order updated', 'Sales Orders', order.orderNumber,
       changes.map((c) => `${c.field}: ${c.oldValue ?? '—'} → ${c.newValue ?? '—'}`).join('; '));
   }
-  res.json({ ok: true, changes: changes.length });
+  // Web customers get the same status email the classic admin sent ("Email the customer", on by default).
+  const emailed = b.emailCustomer === false ? false : await emailStatusChange(order, previousLegacyStatus);
+  res.json({ ok: true, changes: changes.length, emailed });
 }));
 
 async function updateCustomerFromOrder(order, fields) {
@@ -722,6 +730,7 @@ router.post('/orders/:number/cancel', need('orders.cancellations'), wrap(async (
   let shouldRestore = false;
   let alreadyRestored = false;
   let fromStatus;
+  let previousLegacyStatus;
   const touched = [];
   try {
     order = await findOrder(req.params.number, { transaction: t, lock: t.LOCK.UPDATE });
@@ -730,6 +739,7 @@ router.post('/orders/:number/cancel', need('orders.cancellations'), wrap(async (
     fromStatus = before.status;
     if (before.status === 'Cancelled') throw bad('This order is already cancelled.');
     deliveredPaidLock(req, before);
+    previousLegacyStatus = order.orderStatus;
     adoptLegacy(order, before);
     alreadyRestored = Boolean(order.restockedAt) || order.stockState === 'restored';
     shouldRestore = restock && before.stockDeducted && !alreadyRestored;
@@ -768,7 +778,8 @@ router.post('/orders/:number/cancel', need('orders.cancellations'), wrap(async (
   }
   await recomputeAfter(touched);
   await hubLog(req, 'Sales order cancelled', 'Sales Orders', order.orderNumber, `${reason}${shouldRestore ? ' · stock restored' : ''}`);
-  res.json({ ok: true, restored: shouldRestore });
+  const emailed = req.body?.emailCustomer === false ? false : await emailStatusChange(order, previousLegacyStatus);
+  res.json({ ok: true, restored: shouldRestore, emailed });
 }));
 
 router.post('/orders/:number/invoice-print', need('invoices.print', 'invoices.download', 'invoices.view'), wrap(async (req, res) => {
@@ -785,6 +796,155 @@ router.post('/orders/:number/label-print', need('invoices.labels_print', 'invoic
   await hubLog(req, next === 1 ? 'Delivery label printed' : 'Delivery label reprinted', 'Invoices & Labels',
     order.orderNumber, `Label ${size} · print ${next}`);
   res.json({ printCount: next });
+}));
+
+// ════════════════════════════════════════════════════════════════════
+// Web orders: refunds and Shiprocket shipping (merged from the classic admin)
+// ════════════════════════════════════════════════════════════════════
+
+/** Put an order's unreturned units back, once, through the ledger. Returns the products touched. */
+async function restoreOrderStockOnce(order, t, req, kind, reasonText) {
+  const view0 = toSalesOrder(order);
+  if (!view0.stockDeducted || order.restockedAt || order.stockState === 'restored') return null;
+  const touched = [];
+  for (const it of order.items) {
+    const qty = Math.max((parseInt(it.quantity, 10) || 0) - (parseInt(it.returnedQty, 10) || 0), 0);
+    if (!qty || !it.productId) continue;
+    const product = await Product.findByPk(it.productId, { transaction: t });
+    if (!product) continue;
+    await applyStockDelta({
+      productId: product.id, variantIndex: lineVariantIndex(product, it), delta: qty, transaction: t,
+      ctx: {
+        kind, reference: `${kind === 'cancel_restock' ? 'CAN' : 'RFD'}-${order.orderNumber}-${it.sku || it.productId}`,
+        orderId: order.id, reason: reasonText, createdBy: req.user.id,
+      },
+    });
+    touched.push(product.id);
+  }
+  order.restockedAt = new Date();
+  order.stockState = 'restored';
+  return touched;
+}
+
+/**
+ * Refund a paid web order, or approve a customer's pending refund request.
+ * Gateway refund first (Nomod), then: payment Refunded; an order that hadn't
+ * shipped is cancelled and its stock goes back once; a delivered order keeps
+ * its status (goods come back through Returns). Customer gets the status email.
+ */
+router.post('/orders/:number/refund', need('payments.refunds'), wrap(async (req, res) => {
+  const b = req.body || {};
+  const probe = await findOrder(req.params.number);
+  if (probe.channel !== 'web') throw bad('Gateway refunds apply to online orders. For other orders set the payment to Refunded.');
+  if (!['paid', 'refunded'].includes(probe.paymentStatus) || probe.refundStatus === 'processed') {
+    throw bad(probe.refundStatus === 'processed' ? 'This order has already been refunded.' : 'No payment to refund.');
+  }
+  const total = round2(probe.totalAmount);
+  const amount = round2(b.amount ?? b.refundAmount ?? total);
+  if (!(amount > 0) || amount > total + 0.001) throw bad(`Refund must be between QAR 0.01 and QAR ${total.toFixed(2)}.`);
+  const reason = clean(b.reason, 200) || (probe.refundStatus === 'pending' ? 'Customer refund request approved' : 'Refunded by staff');
+
+  // The gateway refund happens before anything is written, as in the classic admin.
+  if (probe.paymentMethod === 'nomod' && probe.trackingNumber) {
+    await getPaymentGateway('nomod').refund(probe.trackingNumber, amount, probe.orderNumber);
+  }
+
+  const t = await sequelize.transaction();
+  let order;
+  let touched = null;
+  let previousLegacyStatus;
+  let fromStatus;
+  let didCancel = false;
+  try {
+    order = await findOrder(req.params.number, { transaction: t, lock: t.LOCK.UPDATE });
+    const before = toSalesOrder(order);
+    fromStatus = before.status;
+    previousLegacyStatus = order.orderStatus;
+    adoptLegacy(order, before);
+    const cancels = ['processing', 'confirmed'].includes(previousLegacyStatus) && before.status !== 'Cancelled';
+    didCancel = cancels;
+    if (cancels) {
+      touched = await restoreOrderStockOnce(order, t, req, 'cancel_restock', `Refund · ${reason}`);
+      order.hubStatus = 'Cancelled';
+      order.cancelledAt = order.cancelledAt || new Date();
+      order.cancellationReason = order.cancellationReason || reason;
+    }
+    order.hubPaymentStatus = 'Refunded';
+    order.refundAmount = amount;
+    order.refundStatus = 'processed';
+    order.refundedAt = new Date();
+    syncLegacy(order);
+    order.paymentStatus = 'refunded';
+    await order.save({ transaction: t });
+    await auditOrder(req, order.id, [
+      { field: 'Refund', oldValue: before.refundStatus === 'pending' ? 'Requested by customer' : null, newValue: `QAR ${amount.toFixed(2)} · ${reason}` },
+      { field: 'Payment status', oldValue: before.paymentStatus, newValue: 'Refunded' },
+      ...(cancels ? [{ field: 'Status', oldValue: fromStatus, newValue: 'Cancelled' }] : []),
+      ...(cancels ? [{ field: 'Stock restored', oldValue: null, newValue: touched ? 'Yes' : 'Already restored / never taken' }] : []),
+    ], t);
+    await t.commit();
+  } catch (err) {
+    if (!t.finished) await t.rollback();
+    throw err;
+  }
+  if (touched?.length) await recomputeAfter(touched);
+  await hubLog(req, 'Order refunded', 'Sales Orders', order.orderNumber, `QAR ${amount.toFixed(2)} · ${reason}`);
+  const emailed = b.emailCustomer === false ? false : await emailStatusChange(order, previousLegacyStatus);
+  res.json({ ok: true, amount, cancelled: didCancel, restored: Boolean(touched?.length), emailed });
+}));
+
+router.post('/orders/:number/refund-reject', need('payments.refunds'), wrap(async (req, res) => {
+  const order = await findOrder(req.params.number);
+  if (order.refundStatus !== 'pending') throw bad('There is no pending refund request on this order.');
+  const reason = clean(req.body?.reason, 200) || null;
+  await order.update({ refundStatus: 'failed' });
+  await auditOrder(req, order.id, [{ field: 'Refund request', oldValue: 'Pending', newValue: `Rejected${reason ? ` · ${reason}` : ''}` }]);
+  await hubLog(req, 'Refund request rejected', 'Sales Orders', order.orderNumber, reason);
+  res.json({ ok: true });
+}));
+
+/** Whether Shiprocket shipping is configured on this server (the panel hides when it isn't). */
+router.get('/shipping/status', need(...VIEW_ORDERS), wrap(async (req, res) => {
+  res.json({ enabled: SHIPROCKET_SHIP_ENABLED });
+}));
+
+async function shippableOrder(number) {
+  if (!SHIPROCKET_SHIP_ENABLED) throw bad('Shiprocket shipping is not set up on this server.');
+  const order = await findOrder(number);
+  if (order.channel !== 'web') throw bad('Shiprocket shipments are for online orders.');
+  return order;
+}
+
+router.post('/orders/:number/shipping/:action', need('orders.update_delivery'), wrap(async (req, res) => {
+  const { action } = req.params;
+  if (!['create', 'cancel', 'refresh'].includes(action)) throw bad('Unknown shipping action.', 404);
+  const order = await shippableOrder(req.params.number);
+  let message;
+  if (action === 'create') {
+    await autoCreateShipment(order);
+    await order.reload();
+    const m = order.shippingMeta || {};
+    message = m.awb ? `AWB ${m.awb} (${m.courierName})` : m.shipmentId ? 'Shipment created — AWB still pending. Use Retry AWB.' : (m.lastError || 'Create failed');
+  } else if (action === 'cancel') {
+    await cancelShipment(order);
+    message = 'Shipment cancelled. The order itself is not cancelled.';
+  } else {
+    await refreshTracking(order);
+    message = 'Tracking refreshed';
+  }
+  await order.reload();
+  await hubLog(req, `Shipment ${action}`, 'Sales Orders', order.orderNumber, message);
+  res.json({ ok: true, message, shippingMeta: order.shippingMeta || null });
+}));
+
+router.get('/orders/:number/shipping/:doc', need('orders.update_delivery', 'invoices.view'), wrap(async (req, res) => {
+  const getters = { label: getLabel, invoice: getShipInvoice, manifest: getManifest };
+  const getter = getters[req.params.doc];
+  if (!getter) throw bad('Unknown document.', 404);
+  const order = await shippableOrder(req.params.number);
+  const url = await getter(order);
+  if (!url) throw bad(`No ${req.params.doc} available yet.`, 404);
+  res.json({ url });
 }));
 
 // ════════════════════════════════════════════════════════════════════
@@ -881,11 +1041,16 @@ router.get('/customers/:id/purchases', need('customers.history'), wrap(async (re
   })));
 }));
 
-function customerInput(b) {
+/**
+ * `phoneOptional`: an existing web customer who signed up with an email only
+ * can be edited without inventing a mobile number. New customers and the
+ * sales-order path always need one.
+ */
+function customerInput(b, { phoneOptional = false } = {}) {
   const name = clean(b.name, 120);
   const phone = clean(b.phone, 24);
   if (!name) throw bad('Customer name is required.');
-  if (normalizePhone(phone).length < 6) throw bad('Enter a valid mobile number.');
+  if (!(phoneOptional && !phone) && normalizePhone(phone).length < 6) throw bad('Enter a valid mobile number.');
   const altPhone = clean(b.altPhone, 24) || null;
   if (altPhone && samePhone(altPhone, phone)) throw bad('Alternate number must be different from the mobile number.');
   return {
@@ -915,12 +1080,46 @@ router.post('/customers', need('customers.add', 'orders.create'), wrap(async (re
   res.status(201).json({ customer: mapCustomer(user, settings.customerPrefix), existed: false });
 }));
 
+/** Guest shoppers (checked out without an account), grouped by email — as in the classic admin. */
+router.get('/customers/guests', need('customers.view'), wrap(async (req, res) => {
+  const rows = await Order.findAll({
+    where: { userId: null, guestEmail: { [Op.not]: null } },
+    attributes: ['guestEmail', 'totalAmount', 'createdAt', 'shippingAddress', 'hubStatus', 'orderStatus', 'channel',
+      'paymentMethod', 'paymentStatus', 'stockState'],
+    order: [['createdAt', 'DESC']],
+  });
+  const byEmail = new Map();
+  for (const o of rows) {
+    const email = o.guestEmail.toLowerCase();
+    const g = byEmail.get(email) || {
+      email, name: o.shippingAddress?.fullName || '—', phone: o.shippingAddress?.phone || '',
+      area: o.shippingAddress?.city || null, address: o.shippingAddress?.address || null,
+      orderCount: 0, totalSpend: 0, lastOrderDate: o.createdAt,
+    };
+    g.orderCount += 1;
+    const status = toSalesOrder(o).status;
+    if (status !== 'Cancelled' && status !== 'Draft') g.totalSpend += parseFloat(o.totalAmount) || 0;
+    byEmail.set(email, g);
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json([...byEmail.values()].map((g) => ({ ...g, totalSpend: round2(g.totalSpend) })));
+}));
+
+router.get('/customers/guest-orders', need('customers.history'), wrap(async (req, res) => {
+  const email = clean(req.query.email, 254).toLowerCase();
+  if (!email) throw bad('Email required.');
+  const settings = await loadAppSettings();
+  const orders = await Order.findAll({ where: { guestEmail: email, userId: null }, order: [['createdAt', 'DESC']] });
+  res.json(orders.map((o) => ({ order: toSalesOrder(o, { customerPrefix: settings.customerPrefix }), returns: [] })));
+}));
+
 router.put('/customers/:id', need('customers.edit'), wrap(async (req, res) => {
   const user = await User.findByPk(parseInt(req.params.id, 10));
   if (!user || user.role !== 'customer') throw bad('This customer no longer exists.', 404);
-  const input = customerInput(req.body || {});
+  const input = customerInput(req.body || {}, { phoneOptional: !user.phone });
+  if (!input.phone) input.phone = null;
   const settings = await loadAppSettings();
-  const duplicate = await findDuplicateByPhone(input.phone, user.id);
+  const duplicate = input.phone ? await findDuplicateByPhone(input.phone, user.id) : null;
   if (duplicate) {
     throw bad(`This mobile number already belongs to ${duplicate.name} (${customerCode(duplicate.id, settings.customerPrefix)}).`);
   }

@@ -210,7 +210,44 @@ export function toSalesOrder(order, { customerPrefix = 'CUS' } = {}) {
     assignedTo: order.assignedTo ? String(order.assignedTo) : null,
     assignedAt: order.assignedAt ?? null,
     createdBy: order.createdBy ?? null,
+    // Web-order details the classic admin showed: the real gateway (paymentMode
+    // above stays in the hub's vocabulary), coupon, refund state, shipment.
+    paymentGateway: order.paymentMethod || null,
+    couponCode: order.couponCode || null,
+    couponDiscount: num(order.discount),
+    refundStatus: order.refundStatus || null,
+    refundAmount: order.refundAmount != null ? num(order.refundAmount) : null,
+    refundedAt: order.refundedAt ?? null,
+    shippingMeta: order.shippingMeta && typeof order.shippingMeta === 'object' ? order.shippingMeta : null,
   };
+}
+
+/** Email the order belongs to: the guest address, or the customer account's. */
+export async function customerEmailFor(order) {
+  if (order.guestEmail) return order.guestEmail;
+  if (!order.userId) return null;
+  const { User } = await import('../models/index.js');
+  const user = await User.findByPk(order.userId, { attributes: ['email', 'role'] });
+  return user?.role === 'customer' ? user.email || null : null;
+}
+
+/**
+ * Send the classic "your order is now …" email when a web order's legacy
+ * status moved (the storefront customer only knows those statuses). Never
+ * throws — a mail problem must not undo the order change.
+ */
+export async function emailStatusChange(order, previousOrderStatus) {
+  try {
+    if (order.channel !== 'web' || !order.orderStatus || order.orderStatus === previousOrderStatus) return false;
+    const email = await customerEmailFor(order);
+    if (!email) return false;
+    const { sendOrderStatusUpdate } = await import('../services/emailService.js');
+    await sendOrderStatusUpdate(order.toJSON ? order.toJSON() : order, email);
+    return true;
+  } catch (err) {
+    console.error('[hub] status email failed:', err.message);
+    return false;
+  }
 }
 
 /**

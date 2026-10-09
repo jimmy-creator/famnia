@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, KeyRound, Loader2, ShieldCheck, UserPlus } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
+import { ActivityLogPanel } from '@/hub/components/ActivityLogPanel';
 import { EmptyState, ErrorState, LoadingRows, PageHeader } from '@/hub/components/shared';
 import { Button } from '@/hub/ui/button';
 import { Checkbox } from '@/hub/ui/checkbox';
@@ -13,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/hub/ui/tabs';
 import {
   accessQuery,
-  activityQuery,
+
   createStaffAccount,
   inviteStaff,
   permissionCatalogueQuery,
@@ -56,13 +58,26 @@ function useCatalogue() {
 export default function StaffPage() {
   useHubTitle('Staff & Permissions — FEMNIA Hub');
   const access = useQuery(accessQuery).data ?? null;
-  const staff = useQuery(staffQuery);
-  const activity = useQuery(activityQuery);
   const canManage = can(access, 'admin.manage_staff');
+  const canAudit = can(access, 'admin.view_audit');
+  const staff = useQuery({ ...staffQuery, enabled: canManage });
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'activity' || !canManage ? 'activity' : 'staff';
+  const setTab = (next) => setParams(next === 'activity' ? { tab: 'activity' } : {}, { replace: true });
   const [editing, setEditing] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [resetting, setResetting] = useState(null);
+
+  // The activity log lives here; someone with only "View audit logs" gets just the log.
+  if (!canManage && canAudit) {
+    return (
+      <>
+        <PageHeader title="Activity Log" subtitle="Who did what, across the hub, the till and the classic admin." />
+        <ActivityLogPanel />
+      </>
+    );
+  }
 
   if (!canManage) {
     return (
@@ -87,7 +102,7 @@ export default function StaffPage() {
         refreshing={staff.isFetching}
       />
 
-      <Tabs defaultValue="staff">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="mb-4">
           <TabsTrigger value="staff">Staff accounts</TabsTrigger>
           <TabsTrigger value="activity">Activity log</TabsTrigger>
@@ -174,30 +189,10 @@ export default function StaffPage() {
         </TabsContent>
 
         <TabsContent value="activity">
-          {!can(access, 'admin.view_audit') ? (
-            <EmptyState title="You do not have permission to view the activity log" />
-          ) : activity.isPending ? (
-            <LoadingRows count={6} />
-          ) : activity.isError ? (
-            <ErrorState section="Activity log" message={activity.error.message} onRetry={() => void activity.refetch()} />
-          ) : !activity.data?.length ? (
-            <EmptyState title="No activity recorded yet" />
+          {can(access, 'admin.view_audit') ? (
+            <ActivityLogPanel />
           ) : (
-            <ul className="divide-y divide-border card-surface">
-              {activity.data.map((entry) => (
-                <li key={entry.id} className="p-3 text-sm">
-                  <p className="text-foreground">
-                    <span className="font-medium">{entry.staffName ?? 'Unknown staff'}</span> · {entry.action}
-                    {entry.module ? ` · ${entry.module}` : ''}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {dt(entry.createdAt)}
-                    {entry.recordId ? ` · ${entry.recordId}` : ''}
-                    {entry.description ? ` · ${entry.description}` : ''}
-                  </p>
-                </li>
-              ))}
-            </ul>
+            <EmptyState title="You do not have permission to view the activity log" />
           )}
         </TabsContent>
       </Tabs>

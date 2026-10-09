@@ -112,7 +112,7 @@ export function sheetGrid(size, sheet) {
   return { columns, rows, perPage: columns * rows };
 }
 
-function openPrintWindow(html) {
+export function openPrintWindow(html) {
   const win = window.open('', '_blank', 'width=760,height=760');
   if (!win) throw new Error('Allow pop-ups for this site to print barcode labels.');
   win.document.write(html);

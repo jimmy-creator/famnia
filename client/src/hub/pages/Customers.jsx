@@ -12,6 +12,7 @@ import { EmptyState, ErrorState, LoadingRows, PageHeader, StatusBadge } from '@/
 import { Button } from '@/hub/ui/button';
 import { Input } from '@/hub/ui/input';
 import { accessQuery, customerPurchasesQuery, customerRecordsQuery, qk } from '@/hub/lib/api';
+import { guestCustomersQuery, guestOrdersQuery } from '@/hub/lib/apiOrders';
 import { filterCustomers } from '@/hub/lib/customers';
 import { QAR } from '@/hub/lib/format';
 import { can } from '@/hub/lib/permissions';
@@ -29,13 +30,28 @@ export default function CustomersPage() {
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  /** Registered customers (accounts) or guests (checked out with an email only). */
+  const [view, setView] = useState('registered');
+  const guests = useQuery({ ...guestCustomersQuery, enabled: view === 'guests' });
 
   const canView = can(access, 'customers.view');
   const canAdd = can(access, 'customers.add');
   const canEdit = can(access, 'customers.edit');
   const canHistory = can(access, 'customers.history');
 
-  const results = useMemo(() => filterCustomers(customers.data ?? [], query), [customers.data, query]);
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (view === 'guests') {
+      return (guests.data ?? [])
+        .filter((g) => !q || [g.name, g.email, g.phone, g.area].some((v) => String(v ?? '').toLowerCase().includes(q)))
+        .map((g) => ({ ...g, id: `guest:${g.email}`, code: 'Guest', guest: true }));
+    }
+    // Name / code / area / mobile (normalised), plus the account email.
+    const list = customers.data ?? [];
+    const matched = new Set(filterCustomers(list, query).map((c) => c.id));
+    return list.filter((c) => matched.has(c.id) || (q && (c.email ?? '').toLowerCase().includes(q)));
+  }, [customers.data, guests.data, query, view]);
+  const active = view === 'guests' ? guests : customers;
 
   if (!canView) {
     return (
@@ -51,7 +67,7 @@ export default function CustomersPage() {
       <CustomerDetails
         customer={selected}
         canHistory={canHistory}
-        canEdit={canEdit}
+        canEdit={canEdit && !selected.guest}
         onBack={() => setSelected(null)}
         onEdit={() => {
           setEditing(selected);
@@ -76,9 +92,9 @@ export default function CustomersPage() {
     <>
       <PageHeader
         title="Customers"
-        subtitle={`${customers.data?.length ?? 0} customers`}
-        onRefresh={() => void customers.refetch()}
-        refreshing={customers.isFetching}
+        subtitle={view === 'guests' ? `${guests.data?.length ?? 0} guest shoppers` : `${customers.data?.length ?? 0} customers`}
+        onRefresh={() => void active.refetch()}
+        refreshing={active.isFetching}
         actions={
           canAdd ? (
             <Button
@@ -94,26 +110,39 @@ export default function CustomersPage() {
         }
       />
 
+      <div className="mb-3 inline-flex rounded-xl border border-border bg-card p-1">
+        {[['registered', 'Registered'], ['guests', 'Guests']].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setView(key)}
+            className={`rounded-lg px-4 py-2 text-sm font-medium ${view === key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-primary'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="relative mb-4">
         <Search className="absolute left-3 top-3.5 size-4 text-muted-foreground" />
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name or mobile number"
+          placeholder={view === 'guests' ? 'Search guests by name, email or mobile' : 'Search by name, mobile, email or customer code'}
           className="h-11 pl-9"
         />
       </div>
 
-      {customers.isLoading && <LoadingRows count={6} />}
-      {customers.isError && (
+      {active.isLoading && <LoadingRows count={6} />}
+      {active.isError && (
         <ErrorState
-          section="customers"
-          message={customers.error instanceof Error ? customers.error.message : 'Unknown error'}
-          onRetry={() => void customers.refetch()}
+          section={view === 'guests' ? 'guest shoppers' : 'customers'}
+          message={active.error instanceof Error ? active.error.message : 'Unknown error'}
+          onRetry={() => void active.refetch()}
         />
       )}
 
-      {customers.isSuccess && !results.length && (
+      {active.isSuccess && !results.length && (
         <EmptyState
           title={query ? 'No customer matched your search' : 'No customers yet'}
           hint={query ? 'Try a different name or mobile number.' : 'Customers are also created automatically from Sales Orders.'}
@@ -129,6 +158,7 @@ export default function CustomersPage() {
                 <p className="truncate text-sm font-semibold">{c.name}</p>
                 <p className="truncate text-xs text-muted-foreground">{c.phone}{c.altPhone ? ` · ${c.altPhone}` : ''}</p>
                 <p className="truncate text-xs text-muted-foreground">{c.area ?? 'No area'} · {c.code}</p>
+                {c.email && <p className="truncate text-xs text-muted-foreground">{c.email}</p>}
               </div>
               <div className="shrink-0 text-right">
                 <p className="text-sm font-semibold">{QAR(c.totalSpend)}</p>
@@ -160,6 +190,7 @@ export default function CustomersPage() {
                   <td className="px-4 py-3">
                     <p className="font-medium">{c.name}</p>
                     <p className="text-xs text-muted-foreground">{c.code}</p>
+                    {c.email && <p className="text-xs text-muted-foreground">{c.email}</p>}
                   </td>
                   <td className="px-4 py-3">
                     {c.phone}
@@ -174,7 +205,7 @@ export default function CustomersPage() {
                       <Button size="sm" variant="outline" onClick={() => setSelected(c)}>
                         <UserRound className="mr-1.5 size-4" /> View
                       </Button>
-                      {canEdit && (
+                      {canEdit && !c.guest && (
                         <Button
                           size="sm"
                           variant="outline"
@@ -201,13 +232,17 @@ export default function CustomersPage() {
 }
 
 function CustomerDetails({ customer, canHistory, canEdit, onBack, onEdit, dialog }) {
-  const purchases = useQuery({ ...customerPurchasesQuery(customer.id), enabled: canHistory });
+  const purchases = useQuery(
+    customer.guest
+      ? { ...guestOrdersQuery(customer.email), enabled: canHistory }
+      : { ...customerPurchasesQuery(customer.id), enabled: canHistory },
+  );
 
   return (
     <>
       <PageHeader
         title={customer.name}
-        subtitle={`${customer.code} · ${customer.phone}${customer.altPhone ? ` · ${customer.altPhone}` : ''}`}
+        subtitle={[customer.code, customer.phone, customer.altPhone, customer.email].filter(Boolean).join(' · ')}
         actions={
           <>
             <Button variant="outline" className="h-10" onClick={onBack}>
@@ -226,7 +261,11 @@ function CustomerDetails({ customer, canHistory, canEdit, onBack, onEdit, dialog
         <Detail label="Area" value={customer.area} />
         <Detail label="Address" value={customer.address} />
         <Detail label="Notes" value={customer.notes} />
-        <Detail label="Customer since" value={day(customer.createdAt)} />
+        {customer.guest ? (
+          <Detail label="Last order" value={day(customer.lastOrderDate)} />
+        ) : (
+          <Detail label="Customer since" value={day(customer.createdAt)} />
+        )}
         <Detail label="Total orders" value={String(customer.orderCount)} />
         <Detail label="Total spend" value={QAR(customer.totalSpend)} />
       </div>

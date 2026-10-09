@@ -10,6 +10,7 @@ import { Input } from '@/hub/ui/input';
 import { Label } from '@/hub/ui/label';
 import { Textarea } from '@/hub/ui/textarea';
 import { accessQuery, assetsQuery, expensesQuery, qk, saveEntry } from '@/hub/lib/api';
+import { expenseCategoriesQuery } from '@/hub/lib/apiFinance';
 import {
   ASSET_CATEGORIES,
   COMPANY_FUNDING_SOURCES,
@@ -42,12 +43,22 @@ function ExpenseEntryForm({ open, kind, onClose, onDone }) {
     return me && !list.includes(me) ? [me, ...list] : list;
   }, [knownExpenses, knownAssets, me]);
   const label = kind === 'expense' ? 'Expense' : 'Asset';
-  const categories = kind === 'expense' ? EXPENSE_CATEGORIES : ASSET_CATEGORIES;
+  // Expense categories are shared with Back Office (ExpenseCategory table).
+  const sharedCategories = useQuery({ ...expenseCategoriesQuery, enabled: open && kind === 'expense' }).data;
+  const categories = useMemo(() => {
+    if (kind !== 'expense') return ASSET_CATEGORIES;
+    const active = (sharedCategories ?? []).filter((c) => c.active).map((c) => c.name);
+    return active.length ? active : EXPENSE_CATEGORIES;
+  }, [kind, sharedCategories]);
 
   const [reference] = useState(() => newEntryReference(kind));
   const [idempotencyKey] = useState(() => newIdempotencyKey(kind));
   const [date, setDate] = useState(today);
-  const [category, setCategory] = useState(categories[0]);
+  const [pickedCategory, setCategory] = useState('');
+  const category = categories.includes(pickedCategory) ? pickedCategory : categories[0];
+  const [salvageValue, setSalvageValue] = useState('');
+  const [depreciationRate, setDepreciationRate] = useState('20');
+  const [serialNumber, setSerialNumber] = useState('');
   const [item, setItem] = useState('');
   const [amount, setAmount] = useState('');
   const [purchasedBy, setPurchasedBy] = useState(me);
@@ -86,6 +97,9 @@ function ExpenseEntryForm({ open, kind, onClose, onDone }) {
         receiptReference,
         notes,
         idempotencyKey,
+        ...(kind === 'asset'
+          ? { salvageValue: Number(salvageValue) || 0, depreciationRate: Number(depreciationRate) || 20, serialNumber }
+          : {}),
       }),
 
     onSuccess: (result) => {
@@ -94,6 +108,7 @@ function ExpenseEntryForm({ open, kind, onClose, onDone }) {
       client.invalidateQueries({ queryKey: qk.liabilities });
       client.invalidateQueries({ queryKey: qk.fundingAccounts });
       client.invalidateQueries({ queryKey: qk.activity });
+      client.invalidateQueries({ queryKey: expenseCategoriesQuery.queryKey });
       onDone(result);
       onClose();
     },
@@ -152,6 +167,35 @@ function ExpenseEntryForm({ open, kind, onClose, onDone }) {
               placeholder="0.00"
             />
           </div>
+          {kind === 'asset' && (
+            <>
+              <div>
+                <Label htmlFor="entry-depreciation">Depreciation % per year</Label>
+                <Input
+                  id="entry-depreciation"
+                  inputMode="decimal"
+                  className="h-11"
+                  value={depreciationRate}
+                  onChange={(e) => setDepreciationRate(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="entry-salvage">Salvage value (QAR, optional)</Label>
+                <Input
+                  id="entry-salvage"
+                  inputMode="decimal"
+                  className="h-11"
+                  value={salvageValue}
+                  onChange={(e) => setSalvageValue(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <Label htmlFor="entry-serial">Serial number (optional)</Label>
+                <Input id="entry-serial" className="h-11" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} />
+              </div>
+            </>
+          )}
           <div>
             <Label htmlFor="entry-purchased-by">Purchased by / expense made by</Label>
             <Input

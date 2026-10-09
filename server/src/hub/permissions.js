@@ -222,6 +222,9 @@ export function accessFor(user) {
     status: user.status || 'active',
     mustChangePassword: Boolean(user.mustChangePassword),
     permissions: isAdmin ? ALL_PERMISSIONS : perms.filter((p) => ALL_PERMISSIONS.includes(p)),
+    // Classic areas (purchasing, cash ledger, POS ops…) this user may open,
+    // directly or through an equivalent hub permission.
+    legacy: LEGACY_KEYS.filter((k) => hasPermission(user, k)),
   };
 }
 

@@ -32,6 +32,7 @@ import { QAR } from '@/hub/lib/format';
 import { can } from '@/hub/lib/permissions';
 import { downloadNewProductsTemplate, downloadWorkbook } from '@/hub/lib/spreadsheet';
 import { useHubTitle } from '@/hub/lib/useHubTitle';
+import { ClassicCsvMenu } from '@/hub/components/ClassicCsvMenu';
 
 const ALL = '__all__';
 
@@ -60,7 +61,7 @@ export default function ProductsPage() {
     const term = search.trim().toLowerCase();
     return products
       .filter((p) => {
-        if (term && !`${p.productCode ?? ''} ${p.sku} ${p.name}`.toLowerCase().includes(term)) return false;
+        if (term && !`${p.productCode ?? ''} ${p.sku} ${p.name} ${p.brand ?? ''} ${p.category ?? ''} ${p.color ?? ''}`.toLowerCase().includes(term)) return false;
         if (category !== ALL && p.category !== category) return false;
         if (size !== ALL && p.size !== size) return false;
         if (color !== ALL && p.color !== color) return false;
@@ -140,6 +141,7 @@ export default function ProductsPage() {
                 <Download className="mr-2 size-4" /> Product Template
               </Button>
             )}
+            {(access?.isAdmin || access?.legacy?.includes('products')) && <ClassicCsvMenu onImported={() => q.refetch()} />}
             {can(access, 'imports.history') && (
               <Button size="sm" variant="outline" className="h-10" onClick={() => setHistoryOpen(true)}>
                 <History className="mr-2 size-4" /> Import History
@@ -178,7 +180,7 @@ export default function ProductsPage() {
 
       <div className="no-print mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
         <Input
-          placeholder="Search SKU or name…"
+          placeholder="Search code, SKU, name, brand, category or colour…"
           className="h-11 sm:col-span-2"
           value={search}
           onChange={(e) => setSearch(e.target.value)}

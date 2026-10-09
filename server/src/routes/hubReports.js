@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { Op } from 'sequelize';
 import {
-  Expense, HubExpenseEntry, HubLiability, HubReimbursement, Order, StockMovement,
+  CashAccount, CashTransaction, Expense, HubExpenseEntry, HubLiability, HubReimbursement, Order, Product, PurchaseOrder,
+  StockMovement, User, Wastage,
 } from '../models/index.js';
 import { protect } from '../middleware/auth.js';
 import { bad, can, need, wrap as wrapAs } from '../hub/http.js';
@@ -46,6 +47,18 @@ function saleCostMap(orders) {
   return map;
 }
 
+/**
+ * Storefront fields the shop barcode label can show (Arabic name, compare-at
+ * price), per product id — the hub's SKU rows don't carry them.
+ */
+router.get('/label-extras', need('products.view', 'products.barcodes'), wrap(async (req, res) => {
+  const rows = await Product.findAll({ attributes: ['id', 'nameAr', 'comparePrice'], raw: true });
+  res.json(Object.fromEntries(rows.map((p) => [p.id, {
+    nameAr: p.nameAr || null,
+    comparePrice: p.comparePrice === null || p.comparePrice === undefined ? null : num(p.comparePrice),
+  }])));
+}));
+
 router.get('/reports/sale-costs', need('reports.financial', 'dashboard.profit_values'), wrap(async (req, res) => {
   const orders = await Order.findAll({ attributes: ['orderNumber', 'items'] });
   res.json(saleCostMap(orders));
@@ -65,8 +78,8 @@ router.get('/reports/financial-summary', need('reports.financial'), wrap(async (
   const [orders, skus, hubExpenses, hubRefs] = await Promise.all([
     Order.findAll({ where: { createdAt: { [Op.between]: [rangeStart(from), rangeEnd(to)] } } }),
     listSkus({ showCost: true }),
-    HubExpenseEntry.sum('amount', { where: { entryType: 'expense', txnDate: { [Op.between]: [from, to] } } }),
-    HubExpenseEntry.findAll({ where: { entryType: 'expense', expenseId: { [Op.ne]: null } }, attributes: ['expenseId'], raw: true }),
+    HubExpenseEntry.sum('amount', { where: { entryType: 'expense', voidedAt: null, txnDate: { [Op.between]: [from, to] } } }),
+    HubExpenseEntry.findAll({ where: { entryType: 'expense', voidedAt: null, expenseId: { [Op.ne]: null } }, attributes: ['expenseId'], raw: true }),
   ]);
   // Expenses booked in Back Office directly (not through the hub) count too;
   // hub entries' own Expense rows are already in hubExpenses.
@@ -202,6 +215,100 @@ router.get('/dashboard', need('dashboard.view'), wrap(async (req, res) => {
     note: m.notes || m.reason || null,
   }));
 
+  // ── Classic-admin and ERP overview figures, merged in ────────────────
+  // Revenue = grand totals of confirmed orders (all channels), on the store day.
+  const monthKey = (day) => day.slice(0, 7);
+  const thisMonth = monthKey(today);
+  const lastMonthDate = new Date(`${thisMonth}-01T12:00:00`);
+  lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+  const lastMonth = localDate(lastMonthDate).slice(0, 7);
+  const days30 = [];
+  for (let i = 29; i >= 0; i -= 1) {
+    const dd = new Date(`${today}T12:00:00`);
+    dd.setDate(dd.getDate() - i);
+    days30.push(localDate(dd));
+  }
+  const months12 = [];
+  for (let i = 11; i >= 0; i -= 1) {
+    const dd = new Date(`${thisMonth}-01T12:00:00`);
+    dd.setMonth(dd.getMonth() - i);
+    months12.push(localDate(dd).slice(0, 7));
+  }
+  const byDay = new Map(days30.map((d) => [d, { label: d, revenue: 0, orders: 0 }]));
+  const byMonth = new Map(months12.map((m) => [m, { label: m, revenue: 0, orders: 0 }]));
+  const payModes = new Map();
+  let monthRevenue = 0;
+  let lastMonthRevenue = 0;
+  for (const o of confirmed) {
+    const day = localDate(new Date(o.orderDate));
+    const m = monthKey(day);
+    if (byDay.has(day)) { byDay.get(day).revenue += o.grandTotal; byDay.get(day).orders += 1; }
+    if (byMonth.has(m)) { byMonth.get(m).revenue += o.grandTotal; byMonth.get(m).orders += 1; }
+    if (m === thisMonth) monthRevenue += o.grandTotal;
+    if (m === lastMonth) lastMonthRevenue += o.grandTotal;
+    const pm = payModes.get(o.paymentMode) || { method: o.paymentMode, orders: 0, revenue: 0 };
+    pm.orders += 1;
+    pm.revenue += o.grandTotal;
+    payModes.set(o.paymentMode, pm);
+  }
+  const money = (v) => (salesValues ? round2(v) : null);
+  const series = (rows) => rows.map((r) => ({ ...r, revenue: money(r.revenue) }));
+
+  // Today's bill and margin, on the same line costs as the totals above.
+  let todayNet = 0;
+  let todayCogs = 0;
+  for (const o of todayOrders) {
+    for (const item of o.items) {
+      if (item.quantity <= 0) continue;
+      const netQty = item.quantity - Math.min(item.returnedQty, item.quantity);
+      todayNet += (item.lineTotal / item.quantity) * netQty;
+      todayCogs += (costs[`${o.id}|${item.sku}`] ?? costBySku.get(item.sku) ?? 0) * netQty;
+    }
+  }
+  const monthStart = `${thisMonth}-01`;
+  const [customerTotal, customerNew, openPurchaseOrders, accounts, wastage] = await Promise.all([
+    User.count({ where: { role: 'customer' } }),
+    User.count({ where: { role: 'customer', createdAt: { [Op.gte]: rangeStart(monthStart) } } }),
+    PurchaseOrder.count({ where: { status: { [Op.in]: ['draft', 'sent', 'partial'] } } }),
+    profit ? CashAccount.findAll({ where: { active: true }, attributes: ['id', 'openingBalance'], raw: true }) : [],
+    profit ? Wastage.sum('totalCost', { where: { status: 'posted', wastageDate: { [Op.between]: [monthStart, today] } } }) : null,
+  ]);
+  let cashInAccounts = null;
+  if (profit) {
+    const sums = accounts.length
+      ? await CashTransaction.findAll({
+        where: { cashAccountId: accounts.map((a) => a.id) },
+        attributes: ['cashAccountId', [CashTransaction.sequelize.fn('SUM', CashTransaction.sequelize.col('amount')), 'total']],
+        group: ['cashAccountId'],
+        raw: true,
+      })
+      : [];
+    const byAcct = new Map(sums.map((s) => [s.cashAccountId, num(s.total)]));
+    cashInAccounts = round2(accounts.reduce((s, a) => s + num(a.openingBalance) + (byAcct.get(a.id) || 0), 0));
+  }
+  const allStatuses = ['Draft', 'Confirmed', 'Awaiting Pickup', 'Out for Delivery', 'Delivered', 'Delivery Failed',
+    'Collected', 'Order Fulfilled', 'Returned', 'Cancelled'];
+  const overview = {
+    revenueChart: { days: series([...byDay.values()]), months: series([...byMonth.values()]) },
+    monthRevenue: money(monthRevenue),
+    lastMonthRevenue: money(lastMonthRevenue),
+    growthPercent: salesValues
+      ? (lastMonthRevenue > 0 ? round2(((monthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100) : null)
+      : null,
+    customers: { total: customerTotal, newThisMonth: customerNew },
+    orderStatus: allStatuses.map((status) => ({ status, count: orders.filter((o) => o.status === status).length }))
+      .filter((s) => s.count > 0),
+    paymentMethods: [...payModes.values()].map((p) => ({ ...p, revenue: money(p.revenue) }))
+      .sort((a, b) => b.orders - a.orders),
+    avgBillToday: salesValues ? (todayOrders.length ? round2(todayOrders.reduce((s, o) => s + o.grandTotal, 0) / todayOrders.length) : 0) : null,
+    grossProfitToday: profit ? round2(todayNet - todayCogs) : null,
+    marginTodayPercent: profit ? (todayNet > 0 ? round2(((todayNet - todayCogs) / todayNet) * 100) : 0) : null,
+    openPurchaseOrders,
+    cashInAccounts,
+    wastageThisMonth: profit ? round2(num(wastage)) : null,
+    reorderCount: skus.filter((p) => p.stockStatus !== 'In Stock' && p.isActive).length,
+  };
+
   const statuses = ['Pending', 'Confirmed', 'Out for Delivery', 'Delivered', 'Returned', 'Cancelled'];
   res.set('Cache-Control', 'no-store');
   res.json({
@@ -237,6 +344,7 @@ router.get('/dashboard', need('dashboard.view'), wrap(async (req, res) => {
     salesSummary: [...salesByDay.values()].map((d) => ({ ...d, sales: salesValues ? round2(d.sales) : 0 }))
       .sort((a, b) => a.date.localeCompare(b.date)).slice(-14),
     deliverySummary: statuses.map((status) => ({ status, count: orders.filter((o) => o.status === status).length })),
+    overview,
   });
 }));
 

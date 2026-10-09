@@ -37,9 +37,13 @@ import sequelize from '../config/database.js';
 import {
   CashAccount, CashTransaction, ExpenseCategory, Expense, CashTransfer,
   Location, User, Order, SalesReturn, Product, ProductStock,
-  FixedAsset, DepreciationEntry, Wastage, StockCount, HubExpenseEntry, OrderReturn,
+  FixedAsset, DepreciationEntry, Wastage, StockCount, HubExpenseEntry, OrderReturn, StockMovement,
   writeCashTxn, getCashAccountBalance,
 } from '../models/index.js';
+
+// Hub Stock Out reasons that write goods off (the rest — internal use,
+// samples, display, corrections, supplier returns — are not a loss).
+const STOCK_LOSS_REASONS = ['Damaged', 'Lost', 'Expired', 'Defective'];
 import { protect, admin } from '../middleware/auth.js';
 import { ensureDepreciation } from '../services/depreciationJob.js';
 import { localDate, rangeStart, rangeEnd } from '../utils/dates.js';
@@ -695,7 +699,10 @@ export async function computePnl({ from, to, locationId = null }) {
     // the unpaid part as a liability. Reimbursing them only moves cash.
     if (!locationFilter.locationId) {
       const personal = await HubExpenseEntry.findAll({
-        where: { entryType: 'expense', fundingSource: 'Paid Personally', txnDate: { [Op.between]: [dateOnly(from), dateOnly(to)] } },
+        where: {
+          entryType: 'expense', fundingSource: 'Paid Personally', voidedAt: null,
+          txnDate: { [Op.between]: [dateOnly(from), dateOnly(to)] },
+        },
         attributes: ['amount', 'category'],
       });
       for (const e of personal) {
@@ -765,7 +772,35 @@ export async function computePnl({ from, to, locationId = null }) {
     });
     // totalVarianceValue is negative for shrinkage, positive for a surplus.
     const countVariance = countRows.reduce((s, c) => s + (parseFloat(c.totalVarianceValue) || 0), 0);
-    const stockLosses = wastageLoss - countVariance;
+    // Hub Stock Out for damaged / lost / expired goods is a write-off too
+    // (ERP wastage is its own movement kind, so nothing is counted twice).
+    // Valued at the cost recorded on the movement, else the SKU's cost now.
+    const lossOuts = await StockMovement.findAll({
+      where: {
+        kind: 'stock_out',
+        reason: { [Op.in]: STOCK_LOSS_REASONS },
+        txnDate: { [Op.between]: [dateOnly(from), dateOnly(to)] },
+        ...locationFilter,
+      },
+      attributes: ['productId', 'variantIndex', 'quantity', 'unitCost'],
+      raw: true,
+    });
+    let stockOutLoss = 0;
+    if (lossOuts.length) {
+      const prods = await Product.findAll({
+        where: { id: [...new Set(lossOuts.map((m) => m.productId))] },
+        attributes: ['id', 'costPrice', 'variants'],
+      });
+      const byId = new Map(prods.map((p) => [p.id, p]));
+      for (const m of lossOuts) {
+        const p = byId.get(m.productId);
+        const v = m.variantIndex == null ? null : p?.variants?.[m.variantIndex];
+        const current = v && v.costPrice != null && v.costPrice !== '' ? parseFloat(v.costPrice) : parseFloat(p?.costPrice);
+        const unit = m.unitCost != null ? parseFloat(m.unitCost) : (current || 0);
+        stockOutLoss += Math.abs(parseInt(m.quantity, 10) || 0) * (unit || 0);
+      }
+    }
+    const stockLosses = wastageLoss - countVariance + stockOutLoss;
 
     const round = (n) => +n.toFixed(3);
     const netRevenue = revenue - refunds;
@@ -793,7 +828,7 @@ export async function computePnl({ from, to, locationId = null }) {
       // byCategory is at line price, before order-level discounts and
       // refunds; these let the table foot back to netRevenue.
       billDiscounts: round([...linesByCategory.values()].reduce((s, v) => s + v.revenue, 0) + deliveryIncome - revenue),
-      stockLossDetail: { wastage: round(wastageLoss), countVariance: round(countVariance) },
+      stockLossDetail: { wastage: round(wastageLoss), countVariance: round(countVariance), stockOut: round(stockOutLoss) },
       disposalGainLoss: round(disposalGainLoss),
       netProfit: round(netProfit),
       byCategory: [...linesByCategory.entries()].map(([category, v]) => ({

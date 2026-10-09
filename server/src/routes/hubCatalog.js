@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
-  Product, ProductStock, StockMovement, ProductAuditLog, ImportBatch, Supplier, User,
+  Category, Product, ProductStock, StockMovement, ProductAuditLog, ImportBatch, Supplier, User,
 } from '../models/index.js';
 import { protect } from '../middleware/auth.js';
 import { HUB_ROLES } from '../hub/permissions.js';
@@ -285,6 +285,136 @@ router.get('/product-codes/next', need('products.add', 'imports.new_products', '
   res.json(await nextProductCodes(count));
 }));
 
+// ── storefront (product-level) fields ───────────────────────────────
+// The classic product form's storefront fields, edited from the hub. They
+// belong to the product, so every size/colour SKU shares them.
+
+/** Categories from the Category table (Catalogue → Categories). */
+router.get('/categories', need(...VIEW_SKUS, 'products.add', 'products.edit'), wrap(async (req, res) => {
+  const rows = await Category.findAll({ order: [['sortOrder', 'ASC'], ['name', 'ASC']] });
+  res.json(rows.map((c) => ({ id: c.id, name: c.name, nameAr: c.nameAr || null, active: c.active !== false })));
+}));
+
+const STOREFRONT_LABELS = {
+  description: 'Description', brand: 'Brand', nameAr: 'Arabic name', descriptionAr: 'Arabic description',
+  categories: 'Categories', comparePrice: 'Compare-at price', featured: 'Featured', taxable: 'VAT taxable',
+  taxRate: 'VAT rate', hsnCode: 'HSN code', hideOnline: 'Hidden online (POS only)', reorderQty: 'Reorder quantity',
+  images: 'Gallery images',
+};
+
+const storefrontOf = (p) => ({
+  productId: p.id,
+  description: p.description || '',
+  brand: p.brand || '',
+  nameAr: p.nameAr || '',
+  descriptionAr: p.descriptionAr || '',
+  categories: Array.isArray(p.categories) && p.categories.length ? p.categories : (p.category ? [p.category] : []),
+  comparePrice: p.comparePrice === null || p.comparePrice === undefined ? null : parseFloat(p.comparePrice),
+  featured: Boolean(p.featured),
+  taxable: Boolean(p.taxable),
+  taxRate: p.taxRate === null || p.taxRate === undefined ? null : parseFloat(p.taxRate),
+  hsnCode: p.hsnCode || '',
+  hideOnline: Boolean(p.hideOnline),
+  reorderQty: p.reorderQty ?? null,
+  images: Array.isArray(p.images) ? p.images : [],
+});
+
+async function loadProduct(id, options = {}) {
+  const product = await Product.findByPk(parseInt(id, 10), options);
+  if (!product) throw bad('This product no longer exists.', 404);
+  return product;
+}
+
+router.get('/products/:id/storefront', need(...VIEW_SKUS), wrap(async (req, res) => {
+  res.json(storefrontOf(await loadProduct(req.params.id)));
+}));
+
+/**
+ * Normalise storefront input (shared by create and edit). Returns only the
+ * fields present in `b`; throws on invalid values.
+ */
+async function storefrontInput(b) {
+  const out = {};
+  const text = (v, max) => (clean(v) || '').slice(0, max);
+  if (b.description !== undefined) out.description = text(b.description, 20000);
+  if (b.brand !== undefined) out.brand = text(b.brand, 120) || null;
+  if (b.nameAr !== undefined) out.nameAr = text(b.nameAr, 255) || null;
+  if (b.descriptionAr !== undefined) out.descriptionAr = text(b.descriptionAr, 20000) || null;
+  if (b.hsnCode !== undefined) out.hsnCode = text(b.hsnCode, 40) || null;
+  if (b.featured !== undefined) out.featured = Boolean(b.featured);
+  if (b.taxable !== undefined) out.taxable = Boolean(b.taxable);
+  if (b.hideOnline !== undefined) out.hideOnline = Boolean(b.hideOnline);
+  if (b.taxRate !== undefined) {
+    const r = b.taxRate === null || b.taxRate === '' ? null : money(b.taxRate);
+    if (r !== null && (r < 0 || r > 100)) throw bad('VAT rate must be between 0 and 100.');
+    out.taxRate = r;
+  }
+  if (b.comparePrice !== undefined) {
+    const c = b.comparePrice === null || b.comparePrice === '' ? null : money(b.comparePrice);
+    if (c !== null && c < 0) throw bad('Compare-at price must be 0 or more.');
+    out.comparePrice = c;
+  }
+  if (b.reorderQty !== undefined) {
+    const q = b.reorderQty === null || b.reorderQty === '' ? null : parseInt(b.reorderQty, 10);
+    if (q !== null && (!Number.isInteger(q) || q < 0)) throw bad('Reorder quantity must be a whole number of 0 or more.');
+    out.reorderQty = q;
+  }
+  if (b.categories !== undefined) {
+    const names = [...new Set((Array.isArray(b.categories) ? b.categories : []).map((c) => String(c ?? '').trim()).filter(Boolean))];
+    if (!names.length) throw bad('Select at least one category.');
+    const known = await Category.findAll({ where: { name: names }, attributes: ['name'] });
+    const missing = names.filter((n) => !known.some((k) => k.name.toLowerCase() === n.toLowerCase()));
+    if (missing.length) throw bad(`Unknown category: ${missing.join(', ')}. Add it in Catalogue → Categories first.`);
+    // Stored with the Category table's own spelling, so storefront filters match.
+    out.categories = names.map((n) => known.find((k) => k.name.toLowerCase() === n.toLowerCase()).name);
+    out.category = out.categories[0]; // the model keeps category = categories[0]
+  }
+  if (b.images !== undefined) {
+    const urls = (Array.isArray(b.images) ? b.images : []).map((u) => String(u ?? '').trim()).filter(Boolean);
+    if (urls.length > 20) throw bad('Keep the gallery to 20 images or fewer.');
+    if (urls.some((u) => !/^(https:\/\/|\/uploads\/)/i.test(u))) throw bad('Use uploaded images or secure https:// links.');
+    out.images = [...new Set(urls)];
+  }
+  return out;
+}
+
+router.put('/products/:id/storefront', need('products.edit'), wrap(async (req, res) => {
+  const b = req.body || {};
+  if (b.images !== undefined && !can(req, 'products.images')) throw bad('You do not have image permission.', 403);
+  if (b.comparePrice !== undefined && !can(req, 'products.edit_price')) throw bad('You do not have permission to change prices.', 403);
+  const input = await storefrontInput(b);
+  const t = await sequelize.transaction();
+  let product;
+  let changes = [];
+  try {
+    product = await loadProduct(req.params.id, { transaction: t, lock: t.LOCK.UPDATE });
+    const before = storefrontOf(product);
+    const str = (v) => (Array.isArray(v) ? (v.length ? v.join(', ') : null) : v === null || v === undefined || v === '' ? null : String(v));
+    changes = Object.keys(STOREFRONT_LABELS)
+      .filter((k) => input[k] !== undefined && str(before[k]) !== str(input[k]))
+      .map((k) => ({ field: STOREFRONT_LABELS[k], oldValue: str(before[k]), newValue: str(input[k]) }));
+    if (changes.length) {
+      Object.assign(product, input);
+      if (input.images) product.changed('images', true);
+      if (input.categories) product.changed('categories', true);
+      await product.save({ transaction: t });
+      // Product-level change: record it on every SKU's history.
+      for (const { variantIndex } of skuEntries(product)) {
+        await audit(product, variantIndex, displaySku(product, variantIndex), changes, req.user.id, t);
+      }
+    }
+    await t.commit();
+  } catch (err) {
+    if (!t.finished) await t.rollback();
+    throw err;
+  }
+  if (changes.length) {
+    await hubLog(req, 'Product edited', 'Products', product.name,
+      changes.map((c) => `${c.field}: ${c.oldValue ?? '—'} → ${c.newValue ?? '—'}`).join('; ').slice(0, 500));
+  }
+  res.json({ ...storefrontOf(product), changes: changes.length });
+}));
+
 // ── create ──────────────────────────────────────────────────────────
 /**
  * Build the variant/product records for a set of new SKUs that share a name
@@ -360,6 +490,8 @@ async function createSkuGroup({ base, skus, transaction, importBatchId = null })
     sourceCountry: base.sourceCountry || null,
     wholesaler: base.wholesaler || null,
     importBatchId,
+    // Storefront fields from the hub form (gallery, categories, VAT…), already validated.
+    ...(base.storefront || {}),
   };
 
   if (skus.length === 1 && !withOptions) {
@@ -401,7 +533,12 @@ async function createSkuGroup({ base, skus, transaction, importBatchId = null })
 router.post('/products', need('products.add'), wrap(async (req, res) => {
   const b = req.body || {};
   const name = clean(b.name);
-  const category = clean(b.category);
+  // Storefront fields (classic product form): categories from the Category
+  // table, gallery, compare-at price, VAT, Arabic, hide online…
+  const storefrontKeys = ['categories', 'images', 'comparePrice', 'featured', 'taxable', 'taxRate', 'hsnCode', 'hideOnline', 'nameAr', 'descriptionAr', 'reorderQty'];
+  const storefront = await storefrontInput(Object.fromEntries(storefrontKeys.filter((k) => b[k] !== undefined).map((k) => [k, b[k]])));
+  if (storefront.images && !storefront.images.length) delete storefront.images;
+  const category = storefront.category || clean(b.category);
   if (!name) throw bad('Product Name is required.');
   if (!category) throw bad('Category is required.');
   const variants = Array.isArray(b.variants) ? b.variants : [];
@@ -454,7 +591,7 @@ router.post('/products', need('products.add'), wrap(async (req, res) => {
         name, category, brand: clean(b.brand), description: clean(b.description), designModel: clean(b.designModel),
         rack: clean(b.rack), shelfLocation: clean(b.shelfLocation), supplier: clean(b.supplier), notes: clean(b.notes),
         reorderLevel, isActive: b.isActive !== false, imageUrl, batchNumber: clean(b.batchNumber),
-        sourceCountry: clean(b.sourceCountry), wholesaler: clean(b.wholesaler),
+        sourceCountry: clean(b.sourceCountry), wholesaler: clean(b.wholesaler), storefront,
       },
       skus: items,
       transaction: t,
@@ -575,7 +712,14 @@ router.put('/skus/:key', need('products.edit'), wrap(async (req, res) => {
     if (b.category !== undefined) {
       const category = clean(b.category);
       if (!category) throw bad('Category is required.');
-      if (track('Category', product.category, category)) product.category = category;
+      if (track('Category', product.category, category)) {
+        // The model keeps category = categories[0]; move the new main category to the front.
+        const rest = (Array.isArray(product.categories) ? product.categories : [])
+          .filter((c) => c && c.toLowerCase() !== category.toLowerCase() && c !== product.category);
+        product.categories = [category, ...rest];
+        product.category = category;
+        product.changed('categories', true);
+      }
     }
     if (b.rack !== undefined && track('Rack', before.rack, clean(b.rack))) setSku('rack', clean(b.rack));
     if (b.shelfLocation !== undefined && track('Shelf / location', before.shelfLocation, clean(b.shelfLocation))) {

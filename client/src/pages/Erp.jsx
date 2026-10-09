@@ -53,20 +53,27 @@ const LEDGER_TABS = ['stock-counts', 'stock-count-detail', 'variance-report',
 const SUB_TABS = { 'stock-count-detail': 'stock-counts', 'variance-report': 'stock-counts' };
 
 /**
- * `embedded`: rendered inside the FEMNIA Hub shell (/hub/back-office) — no
- * rail or top bar of its own, a compact section nav instead, and the hub's
- * palette through `.hub-legacy` (hub.css).
+ * `embedded`: rendered inside the FEMNIA Hub shell — no rail or top bar of
+ * its own, and the hub's palette through `.hub-legacy` (hub.css).
+ * `screen`: one ERP screen as its own hub page (/hub/m/:screen); the hub
+ * sidebar is the navigation, so the section pills and title are hidden.
+ * Sub-screens (a stock count's detail…) still move through `?tab=`.
+ * `legacy`: the classic area keys the hub granted (accessFor().legacy), so
+ * hub-created staff see what the server would let them use.
  */
-export default function Erp({ embedded = false }) {
+export default function Erp({ embedded = false, screen = null, legacy = null }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const tab = searchParams.get('tab') || 'overview';
-  const setTab = (next) => setSearchParams(next === 'overview' ? {} : { tab: next }, { replace: true });
+  const tab = searchParams.get('tab') || screen || 'overview';
+  const setTab = (next) => setSearchParams(
+    next === 'overview' || next === screen ? {} : { tab: next },
+    { replace: !screen },
+  );
 
   const isAdmin = user?.role === 'admin';
-  const hasAccess = (perm) => isAdmin || (user?.permissions || []).includes(perm);
+  const hasAccess = (perm) => isAdmin || (user?.permissions || []).includes(perm) || Boolean(legacy?.includes(perm));
 
   // ── Shared lookups ──────────────────────────────────────────────
   const [locations, setLocations] = useState([]);
@@ -452,7 +459,7 @@ export default function Erp({ embedded = false }) {
         )}
 
         <main className={embedded ? '' : 'flex-1 px-4 pb-16 pt-5 lg:px-6 lg:pt-6'}>
-          {embedded && (
+          {embedded && !screen && (
             <nav className="hub-legacy-nav mb-5 flex flex-col gap-2">
               <div className="flex flex-wrap gap-1.5">
                 <button
@@ -486,6 +493,7 @@ export default function Erp({ embedded = false }) {
               )}
             </nav>
           )}
+          {!screen && (
           <div className="mb-6">
             <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               {activeSection ? activeSection.label : 'ERP'}
@@ -494,6 +502,10 @@ export default function Erp({ embedded = false }) {
               {activeItem?.label || 'Overview'}
             </h1>
           </div>
+          )}
+          {screen && activeItem && !activeItem.show && (
+            <p className="text-sm text-muted-foreground">You do not have permission to open this screen.</p>
+          )}
 
           {tab === 'overview' && (
             <div className="flex flex-col gap-8">

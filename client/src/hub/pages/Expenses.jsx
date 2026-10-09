@@ -1,14 +1,24 @@
-import { useQuery } from '@tanstack/react-query';
-import { Download, Plus } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Download, Plus, Settings2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { ExpenseEntryDialog } from '@/hub/components/ExpenseEntryDialog';
 import { ReimbursementDialog } from '@/hub/components/ReimbursementDialog';
 import { EmptyState, ErrorState, LoadingRows, PageHeader, StatusBadge } from '@/hub/components/shared';
 import { Button } from '@/hub/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/hub/ui/dialog';
 import { Input } from '@/hub/ui/input';
-import { accessQuery, assetsQuery, expensesQuery, liabilitiesQuery, updatePurchasedBy } from '@/hub/lib/api';
+import { accessQuery, liabilitiesQuery, qk, updatePurchasedBy } from '@/hub/lib/api';
+import {
+  addExpenseCategory,
+  assetsAllQuery,
+  expenseCategoriesQuery,
+  expensesAllQuery,
+  updateExpenseCategory,
+  voidEntry,
+} from '@/hub/lib/apiFinance';
 import { can } from '@/hub/lib/permissions';
 import {
   ASSET_CATEGORIES,
@@ -179,15 +189,132 @@ function PurchasedByRow({ entry, people, isAdmin, onSaved }) {
   );
 }
 
+/** Void a mistaken record (cash comes back; it drops out of totals and P&L). */
+function VoidSection({ entry, onDone }) {
+  const client = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const run = useMutation({
+    mutationFn: () => voidEntry(entry.id, reason),
+    onSuccess: async () => {
+      toast.success(`${entry.reference} voided.`);
+      await Promise.all([qk.expenses, qk.assets, qk.liabilities, qk.fundingAccounts, qk.activity].map((queryKey) =>
+        client.invalidateQueries({ queryKey })));
+      onDone();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  if (!open) {
+    return (
+      <Button variant="outline" className="mt-3 h-11 w-full border-destructive/40 text-destructive" onClick={() => setOpen(true)}>
+        Void this {entry.entryType === 'asset' ? 'asset' : 'expense'}
+      </Button>
+    );
+  }
+  return (
+    <div className="mt-3 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
+      <p className="text-xs text-muted-foreground">
+        Voiding returns the money to its account (if the company paid) and removes it from totals and the P&amp;L. It stays
+        in the history.
+      </p>
+      <Input className="mt-2 h-10" placeholder="Reason for voiding" value={reason} onChange={(e) => setReason(e.target.value)} />
+      <div className="mt-2 flex gap-2">
+        <Button className="h-10 flex-1" variant="destructive" disabled={!reason.trim() || run.isPending} onClick={() => run.mutate()}>
+          Void
+        </Button>
+        <Button className="h-10" variant="outline" onClick={() => setOpen(false)} disabled={run.isPending}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Expense categories shared with Back Office: add, rename, deactivate. */
+function CategoriesDialog({ open, onClose }) {
+  const client = useQueryClient();
+  const list = useQuery({ ...expenseCategoriesQuery, enabled: open });
+  const [name, setName] = useState('');
+  const [editing, setEditing] = useState(null);
+  const refresh = () => Promise.all([
+    client.invalidateQueries({ queryKey: expenseCategoriesQuery.queryKey }),
+    client.invalidateQueries({ queryKey: qk.expenses }),
+  ]);
+  const add = useMutation({
+    mutationFn: () => addExpenseCategory(name),
+    onSuccess: async () => {
+      setName('');
+      await refresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const update = useMutation({
+    mutationFn: ({ id, patch }) => updateExpenseCategory(id, patch),
+    onSuccess: async () => {
+      setEditing(null);
+      await refresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="z-[70] max-h-[90vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Expense categories</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground">Shared with Finance in Back Office. Renaming also renames past hub entries.</p>
+        <div className="flex gap-2">
+          <Input className="h-10" placeholder="New category" value={name} onChange={(e) => setName(e.target.value)} />
+          <Button className="h-10" disabled={!name.trim() || add.isPending} onClick={() => add.mutate()}>
+            Add
+          </Button>
+        </div>
+        <ul className="divide-y divide-border rounded-xl border border-border">
+          {(list.data ?? []).map((c) => (
+            <li key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+              {editing?.id === c.id ? (
+                <>
+                  <Input className="h-9 flex-1" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+                  <Button size="sm" className="h-9" onClick={() => update.mutate({ id: c.id, patch: { name: editing.name } })}>
+                    Save
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-9" onClick={() => setEditing(null)}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <span className={cn('flex-1', !c.active && 'text-muted-foreground line-through')}>{c.name}</span>
+                  <Button size="sm" variant="ghost" className="h-8" onClick={() => setEditing({ id: c.id, name: c.name })}>
+                    Rename
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-8" onClick={() => update.mutate({ id: c.id, patch: { active: !c.active } })}>
+                    {c.active ? 'Deactivate' : 'Activate'}
+                  </Button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const ALL = '__all__';
 const clean = (v) => (v === ALL ? '' : v);
 
 export default function ExpensesPage() {
   useHubTitle('Expenses, Assets & Liabilities — FEMNIA Hub');
   const access = useQuery(accessQuery).data ?? null;
-  const expenses = useQuery(expensesQuery);
-  const assets = useQuery(assetsQuery);
+  // Hub + Back Office records, voided ones included (struck through, never totalled).
+  const expenses = useQuery(expensesAllQuery);
+  const assets = useQuery(assetsAllQuery);
   const liabilities = useQuery(liabilitiesQuery);
+  const sharedCategories = useQuery(expenseCategoriesQuery).data;
+  const liveExpenses = useMemo(() => (expenses.data ?? []).filter((r) => !r.voided), [expenses.data]);
+  const liveAssets = useMemo(() => (assets.data ?? []).filter((r) => !r.voided), [assets.data]);
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
 
   const canViewExpenses = can(access, 'expenses.view');
   const canViewAssets = can(access, 'assets.view');
@@ -211,8 +338,8 @@ export default function ExpensesPage() {
   const [monthlyView, setMonthlyView] = useState('paid');
 
   const monthly = useMemo(
-    () => monthlySummary(expenses.data ?? [], assets.data ?? [], liabilities.data ?? [], year, month),
-    [expenses.data, assets.data, liabilities.data, year, month],
+    () => monthlySummary(liveExpenses, liveAssets, liabilities.data ?? [], year, month),
+    [liveExpenses, liveAssets, liabilities.data, year, month],
   );
   const years = useMemo(() => {
     const set = new Set([new Date().getFullYear()]);
@@ -220,7 +347,19 @@ export default function ExpensesPage() {
     return [...set].filter((y) => Number.isFinite(y)).sort((a, b) => b - a);
   }, [expenses.data, assets.data]);
 
-  const categories = tab === 'assets' ? ASSET_CATEGORIES : EXPENSE_CATEGORIES;
+  const expenseCategories = useMemo(() => {
+    const names = new Set((sharedCategories ?? []).map((c) => c.name));
+    for (const row of expenses.data ?? []) if (row.category) names.add(row.category);
+    return names.size ? [...names].sort((a, b) => a.localeCompare(b)) : EXPENSE_CATEGORIES;
+  }, [sharedCategories, expenses.data]);
+  const assetCategories = useMemo(() => {
+    const names = new Set(ASSET_CATEGORIES);
+    for (const row of assets.data ?? []) if (row.category) names.add(row.category);
+    return [...names];
+  }, [assets.data]);
+  const categories = tab === 'assets' ? assetCategories : expenseCategories;
+  const canManageCategories = Boolean(access?.isAdmin) || can(access, 'expenses.edit');
+  const canVoid = (row) => !row.voided && (row.entryType === 'asset' ? can(access, 'assets.edit') : can(access, 'expenses.edit'));
 
   const people = useMemo(
     () => knownPeople([...(expenses.data ?? []), ...(assets.data ?? [])]),
@@ -237,7 +376,8 @@ export default function ExpensesPage() {
     [liabilities.data, search, status, from, to],
   );
 
-  const entryTotal = entryRows.reduce((sum, r) => sum + r.amount, 0);
+  const entryTotal = entryRows.reduce((sum, r) => sum + (r.voided ? 0 : r.amount), 0);
+  const voidedCount = entryRows.filter((r) => r.voided).length;
   const outstandingTotal = liabilityRows.reduce((sum, r) => sum + r.outstanding, 0);
 
   const active = tab === 'liabilities' ? liabilities : tab === 'assets' ? assets : expenses;
@@ -251,8 +391,8 @@ export default function ExpensesPage() {
           : canViewExpenses;
 
   const tabs = [
-    { key: 'expenses', label: 'Daily Expenses', count: (expenses.data ?? []).length, visible: canViewExpenses },
-    { key: 'assets', label: 'Assets Purchased', count: (assets.data ?? []).length, visible: canViewAssets },
+    { key: 'expenses', label: 'Daily Expenses', count: liveExpenses.length, visible: canViewExpenses },
+    { key: 'assets', label: 'Assets Purchased', count: liveAssets.length, visible: canViewAssets },
     {
       key: 'liabilities',
       label: 'Pending Liabilities',
@@ -377,6 +517,16 @@ export default function ExpensesPage() {
           )}
           <Input className="h-11" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
           <Input className="h-11" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          {tab === 'expenses' && canManageCategories && (
+            <Button variant="outline" className="h-11 sm:col-span-2 lg:col-span-1" onClick={() => setCategoriesOpen(true)}>
+              <Settings2 className="mr-2 size-4" /> Manage categories
+            </Button>
+          )}
+          {tab === 'assets' && (
+            <Button asChild variant="outline" className="h-11 sm:col-span-2 lg:col-span-1">
+              <Link to="/hub/m/fixed-assets">Depreciation &amp; disposals</Link>
+            </Button>
+          )}
         </div>
       )}
 
@@ -541,7 +691,8 @@ export default function ExpensesPage() {
       ) : (
         <>
           <p className="mb-3 text-sm text-muted-foreground">
-            {entryRows.length} records · total <strong>{money(entryTotal)}</strong>
+            {entryRows.length - voidedCount} records · total <strong>{money(entryTotal)}</strong>
+            {voidedCount > 0 && ` · ${voidedCount} voided (not counted)`}
           </p>
 
           {/* Mobile cards */}
@@ -550,20 +701,22 @@ export default function ExpensesPage() {
               <button
                 key={row.id}
                 onClick={() => setDetail(row)}
-                className="rounded-2xl border border-border bg-card p-4 text-left"
+                className={cn('rounded-2xl border border-border bg-card p-4 text-left', row.voided && 'opacity-60')}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-foreground">{row.item}</p>
+                    <p className={cn('truncate font-medium text-foreground', row.voided && 'line-through')}>{row.item}</p>
                     <p className="text-xs text-muted-foreground">
                       {row.date} · {row.category} · {row.reference}
+                      {row.voided ? ' · Voided' : ''}
                     </p>
                   </div>
-                  <p className="shrink-0 font-semibold">{money(row.amount)}</p>
+                  <p className={cn('shrink-0 font-semibold', row.voided && 'line-through')}>{money(row.amount)}</p>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   {row.paymentMethod} · {row.fundingSource}
                   {row.payee ? ` · ${row.payee}` : ''}
+                  {row.asset ? ` · book value ${money(row.asset.netBookValue)}` : ''}
                 </p>
               </button>
             ))}
@@ -583,6 +736,14 @@ export default function ExpensesPage() {
                   <th className="px-4 py-3">Payee</th>
                   <th className="px-4 py-3">Method</th>
                   <th className="px-4 py-3">Funding</th>
+                  {tab === 'assets' && (
+                    <>
+                      <th className="px-4 py-3 text-right">Dep. %</th>
+                      <th className="px-4 py-3 text-right">Depreciated</th>
+                      <th className="px-4 py-3 text-right">Book value</th>
+                      <th className="px-4 py-3">Status</th>
+                    </>
+                  )}
                   <th className="px-4 py-3 text-right">Amount</th>
                 </tr>
               </thead>
@@ -591,18 +752,29 @@ export default function ExpensesPage() {
                   <tr
                     key={row.id}
                     onClick={() => setDetail(row)}
-                    className="cursor-pointer border-t border-border hover:bg-secondary/40"
+                    className={cn('cursor-pointer border-t border-border hover:bg-secondary/40', row.voided && 'text-muted-foreground')}
                   >
                     <td className="px-4 py-3">{row.date}</td>
                     <td className="px-4 py-3">{row.reference}</td>
                     <td className="px-4 py-3">{row.category}</td>
-                    <td className="px-4 py-3">{row.item}</td>
+                    <td className={cn('px-4 py-3', row.voided && 'line-through')}>
+                      {row.item}
+                      {row.voided && <span className="ml-2 text-xs no-underline">(voided)</span>}
+                    </td>
                     <td className="px-4 py-3">{purchasedByLabel(row.purchasedBy)}</td>
                     <td className="px-4 py-3">{row.purchasePerson ?? '—'}</td>
                     <td className="px-4 py-3">{row.payee ?? '—'}</td>
                     <td className="px-4 py-3">{row.paymentMethod}</td>
                     <td className="px-4 py-3">{row.fundingSource}</td>
-                    <td className="px-4 py-3 text-right font-medium">{money(row.amount)}</td>
+                    {tab === 'assets' && (
+                      <>
+                        <td className="px-4 py-3 text-right">{row.asset ? `${row.asset.depreciationRate}%` : '—'}</td>
+                        <td className="px-4 py-3 text-right">{row.asset ? money(row.asset.accumulatedDepreciation) : '—'}</td>
+                        <td className="px-4 py-3 text-right font-medium">{row.asset ? money(row.asset.netBookValue) : '—'}</td>
+                        <td className="px-4 py-3 capitalize">{row.asset ? row.asset.status.replace(/_/g, ' ') : '—'}</td>
+                      </>
+                    )}
+                    <td className={cn('px-4 py-3 text-right font-medium', row.voided && 'line-through')}>{money(row.amount)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -617,20 +789,33 @@ export default function ExpensesPage() {
             <h2 className="text-lg font-semibold">{detail.item}</h2>
             <p className="text-xs text-muted-foreground">
               {detail.reference} · {detail.date}
+              {detail.source === 'classic' ? ' · recorded in Back Office' : ''}
             </p>
+            {detail.voided && (
+              <p className="mt-2 rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                Voided{detail.voidReason ? ` — ${detail.voidReason}` : ''}. Not counted in totals or the P&amp;L.
+              </p>
+            )}
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <PurchasedByRow
-                key={detail.id}
-                entry={detail}
-                people={people}
-                isAdmin={Boolean(access?.isAdmin)}
-                onSaved={(value) => {
-                  setDetail({ ...detail, purchasedBy: value });
-                  void expenses.refetch();
-                  void assets.refetch();
-                  void liabilities.refetch();
-                }}
-              />
+              {detail.source === 'hub' ? (
+                <PurchasedByRow
+                  key={detail.id}
+                  entry={detail}
+                  people={people}
+                  isAdmin={Boolean(access?.isAdmin)}
+                  onSaved={(value) => {
+                    setDetail({ ...detail, purchasedBy: value });
+                    void expenses.refetch();
+                    void assets.refetch();
+                    void liabilities.refetch();
+                  }}
+                />
+              ) : (
+                <div className="col-span-2">
+                  <dt className="text-xs text-muted-foreground">Recorded by</dt>
+                  <dd className="font-medium text-foreground">{purchasedByLabel(detail.purchasedBy)}</dd>
+                </div>
+              )}
               {[
                 ['Category', detail.category],
                 ['Amount', money(detail.amount)],
@@ -639,6 +824,16 @@ export default function ExpensesPage() {
                 ['Payment method', detail.paymentMethod],
                 ['Funding source', detail.fundingSource],
                 ['Receipt reference', detail.receiptReference ?? '—'],
+                ...(detail.asset
+                  ? [
+                      ['Depreciation', `${detail.asset.depreciationRate}% a year`],
+                      ['Salvage value', money(detail.asset.salvageValue)],
+                      ['Depreciated so far', money(detail.asset.accumulatedDepreciation)],
+                      ['Book value', money(detail.asset.netBookValue)],
+                      ['Serial number', detail.asset.serialNumber ?? '—'],
+                      ['Status', detail.asset.status.replace(/_/g, ' ')],
+                    ]
+                  : []),
               ].map(([label, value]) => (
                 <div key={label}>
                   <dt className="text-xs text-muted-foreground">{label}</dt>
@@ -648,6 +843,12 @@ export default function ExpensesPage() {
             </dl>
 
             {detail.notes && <p className="mt-3 text-sm text-muted-foreground">{detail.notes}</p>}
+            {detail.asset && (
+              <Button asChild variant="outline" className="mt-4 h-11 w-full">
+                <Link to="/hub/m/fixed-assets">Depreciation schedule &amp; disposal</Link>
+              </Button>
+            )}
+            {canVoid(detail) && <VoidSection key={detail.id} entry={detail} onDone={() => setDetail(null)} />}
             <Button variant="outline" className="mt-4 h-11 w-full" onClick={() => setDetail(null)}>
               Close
             </Button>
@@ -668,6 +869,8 @@ export default function ExpensesPage() {
           if (result.liabilityCreated) setTab('liabilities');
         }}
       />
+
+      <CategoriesDialog open={categoriesOpen} onClose={() => setCategoriesOpen(false)} />
 
       <ReimbursementDialog
         liability={reimburse}
