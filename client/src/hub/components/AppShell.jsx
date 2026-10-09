@@ -271,8 +271,9 @@ export function AppShell({ children }) {
       )}
 
       <div className="flex">
-        {/* Desktop sidebar */}
-        <aside className="no-print sticky top-0 hidden h-screen w-64 shrink-0 flex-col justify-between overflow-y-auto border-r border-border bg-card p-4 lg:flex">
+        {/* Desktop sidebar — fixed with its own scroll, so the menu and the page
+            scroll independently (sticky can't work under the wrapper's overflow-x-hidden). */}
+        <aside className="no-print fixed inset-y-0 left-0 z-30 hidden w-64 flex-col justify-between overflow-y-auto overscroll-contain border-r border-border bg-card p-4 lg:flex">
           <div>
             <div className="px-2 pb-6 pt-2">
               <FemniaLockup subtitle="Inventory & Delivery Hub" logoClassName="size-11" />
@@ -283,7 +284,7 @@ export function AppShell({ children }) {
           {userBlock}
         </aside>
 
-        <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:ml-64 lg:px-8 print:!ml-0">{children}</main>
       </div>
     </div>
   );
