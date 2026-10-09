@@ -15,8 +15,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 
-// Admins start in the ERP and step into the e-commerce admin from there.
-const homeFor = (role) => (role === 'admin' ? '/admin/erp' : role === 'staff' ? '/admin' : '/');
+// Admins start in the FEMNIA Hub (the ERP lives there now); classic staff in /admin.
+const homeFor = (role) => (role === 'admin' ? '/hub' : role === 'staff' ? '/admin' : '/');
 
 export default function Login() {
   const { user, login } = useAuth();

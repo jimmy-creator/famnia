@@ -155,7 +155,7 @@ export function ComingSoon({ title, note }) {
             <Link to="/hub/dashboard">Back to Dashboard</Link>
           </Button>
           <Button asChild className="h-10">
-            <a href="/admin/erp">Open classic back office</a>
+            <a href="/admin">Open classic admin</a>
           </Button>
         </div>
       </div>

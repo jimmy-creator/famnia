@@ -28,8 +28,7 @@ import SettingsPage from '@/hub/pages/Settings';
 import ExpensesPage from '@/hub/pages/Expenses';
 import DashboardPage from '@/hub/pages/Dashboard';
 import ReportsPage from '@/hub/pages/Reports';
-import BackOfficePage from '@/hub/pages/BackOffice';
-import StoreExtrasPage from '@/hub/pages/StoreExtras';
+import StoreScreenPage from '@/hub/pages/StoreScreen';
 import ErpScreenPage from '@/hub/pages/ErpScreen';
 
 const FONTS_HREF =
@@ -115,8 +114,9 @@ export default function HubApp() {
           <Route path="expenses" element={<ExpensesPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="reports" element={<ReportsPage />} />
-          <Route path="back-office" element={<BackOfficePage />} />
-          <Route path="store" element={<StoreExtrasPage />} />
+          <Route path="back-office" element={<Navigate to="/hub/dashboard" replace />} />
+          <Route path="store" element={<Navigate to="/hub/s/abandoned-carts" replace />} />
+          <Route path="s/:screen" element={<StoreScreenPage />} />
           <Route path="m/:screen" element={<ErpScreenPage />} />
           {PENDING.map(([path, title, note]) => (
             <Route key={path} path={path} element={<ComingSoon title={title} note={note} />} />

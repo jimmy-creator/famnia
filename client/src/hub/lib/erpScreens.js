@@ -36,6 +36,25 @@ export const ERP_SCREENS = {
   'backup-restore': { tab: 'backup', title: 'Backup & Restore', subtitle: 'Full database backup (.sql) and restore.', admin: true },
 };
 
+/**
+ * Online-store screens from the classic store admin, each its own hub page
+ * at /hub/s/:screen (pages/Admin.jsx rendered embedded with that tab).
+ */
+export const STORE_SCREENS = {
+  'abandoned-carts': { tab: 'abandoned', title: 'Abandoned Carts', subtitle: 'Carts left at checkout — send recovery emails.', need: 'orders' },
+  'b2b-quotes': { tab: 'b2bquotes', title: 'B2B Quotes', subtitle: 'Wholesale quote requests: price, send, mark paid.', need: 'orders' },
+  reviews: { tab: 'reviews', title: 'Reviews', subtitle: 'Product reviews: approve, hide, add.', need: 'reviews' },
+  coupons: { tab: 'coupons', title: 'Coupons', subtitle: 'Discount codes with limits and dates.', need: 'coupons' },
+  theme: { tab: 'theme', title: 'Theme & Banners', subtitle: 'Store theme, home banners, category cards and announcements.', need: 'settings' },
+};
+
+/** Whether the signed-in hub user may open a store screen. */
+export function canOpenStoreScreen(access, key) {
+  const s = STORE_SCREENS[key];
+  if (!s || !access || access.status !== 'active') return false;
+  return access.isAdmin || Boolean(access.legacy?.includes(s.need));
+}
+
 const MULTILOC = import.meta.env.VITE_FEATURE_MULTILOC === 'true';
 
 /** Whether the signed-in hub user may open an ERP screen. */

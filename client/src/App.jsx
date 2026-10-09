@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation, useNavigate, Navigate, useSearchParams } from 'react-router-dom';
 import { useEffect, Fragment, lazy, Suspense } from 'react';
 import { useAuth } from './context/AuthContext';
 import { Toaster } from 'react-hot-toast';
@@ -18,7 +18,7 @@ import Register from './pages/Register';
 import Orders from './pages/Orders';
 import Profile from './pages/Profile';
 import Admin from './pages/Admin';
-import Erp from './pages/Erp';
+import { ERP_SCREENS } from './hub/lib/erpScreens';
 import OrderSuccess from './pages/OrderSuccess';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
@@ -111,6 +111,20 @@ function PosAware({ children }) {
   return children;
 }
 
+// The ERP now lives inside the hub: old /admin/erp links (bookmarks, the
+// ?tab= deep links) open the matching hub screen.
+const ERP_TAB_TO_HUB = {
+  products: '/hub/products', expenses: '/hub/expenses', 'barcode-labels': '/hub/products',
+  'activity-log': '/hub/staff?tab=activity', backup: '/hub/settings', inventory: '/hub/m/stock-on-hand',
+};
+function ErpRedirect() {
+  const [params] = useSearchParams();
+  const tab = params.get('tab');
+  const screen = tab && Object.entries(ERP_SCREENS).find(([, m]) => m.tab === tab)?.[0];
+  const to = (tab && ERP_TAB_TO_HUB[tab]) || (screen ? `/hub/m/${screen}` : '/hub/dashboard');
+  return <Navigate to={to} replace />;
+}
+
 let didInitialStaffRedirect = false;
 
 function StaffGate({ children }) {
@@ -118,7 +132,7 @@ function StaffGate({ children }) {
   const isStaff = user && (user.role === 'admin' || user.role === 'staff');
   if (isStaff && !didInitialStaffRedirect) {
     didInitialStaffRedirect = true;
-    return <Navigate to={user.role === 'admin' ? '/admin/erp' : '/admin'} replace />;
+    return <Navigate to={user.role === 'admin' ? '/hub' : '/admin'} replace />;
   }
   return children;
 }
@@ -170,7 +184,7 @@ export default function App() {
                       <Route path={p('/orders')} element={<Orders />} />
                       <Route path={p('/profile')} element={<Profile />} />
                       <Route path={p('/admin')} element={<Admin />} />
-                      <Route path={p('/admin/erp')} element={<Erp />} />
+                      <Route path={p('/admin/erp')} element={<ErpRedirect />} />
                       <Route path={p('/order-success')} element={<OrderSuccess />} />
                       <Route path={p('/wishlist')} element={<Wishlist />} />
                       <Route path={p('/forgot-password')} element={<ForgotPassword />} />

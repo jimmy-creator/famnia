@@ -588,7 +588,7 @@ function HeroBannerEditor() {
 // mode (/hub/store) only these are offered, inside the hub shell.
 const EMBED_TABS = ['abandoned', 'b2bquotes', 'reviews', 'coupons', 'theme']; // categories live in Catalogue → Categories
 
-export default function Admin({ embedded = false, legacy = null }) {
+export default function Admin({ embedded = false, legacy = null, screen = null }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { currentTheme, changeTheme, themes: themeOptions } = useTheme();
@@ -599,6 +599,8 @@ export default function Admin({ embedded = false, legacy = null }) {
   };
   const [tab, setTab] = useState(() => {
     if (embedded) {
+      // A single store screen inside the hub (/hub/s/:screen) — the hub menu is the navigation.
+      if (EMBED_TABS.includes(screen)) return screen;
       const wanted = new URLSearchParams(window.location.search).get('tab');
       return EMBED_TABS.includes(wanted) ? wanted : 'abandoned';
     }
@@ -861,7 +863,7 @@ export default function Admin({ embedded = false, legacy = null }) {
         </>)}
 
         <main className={embedded ? 'min-w-0' : 'min-w-0 flex-1 px-4 pb-16 pt-16 lg:h-screen lg:overflow-y-auto lg:px-8 lg:pt-8'}>
-          {embedded ? (
+          {embedded && screen ? null : embedded ? (
             <nav className="hub-legacy-nav mb-5 flex flex-wrap gap-1.5">
               {NAV_SECTIONS.flatMap((s) => s.items).filter((i) => i.show).map((i) => (
                 <button

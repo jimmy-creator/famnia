@@ -26,13 +26,14 @@ import { accessQuery } from '@/hub/lib/api';
 import { can } from '@/hub/lib/permissions';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
-import { ERP_SCREENS, canOpenScreen } from '@/hub/lib/erpScreens';
+import { ERP_SCREENS, STORE_SCREENS, canOpenScreen, canOpenStoreScreen } from '@/hub/lib/erpScreens';
 
 // One menu for the whole back office. Items are either hub pages (gated on a
 // hub permission) or our ERP screens at /hub/m/:screen (gated on the classic
 // area the server checks — see erpScreens.js).
 const page = (to, label, permission, extra = {}) => ({ to, label, permission, ...extra });
 const erp = (screen) => ({ to: `/hub/m/${screen}`, label: ERP_SCREENS[screen].title, screen });
+const store = (screen) => ({ to: `/hub/s/${screen}`, label: STORE_SCREENS[screen].title, storeScreen: screen });
 
 const NAV_GROUPS = [
   { id: 'home', items: [page('/hub/dashboard', 'Dashboard', 'dashboard.view')], icon: Home, flat: true },
@@ -89,7 +90,7 @@ const NAV_GROUPS = [
   { id: 'pos', label: 'POS', icon: Landmark, items: [erp('cashiers')] },
   {
     id: 'store', label: 'Online Store', icon: Store,
-    items: [page('/hub/store', 'Carts, Coupons & Theme', null, { staffOnly: true })],
+    items: ['abandoned-carts', 'b2b-quotes', 'reviews', 'coupons', 'theme'].map(store),
   },
   {
     id: 'admin', label: 'Admin', icon: ShieldCheck,
@@ -106,6 +107,7 @@ const COLLAPSE_KEY = 'femnia-hub-nav-collapsed-v1';
 function visibleItem(access, item) {
   if (!access) return false;
   if (item.screen) return canOpenScreen(access, item.screen);
+  if (item.storeScreen) return canOpenStoreScreen(access, item.storeScreen);
   if (item.deliveryOnly) return access.roles.includes('delivery');
   if (item.adminOnly) return access.isAdmin; // settings are written by Admins only
   if (item.staffOnly) return access.isAdmin || access.roles.includes('staff');
