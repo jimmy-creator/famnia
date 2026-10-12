@@ -38,7 +38,14 @@
     "aboutUs": "About Us",
     "contact": "Contact",
     "explore": "Explore",
-    "wholesale": "Wholesale"
+    "wholesale": "Wholesale",
+    "welcomeTo": "Welcome to",
+    "options": "Options",
+    "more": "More",
+    "onlyLeft_one": "Only {{count}} left",
+    "onlyLeft_other": "Only {{count}} left",
+    "pageOf": "Page {{current}} of {{total}}",
+    "sale": "Sale"
   },
   "home": {
     "bestSellersTitle": "New In",
@@ -61,7 +68,9 @@
     "clearFilters": "Clear filters",
     "noResults": "No products found",
     "results_one": "{{count}} result",
-    "results_other": "{{count}} results"
+    "results_other": "{{count}} results",
+    "items_one": "{{count}} item",
+    "items_other": "{{count}} items"
   },
   "product": {
     "description": "Description",
@@ -155,7 +164,9 @@
     "copyright": "© {{year}} {{store}}. All rights reserved.",
     "newsletter": "Subscribe to our newsletter",
     "newsletterPlaceholder": "Your email",
-    "subscribe": "Subscribe"
+    "subscribe": "Subscribe",
+    "storeInfo": "Store Information",
+    "newsletterNote": "You may unsubscribe at any moment. For that purpose, please find our contact info in the legal notice."
   },
   "brand": {
     "tagline": "Timeless Elegance"
@@ -303,5 +314,15 @@
     "shopByCategory": "Shop by Category",
     "newIn": "New In",
     "seal": "Timeless elegance"
+  },
+  "trust": {
+    "shipping": "Free Shipping",
+    "shippingDesc": "On every qualifying order",
+    "returns": "Easy Returns",
+    "returnsDesc": "Straightforward return policy",
+    "secure": "Secure Payment",
+    "secureDesc": "Checkout you can trust",
+    "support": "Customer Support",
+    "supportDesc": "By WhatsApp and email"
   }
 }

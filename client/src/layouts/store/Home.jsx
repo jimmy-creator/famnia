@@ -1,13 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowRight, Heart, Mail } from 'lucide-react';
+import {
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  Headphones,
+  RotateCcw,
+  ShieldCheck,
+  Truck,
+} from 'lucide-react';
 import api from '../../api/axios';
 import { localizedName } from '../../utils/i18nHelpers';
-import { CurrencySymbol, formatPrice } from '../../utils/currency';
 import SEO from '../../components/SEO';
-import { useWishlist } from '../../context/WishlistContext';
+import ProductCard from './ProductCard';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { cn } from '@/lib/utils';
 
 const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia';
@@ -19,30 +27,104 @@ const FALLBACK_HERO = {
   image: '/images/femnia-hero.webp',
   mobileImage: '/images/femnia-hero-mobile.webp',
 };
-const FALLBACK_MID = { image: '/images/femnia-promo.webp' };
 
-// Must stay in lockstep with Tailwind's `md` (768px), which is where the
-// banners switch to their desktop layout. If this is narrower, widths between
-// it and `md` get the mobile LAYOUT but the desktop IMAGE.
-const MOBILE_BANNER_MEDIA = '(max-width: 767px)';
+// Must stay in lockstep with Tailwind's `lg` (1024px), which is where the
+// banners switch to their fixed-height desktop layout. If this is narrower,
+// widths between it and `lg` get the mobile LAYOUT but the desktop IMAGE.
+const MOBILE_BANNER_MEDIA = '(max-width: 1023px)';
 
-/* ── Shared bits ──────────────────────────────────────────────────────── */
+// The "All products" grid is server-paginated — Back / More step through it.
+const PAGE_SIZE = 12;
+// The arrivals rail is one horizontal scroll, so it fetches its own short list.
+const RAIL_LIMIT = 10;
 
-// Centred heading with the gold rule under it (SHOP BY CATEGORY).
-function RuledHeading({ children }) {
+/* ── Small shared bits ────────────────────────────────────────────────── */
+
+// Section heading: title leading, an optional link or control trailing.
+function SectionHead({ title, note, to, actionLabel }) {
   return (
-    <div className="flex flex-col items-center">
-      <div className="flex w-full items-center gap-5">
-        <span className="h-px flex-1 bg-border" />
-        <h2 className="text-center font-serif text-xl uppercase tracking-[0.14em] text-foreground sm:text-2xl">{children}</h2>
-        <span className="h-px flex-1 bg-border" />
-      </div>
-      <span className="mt-3 h-[2px] w-12" style={{ backgroundColor: 'var(--gold)' }} />
+    <div className="mb-4 flex items-end justify-between gap-4">
+      <h2 className="text-lg font-bold tracking-tight text-foreground sm:text-xl">{title}</h2>
+      {to ? (
+        <Link
+          to={to}
+          className="group inline-flex shrink-0 items-center gap-1 text-[13px] font-semibold text-primary"
+        >
+          {actionLabel}
+          <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5 rtl:rotate-180" />
+        </Link>
+      ) : note ? (
+        <span className="shrink-0 text-[13px] text-muted-foreground">{note}</span>
+      ) : null}
     </div>
   );
 }
 
-/* ── Hero ─────────────────────────────────────────────────────────────── */
+function CardSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl bg-card p-3 ring-1 ring-border/70">
+      <Skeleton className="aspect-[3/4] w-full rounded-xl" />
+      <Skeleton className="h-3 w-3/4" />
+      <Skeleton className="h-3 w-1/3" />
+    </div>
+  );
+}
+
+/* ── Banners ──────────────────────────────────────────────────────────── */
+
+/**
+ * One admin-configured promo image with optional overlaid copy.
+ *
+ * Mobile renders the image at its natural height so nothing is cropped; from
+ * `lg` the panel takes the height its parent gives it and the image fills it.
+ * `align` places the copy.
+ */
+function PromoPanel({ banner, className, align = 'start' }) {
+  if (!banner?.image) return null;
+  const hasCopy = !!(banner.subtitle || banner.title || banner.cta);
+  return (
+    <div className={cn('relative overflow-hidden rounded-3xl bg-[color:var(--bg-warm)]', className)}>
+      <picture>
+        {banner.mobileImage && <source media={MOBILE_BANNER_MEDIA} srcSet={banner.mobileImage} />}
+        <img
+          src={banner.image}
+          alt={banner.title || ''}
+          loading="lazy"
+          className="block h-auto w-full lg:absolute lg:inset-0 lg:size-full lg:object-cover lg:object-center"
+        />
+      </picture>
+
+      {hasCopy && (
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-0 flex flex-col justify-center gap-1.5 p-6 sm:p-8',
+            align === 'end' ? 'items-end text-end' : 'items-start text-start',
+          )}
+        >
+          {banner.subtitle && (
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/70">
+              {banner.subtitle}
+            </p>
+          )}
+          {banner.title && (
+            <h3 className="max-w-[60%] text-2xl font-bold leading-tight text-foreground sm:text-3xl">
+              {banner.title}
+            </h3>
+          )}
+          {banner.link && (
+            <span className="mt-2 rounded-full bg-primary px-4 py-2 text-[11px] font-semibold text-primary-foreground">
+              {banner.cta || 'Shop now'}
+            </span>
+          )}
+        </div>
+      )}
+
+      {banner.link && (
+        <Link to={banner.link} className="absolute inset-0" aria-label={banner.title || STORE_NAME} />
+      )}
+    </div>
+  );
+}
 
 // Rotating circular seal over the hero photo. Text and visibility come from
 // Admin → Settings → Theme → Hero Seal.
@@ -52,10 +134,7 @@ function EleganceSeal({ seal }) {
   // to read continuously as it loops.
   const ring = `${seal.text} · `;
   return (
-    // Mobile: tucked into the bottom-right corner and scaled down — the hero
-    // is only as tall as the banner there, so the old bottom-24 pushed the
-    // seal up into the middle of the artwork.
-    <div className="pointer-events-none absolute bottom-3 right-3 size-16 sm:bottom-16 sm:right-4 sm:size-28 lg:right-10 lg:size-32">
+    <div className="pointer-events-none absolute bottom-3 end-3 size-16 sm:bottom-6 sm:end-6 sm:size-24 lg:size-28">
       <svg viewBox="0 0 120 120" className="size-full animate-[spin_22s_linear_infinite]">
         <defs>
           <path id="seal-arc" d="M60,60 m-44,0 a44,44 0 1,1 88,0 a44,44 0 1,1 -88,0" fill="none" />
@@ -72,110 +151,115 @@ function EleganceSeal({ seal }) {
   );
 }
 
-function Hero({ slides, active, seal, onSelect, onTouchStart, onTouchMove, onTouchEnd }) {
+/**
+ * The hero block: a rounded banner carousel, with two promo panels stacked
+ * beside it from `lg`.
+ *
+ * Below `lg` there is no side column — every banner is folded into the carousel
+ * as another slide (see `carouselSlides` in the page component) and the
+ * customer swipes through them. Stacking them instead meant three or four
+ * full-width images to scroll past before reaching a product.
+ *
+ * `compact` is the same breakpoint as the `lg:` prefixes here, driven from JS
+ * because the slide LIST differs between the two layouts, not just its style.
+ */
+function HeroBlock({ slides, active, seal, promos, compact, onSelect, onTouchStart, onTouchMove, onTouchEnd }) {
   const current = slides[active];
+  // With no promo banners configured the carousel takes the whole row rather
+  // than leaving a two-thirds-wide banner against dead space.
+  const hasPromos = !!(promos[0] || promos[1]);
   return (
-    <section
-      // -mt-20 pulls the hero up under the (transparent) h-20 navbar on
-      // mobile so the art runs to the announcement bar. From `md` up the
-      // navbar is solid and the hero sits below it as normal.
-      className="relative -mt-20 overflow-hidden bg-[color:var(--bg-warm)] md:mt-0"
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-    >
-      {/* On mobile the FIRST slide sits in normal flow so the banner's own
-          aspect ratio sets the hero height — the art then meets the navbar
-          with no letterbox strip above or below it. From `md` up every slide
-          is absolutely stacked and the copy column sets the height instead. */}
-      <div className="relative md:min-h-[560px] lg:min-h-[640px]">
-        {slides.map((slide, i) => (
-          <div
-            key={i}
-            className={cn(
-              'transition-opacity duration-700',
-              i === 0 ? 'relative md:absolute md:inset-0' : 'absolute inset-0',
-              active === i ? 'opacity-100' : 'pointer-events-none opacity-0',
-            )}
-            aria-hidden={active !== i}
-          >
-            {slide.image ? (
-              <picture>
-                {slide.mobileImage && <source media={MOBILE_BANNER_MEDIA} srcSet={slide.mobileImage} />}
-                <img
-                  src={slide.image}
-                  alt={slide.title || STORE_NAME}
-                  className={cn(
-                    'md:absolute md:inset-0 md:size-full md:object-cover md:object-center',
-                    i === 0
-                      ? 'block h-auto w-full'
-                      : 'absolute inset-0 size-full object-contain object-center',
-                  )}
-                  fetchPriority={i === 0 ? 'high' : 'auto'}
-                  loading={i === 0 ? 'eager' : 'lazy'}
-                />
-              </picture>
-            ) : (
-              // Keeps the hero from collapsing on mobile when a slide has no
-              // image (the first slide is what sets the height there).
-              <div
-                className={cn(
-                  'bg-[color:var(--bg-warm)]',
-                  i === 0 ? 'h-[320px] w-full md:absolute md:inset-0 md:h-auto' : 'absolute inset-0',
-                )}
-              />
-            )}
-            {/* No scrim: the hero art is supplied with its left side left
-                clear for the copy, so the photo renders untouched. */}
+    <section className="mx-auto max-w-7xl px-4 pt-5 lg:px-8">
+      <div className="grid gap-4 lg:h-[440px] lg:grid-cols-3">
+        <div
+          className={cn(
+            'relative overflow-hidden rounded-3xl bg-[color:var(--bg-warm)] lg:h-full',
+            // Mixed-ratio slides (a wide hero next to 1.57 promo crops) would
+            // resize the block on every advance, so below `lg` the frame is
+            // fixed at 16:9 — between the two — and images cover it.
+            'aspect-[16/9] lg:aspect-auto',
+            hasPromos ? 'lg:col-span-2' : 'lg:col-span-3',
+          )}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          {slides.map((slide, i) => (
+            <div
+              key={i}
+              className={cn(
+                'absolute inset-0 transition-opacity duration-700',
+                active === i ? 'opacity-100' : 'pointer-events-none opacity-0',
+              )}
+              aria-hidden={active !== i}
+            >
+              {slide.image ? (
+                <picture>
+                  {slide.mobileImage && <source media={MOBILE_BANNER_MEDIA} srcSet={slide.mobileImage} />}
+                  <img
+                    src={slide.image}
+                    alt={slide.title || STORE_NAME}
+                    fetchPriority={i === 0 ? 'high' : 'auto'}
+                    loading={i === 0 ? 'eager' : 'lazy'}
+                    className="absolute inset-0 size-full object-cover object-center"
+                  />
+                </picture>
+              ) : (
+                <div className="absolute inset-0 bg-[color:var(--bg-warm)]" />
+              )}
+              {slide.link && (
+                <Link to={slide.link} className="absolute inset-0 z-10" aria-label={slide.title || STORE_NAME} />
+              )}
+            </div>
+          ))}
 
-            {/* The slide itself is the call to action now that the button is
-                gone — the whole banner links wherever Admin points it. */}
-            {slide.link && (
-              <Link to={slide.link} className="absolute inset-0 z-10" aria-label={slide.title || STORE_NAME} />
+          {/* Copy comes only from the banner configured in Admin. With no
+              title/subtitle set the hero renders as a clean image. */}
+          <div className="pointer-events-none absolute inset-0 flex items-center p-6 sm:p-10">
+            {(current?.subtitle || current?.title) && (
+              <div className="max-w-sm">
+                {current.subtitle && (
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/70 sm:text-[11px]">
+                    {current.subtitle}
+                  </p>
+                )}
+                {current.title && (
+                  <h1 className="mt-2 text-3xl font-extrabold leading-[1.05] tracking-tight text-foreground sm:text-5xl">
+                    {current.title}
+                  </h1>
+                )}
+                <span className="mt-4 block h-1 w-12 rounded-full sm:w-16" style={{ backgroundColor: 'var(--copper)' }} />
+              </div>
             )}
           </div>
-        ))}
 
-        {/* Copy comes only from the banner configured in Admin → Settings →
-            Theme. With no title/subtitle set (or on the default artwork) the
-            hero renders as a clean image with no overlaid text or button.
-            pt-36 clears the transparent navbar the art sits under on mobile. */}
-        <div className="pointer-events-none absolute inset-0 mx-auto flex max-w-7xl items-center px-6 pt-20 md:relative md:min-h-[560px] md:py-16 md:pt-16 lg:min-h-[640px] lg:px-10">
-          {(current?.subtitle || current?.title) && (
-            <div className="max-w-md">
-              {current.subtitle && (
-                <p className="text-[9px] font-medium uppercase tracking-[0.25em] text-foreground/70 md:text-[11px] md:tracking-[0.3em]">
-                  {current.subtitle}
-                </p>
-              )}
-              {current.title && (
-                // Sized down on mobile: the banner sets the hero height there,
-                // so the copy has to sit inside a much shorter box.
-                <h1 className="mt-1.5 font-serif text-2xl uppercase leading-[0.95] tracking-tight text-foreground sm:text-4xl md:mt-5 md:text-6xl lg:text-7xl">
-                  {current.title}
-                </h1>
-              )}
-              <span className="mt-3 block h-px w-10 md:mt-7 md:w-16" style={{ backgroundColor: 'var(--gold)' }} />
+          <EleganceSeal seal={seal} />
+
+          {slides.length > 1 && (
+            <div className="absolute inset-x-0 bottom-4 z-20 flex justify-center gap-1.5">
+              {slides.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => onSelect(i)}
+                  aria-label={`Slide ${i + 1}`}
+                  className={cn(
+                    'h-1.5 rounded-full transition-all',
+                    active === i ? 'w-6 bg-[color:var(--copper)]' : 'w-1.5 bg-foreground/25',
+                  )}
+                />
+              ))}
             </div>
           )}
         </div>
 
-        <EleganceSeal seal={seal} />
-
-        {slides.length > 1 && (
-          <div className="absolute inset-x-0 bottom-6 z-20 flex justify-center gap-2">
-            {slides.map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => onSelect(i)}
-                aria-label={`Slide ${i + 1}`}
-                className={cn(
-                  'size-2 rounded-full transition-colors',
-                  active === i ? 'bg-[color:var(--gold)]' : 'bg-foreground/20',
-                )}
-              />
-            ))}
+        {/* Two stacked promos beside the carousel. Slots left empty in Admin
+            simply don't render, and the column collapses if neither is set.
+            Hidden below `lg`, where these are carousel slides instead. */}
+        {hasPromos && !compact && (
+          <div className="flex flex-col gap-4 lg:h-full">
+            <PromoPanel banner={promos[0]} align="end" className="lg:min-h-0 lg:flex-1" />
+            <PromoPanel banner={promos[1]} align="end" className="lg:min-h-0 lg:flex-1" />
           </div>
         )}
       </div>
@@ -183,38 +267,43 @@ function Hero({ slides, active, seal, onSelect, onTouchStart, onTouchMove, onTou
   );
 }
 
-/* ── Shop by category (circular tiles) ────────────────────────────────── */
+/* ── Categories ───────────────────────────────────────────────────────── */
 
-function CategoryCircles({ categories }) {
+// Scrolling pill row: a leading "All" chip, then one chip per category with
+// its thumbnail. Purely a shortcut into the catalogue — nothing filters here.
+function CategoryChips({ categories }) {
   const { t } = useTranslation();
   if (!categories.length) return null;
+
   return (
-    <section className="mx-auto max-w-7xl px-6 py-14 lg:px-10">
-      <RuledHeading>{t('femnia.shopByCategory')}</RuledHeading>
-      <div className="-mx-6 mt-10 flex gap-6 overflow-x-auto px-6 pb-2 [scrollbar-width:none] sm:mx-0 sm:justify-center sm:overflow-visible sm:px-0">
-        {categories.slice(0, 6).map((c) => (
+    <section className="mx-auto mt-8 max-w-7xl px-4 lg:px-8">
+      <SectionHead title={t('common.categories')} to="/products" actionLabel={t('common.viewAll')} />
+
+      <div className="-mx-4 flex gap-2.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] lg:mx-0 lg:flex-wrap lg:px-0 [&::-webkit-scrollbar]:hidden">
+        <Link
+          to="/products"
+          className="flex shrink-0 items-center gap-2 rounded-full bg-primary py-1.5 pe-4 ps-1.5 text-[13px] font-semibold text-primary-foreground"
+        >
+          <span className="flex size-8 items-center justify-center rounded-full bg-white/20 text-[11px] font-bold">
+            {categories.length}
+          </span>
+          {t('common.all')}
+        </Link>
+
+        {categories.map((c) => (
           <Link
             key={c.id || c.name}
             to={`/products?category=${encodeURIComponent(c.name)}`}
-            className="group flex w-24 shrink-0 flex-col items-center gap-3 sm:w-32"
+            className="flex shrink-0 items-center gap-2 rounded-full bg-card py-1.5 pe-4 ps-1.5 text-[13px] font-medium text-foreground ring-1 ring-border transition-colors hover:ring-primary"
           >
-            <span className="block size-24 overflow-hidden rounded-full bg-[color:var(--bg-warm)] ring-1 ring-border transition-all group-hover:ring-2 group-hover:ring-[color:var(--gold)] sm:size-32">
+            <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[color:var(--bg-warm)]">
               {c.image ? (
-                <img
-                  src={c.image}
-                  alt={localizedName(c)}
-                  loading="lazy"
-                  className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
-                />
+                <img src={c.image} alt="" loading="lazy" className="size-full object-cover" />
               ) : (
-                <span className="flex size-full items-center justify-center font-serif text-3xl text-foreground/25">
-                  {localizedName(c)?.[0]}
-                </span>
+                <span className="text-[11px] font-bold text-foreground/40">{localizedName(c)?.[0]}</span>
               )}
             </span>
-            <span className="text-center text-[11px] font-medium uppercase tracking-[0.14em] text-foreground">
-              {localizedName(c)}
-            </span>
+            <span className="whitespace-nowrap">{localizedName(c)}</span>
           </Link>
         ))}
       </div>
@@ -222,199 +311,40 @@ function CategoryCircles({ categories }) {
   );
 }
 
-/* ── Dark sale banner ─────────────────────────────────────────────────── */
+/* ── Trust badges ─────────────────────────────────────────────────────── */
 
-/**
- * Mid-page banner, driven entirely by Admin → Settings → Theme → Mid-page
- * Banners. Copy is whatever `title`/`subtitle` the admin sets; with neither
- * set the banner renders as a clean image. Nothing is hardcoded.
- */
-function MidBanner({ banner }) {
-  const hasCopy = !!(banner.subtitle || banner.title);
-  return (
-    <section className="mx-auto max-w-7xl px-6 lg:px-10">
-      <div className="relative overflow-hidden bg-[color:var(--bg-dark)]">
-        {banner.image && (
-          <>
-            <picture>
-              {banner.mobileImage && <source media={MOBILE_BANNER_MEDIA} srcSet={banner.mobileImage} />}
-              <img
-                src={banner.image}
-                alt={banner.title || ''}
-                loading="lazy"
-                // Same as the hero: full banner on mobile, cropped fill on desktop.
-                className="absolute inset-0 size-full object-contain object-center sm:object-cover sm:object-[75%_center]"
-              />
-            </picture>
-            {/* Scrim only when there is copy to keep legible. */}
-            {hasCopy && (
-              <div className="absolute inset-0 bg-gradient-to-r from-[color:var(--bg-dark)] via-[color:var(--bg-dark)]/85 to-transparent" />
-            )}
-          </>
-        )}
-
-        <div className="pointer-events-none relative flex min-h-[240px] max-w-lg flex-col justify-center gap-4 p-8 sm:min-h-[280px] sm:p-12">
-          {banner.subtitle && (
-            <p className="text-[11px] font-medium uppercase tracking-[0.28em]" style={{ color: 'var(--gold)' }}>
-              {banner.subtitle}
-            </p>
-          )}
-          {banner.title && (
-            <h2 className="font-serif text-4xl uppercase leading-[1.05] text-white sm:text-5xl">
-              {banner.title}
-            </h2>
-          )}
-        </div>
-
-        {banner.link && (
-          <Link to={banner.link} className="absolute inset-0" aria-label={banner.title || STORE_NAME} />
-        )}
-      </div>
-    </section>
-  );
-}
-
-/* ── Product rail ─────────────────────────────────────────────────────── */
-
-// Editorial product card: tall image, heart toggle, name + price under it.
-function FashionCard({ product }) {
-  const { toggleWishlist, isInWishlist } = useWishlist();
-  const wished = isInWishlist?.(product.id);
-  const imgFull = product.images?.[0];
-  const img = imgFull?.replace(/\/uploads\/(.+?)\.webp$/, '/api/upload/thumb/$1.webp') || imgFull;
-  const displayName = localizedName(product);
-
-  return (
-    // w-44 + shrink-0 give the card a fixed width inside the mobile scroll
-    // row; from `sm` the parent is a grid again and the track sizes it.
-    <article className="group flex w-44 shrink-0 snap-start flex-col sm:w-auto">
-      <div className="relative overflow-hidden bg-[color:var(--bg-warm)]">
-        <Link to={`/product/${product.slug}`} className="block aspect-[3/4]">
-          {img ? (
-            <img
-              src={img}
-              alt={displayName}
-              loading="lazy"
-              className="size-full object-cover transition-transform duration-700 group-hover:scale-105"
-            />
-          ) : (
-            <span className="flex size-full items-center justify-center font-serif text-5xl text-foreground/20">
-              {displayName?.[0] || '·'}
-            </span>
-          )}
-        </Link>
-        <button
-          type="button"
-          onClick={() => toggleWishlist?.(product)}
-          aria-label="Add to wishlist"
-          aria-pressed={!!wished}
-          className="absolute right-3 top-3 flex size-8 items-center justify-center rounded-full bg-white/85 text-foreground backdrop-blur transition-colors hover:bg-white"
-        >
-          <Heart className={cn('size-4 stroke-[1.5]', wished && 'fill-current')} />
-        </button>
-      </div>
-      <div className="bg-card px-3 py-4">
-        <Link
-          to={`/product/${product.slug}`}
-          className="line-clamp-1 text-[13px] text-foreground transition-colors hover:text-[color:var(--gold)]"
-        >
-          {displayName}
-        </Link>
-        <p className="mt-1.5 text-sm font-semibold text-foreground">
-          <CurrencySymbol />{formatPrice(product.price)}
-        </p>
-      </div>
-    </article>
-  );
-}
-
-function ProductRail({ title, products, loading }) {
+function TrustBadges() {
   const { t } = useTranslation();
+  const items = [
+    { icon: Truck, title: t('trust.shipping'), desc: t('trust.shippingDesc'), to: '/shipping-policy' },
+    { icon: RotateCcw, title: t('trust.returns'), desc: t('trust.returnsDesc'), to: '/return-policy' },
+    { icon: ShieldCheck, title: t('trust.secure'), desc: t('trust.secureDesc'), to: '/privacy-policy' },
+    { icon: Headphones, title: t('trust.support'), desc: t('trust.supportDesc'), to: '/contact' },
+  ];
   return (
-    <section className="mx-auto max-w-7xl px-6 py-14 lg:px-10">
-      <div className="mb-8 flex items-end justify-between gap-4">
-        <h2 className="font-serif text-2xl uppercase tracking-[0.06em] text-foreground sm:text-3xl">{title}</h2>
-        <Link
-          to="/products"
-          className="group inline-flex shrink-0 items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-foreground hover:text-[color:var(--gold)]"
-        >
-          {t('common.viewAll')}
-          <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-1" />
-        </Link>
-      </div>
-      {/* Mobile: one snapping side-scroll row (bleeds to the screen edges so
-          the next card peeks). From `sm` up it goes back to a wrapped grid. */}
-      <div
-        className={cn(
-          // scroll-pl-6 matches px-6: snap points align to the border box, so
-          // without it the first card snaps flush to the screen edge.
-          '-mx-6 flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-pl-6 px-6 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-          'sm:mx-0 sm:grid sm:snap-none sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4',
-        )}
-      >
-        {loading
-          ? Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex w-44 shrink-0 snap-start flex-col gap-3 sm:w-auto">
-                <Skeleton className="aspect-[3/4] w-full" />
-                <Skeleton className="h-3 w-3/4" />
-                <Skeleton className="h-3 w-1/3" />
-              </div>
-            ))
-          : products.map((p) => <FashionCard key={p.id} product={p} />)}
-      </div>
-    </section>
-  );
-}
-
-/* ── Newsletter ───────────────────────────────────────────────────────── */
-
-function ClubBand() {
-  const { t } = useTranslation();
-  const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
-  return (
-    <section className="bg-[color:var(--bg-warm)]">
-      <div className="mx-auto flex max-w-7xl flex-col items-center gap-7 px-6 py-12 md:flex-row md:justify-between lg:px-10">
-        <div className="flex items-center gap-5">
-          <span
-            className="flex size-14 shrink-0 items-center justify-center rounded-full text-white"
-            style={{ backgroundColor: 'var(--gold)' }}
-          >
-            <Mail className="size-6 stroke-[1.5]" />
-          </span>
-          <div className="text-center sm:text-left">
-            <h3 className="font-serif text-xl tracking-[0.06em] text-foreground sm:text-2xl">
-              {t('newsletter.title')}
-            </h3>
-            <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
-              {t('newsletter.desc1')}<br className="hidden sm:block" />{t('newsletter.desc2')}
-            </p>
-          </div>
-        </div>
-
-        {sent ? (
-          <p className="text-sm font-medium text-foreground">{t('newsletter.thanks')}</p>
-        ) : (
-          <form
-            onSubmit={(e) => { e.preventDefault(); if (email.trim()) setSent(true); }}
-            className="flex w-full max-w-md items-stretch"
-          >
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={t('newsletter.placeholder')}
-              className="h-12 min-w-0 flex-1 bg-white px-5 text-base text-foreground outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-inset focus:ring-[color:var(--gold)] md:text-sm"
-            />
-            <button
-              type="submit"
-              className="shrink-0 bg-foreground px-6 text-[11px] font-medium uppercase tracking-[0.16em] text-background transition-colors hover:bg-foreground/85"
+    <section className="mx-auto max-w-7xl px-4 py-12 lg:px-8">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.title}
+              to={item.to}
+              className="flex items-center gap-3 rounded-2xl bg-card px-4 py-4 ring-1 ring-border/70 transition-shadow hover:shadow-[0_8px_24px_rgba(43,22,32,0.08)]"
             >
-              {t('newsletter.subscribe')}
-            </button>
-          </form>
-        )}
+              <span
+                className="flex size-10 shrink-0 items-center justify-center rounded-full"
+                style={{ backgroundColor: 'var(--bg-warm)' }}
+              >
+                <Icon className="size-5 stroke-[1.6]" style={{ color: 'var(--copper)' }} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-semibold text-foreground">{item.title}</span>
+                <span className="block truncate text-xs text-muted-foreground">{item.desc}</span>
+              </span>
+            </Link>
+          );
+        })}
       </div>
     </section>
   );
@@ -424,14 +354,27 @@ function ClubBand() {
 
 export default function Home() {
   const { t } = useTranslation();
-  const [featured, setFeatured] = useState([]);
+
+  const [latest, setLatest] = useState([]);
+  const [railLoading, setRailLoading] = useState(true);
   const [categories, setCategories] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  // "All products" is server-paginated on its own, independently of the rail.
+  const [all, setAll] = useState([]);
+  const [allLoading, setAllLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const gridRef = useRef(null);
+  // Paging should scroll the grid back into view — but not on first paint,
+  // which would yank a customer who landed at the top straight down the page.
+  const pagedOnce = useRef(false);
+
   const [banners, setBanners] = useState(() => {
     const cached = localStorage.getItem('cached-banners');
     return cached ? JSON.parse(cached) : [];
   });
-  const [midBanners, setMidBanners] = useState(() => {
+  const [promos, setPromos] = useState(() => {
     const cached = localStorage.getItem('cached-mid-banners');
     return cached ? JSON.parse(cached) : [];
   });
@@ -439,6 +382,7 @@ export default function Home() {
     const cached = localStorage.getItem('cached-hero-seal');
     return cached ? JSON.parse(cached) : null;
   });
+
   const [active, setActive] = useState(0);
 
   useEffect(() => {
@@ -462,11 +406,13 @@ export default function Home() {
       })
       .catch(() => {});
 
-    // Mid-page banners — Admin → Settings → Theme → Mid-page Banners.
+    // Promo banners — Admin → Settings → Theme → Promo Banners. Positional:
+    // [0] and [1] stack beside the hero, [2] sits between the sections, [3] is
+    // the full-width sale banner.
     api.get('/settings/mid-banners')
       .then((res) => {
-        const list = Array.isArray(res.data) ? res.data.filter((b) => b?.image) : [];
-        setMidBanners(list);
+        const list = Array.isArray(res.data) ? res.data : [];
+        setPromos(list);
         localStorage.setItem('cached-mid-banners', JSON.stringify(list));
       })
       .catch(() => {});
@@ -475,16 +421,48 @@ export default function Home() {
       .then((res) => setCategories(Array.isArray(res.data) ? res.data : []))
       .catch(() => {});
 
-    api.get('/products?featured=true&limit=8')
-      .then((res) => setFeatured(res.data.products || []))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    api.get(`/products?sort=createdAt&order=DESC&limit=${RAIL_LIMIT}`)
+      .then((r) => setLatest(r.data.products || []))
+      .catch(() => {})
+      .finally(() => setRailLoading(false));
   }, []);
 
-  // Admin banners drive the hero when configured; otherwise a single
-  // branded slide built from the i18n copy.
-  const slides = banners.length > 0 ? banners : [FALLBACK_HERO];
-  const midSlides = midBanners.length > 0 ? midBanners : [FALLBACK_MID];
+  useEffect(() => {
+    setAllLoading(true);
+    api.get('/products', { params: { page, limit: PAGE_SIZE, sort: 'createdAt', order: 'DESC' } })
+      .then((r) => {
+        setAll(r.data.products || []);
+        setTotalPages(r.data.totalPages || 1);
+        setTotal(r.data.total || 0);
+      })
+      .catch(() => {})
+      .finally(() => setAllLoading(false));
+
+    if (pagedOnce.current) {
+      gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    pagedOnce.current = true;
+  }, [page]);
+
+  // Admin banners drive the hero when configured; otherwise the default artwork.
+  const heroSlides = banners.length > 0 ? banners : [FALLBACK_HERO];
+  const promoAt = (i) => (promos[i]?.image ? promos[i] : null);
+
+  // Below `lg` the hero-side promos have nowhere of their own to sit, so they
+  // fold into the carousel as extra slides rather than stacking as full-width
+  // images the customer scrolls past.
+  //
+  // Slots 2 and 3 are excluded deliberately: both are full-width bands by
+  // design and keep that placement at every width.
+  const compact = useMediaQuery(MOBILE_BANNER_MEDIA);
+  const carouselPromos = [promoAt(0), promoAt(1)].filter(Boolean);
+  const slides = compact ? [...heroSlides, ...carouselPromos] : heroSlides;
+
+  // Rotating a phone to landscape drops the promos back out of the carousel,
+  // so an index that was valid a moment ago can now point past the end and
+  // blank the hero. Clamp on read rather than resetting to 0, which would
+  // yank the customer back to the first slide on every resize.
+  const safeActive = Math.min(active, slides.length - 1);
 
   const autoplayRef = useRef(null);
   const touchStart = useRef(null);
@@ -513,33 +491,112 @@ export default function Home() {
   const handleTouchEnd = () => {
     if (Math.abs(touchDelta.current) > 50) {
       if (touchDelta.current < 0 && active < slides.length - 1) goTo(active + 1);
-      else if (touchDelta.current > 0 && active > 0) goTo(active - 1);
+      else if (touchDelta.current > 0 && active > 0) goTo(Math.min(active, slides.length - 1) - 1);
     }
     touchStart.current = null;
     touchDelta.current = 0;
   };
 
   return (
-    <div>
+    <div className="pb-4">
       <SEO title={t('home.seoTitle')} description={t('home.seoDescription')} />
 
-      <Hero
+      <HeroBlock
         slides={slides}
-        active={active}
+        active={safeActive}
         seal={seal}
+        promos={[promoAt(0), promoAt(1)]}
+        compact={compact}
         onSelect={goTo}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       />
 
-      <CategoryCircles categories={categories} />
+      <CategoryChips categories={categories} />
 
-      {midSlides.map((banner, i) => <MidBanner key={i} banner={banner} />)}
+      {/* New arrivals — one horizontal rail, so the newest stock is one swipe
+          away rather than a grid the customer has to scroll past. */}
+      {(railLoading || latest.length > 0) && (
+        <section className="mx-auto mt-10 max-w-7xl px-4 lg:px-8">
+          <SectionHead
+            title={t('common.newArrivals')}
+            to="/products?sort=createdAt&order=DESC"
+            actionLabel={t('common.viewAll')}
+          />
+          <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] lg:mx-0 lg:px-0 [&::-webkit-scrollbar]:hidden">
+            {(railLoading ? Array.from({ length: 4 }) : latest).map((p, i) => (
+              <div key={p?.id ?? i} className="w-40 shrink-0 snap-start sm:w-48 lg:w-56">
+                {railLoading ? <CardSkeleton /> : <ProductCard product={p} />}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
-      <ProductRail title={t('femnia.newIn')} products={featured} loading={loading} />
+      {/* Promo slot 3 — a full-width band between the two product sections. */}
+      {promoAt(2) && (
+        <section className="mx-auto mt-10 max-w-7xl px-4 lg:px-8">
+          <PromoPanel banner={promoAt(2)} align="end" className="lg:h-[220px]" />
+        </section>
+      )}
 
-      <ClubBand />
+      {/* All products — server-paginated, stepped through with Back / More. */}
+      <section ref={gridRef} className="mx-auto mt-10 max-w-7xl scroll-mt-28 px-4 lg:px-8">
+        <SectionHead
+          title={t('products.allProducts')}
+          note={total > 0 ? t('products.items', { count: total }) : undefined}
+        />
+
+        {!allLoading && all.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-border px-4 py-14 text-center text-sm text-muted-foreground">
+            {t('products.noResults')}
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 lg:gap-4">
+            {allLoading
+              ? Array.from({ length: PAGE_SIZE }).map((_, i) => <CardSkeleton key={i} />)
+              : all.map((p) => <ProductCard key={p.id} product={p} eager />)}
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div className="mt-8 flex items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="inline-flex items-center gap-1.5 rounded-full bg-card px-5 py-2.5 text-[13px] font-semibold text-foreground ring-1 ring-border transition-colors hover:ring-primary disabled:pointer-events-none disabled:opacity-40"
+            >
+              <ChevronLeft className="size-4 rtl:rotate-180" />
+              {t('common.back')}
+            </button>
+
+            <span className="text-[13px] font-medium text-muted-foreground">
+              {t('common.pageOf', { current: page, total: totalPages })}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary px-5 py-2.5 text-[13px] font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
+            >
+              {t('common.more')}
+              <ChevronRight className="size-4 rtl:rotate-180" />
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* Full-width sale banner — promo slot 4. Its own band at every width. */}
+      {promoAt(3) && (
+        <section className="mx-auto mt-12 max-w-7xl px-4 lg:px-8">
+          <PromoPanel banner={promoAt(3)} align="end" className="lg:h-[240px]" />
+        </section>
+      )}
+
+      <TrustBadges />
     </div>
   );
 }

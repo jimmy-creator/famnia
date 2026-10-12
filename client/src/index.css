@@ -108,15 +108,17 @@
   --shadow-card: var(--shadow-card);
 }
 
-/* Radii: --radius-lg matches the brand's 8px; the rest fill out the scale.
-   We intentionally do NOT redefine the brand's bare --radius (4px).
+/* Radii: the storefront is built on soft, pill-ish shapes, so the whole scale
+   is rounder than shadcn's default — `rounded-md` on a shadcn button lands at
+   12px rather than 6px. We intentionally do NOT redefine the brand's bare
+   --radius (4px), which legacy markup still reads.
    Not `inline`: utilities read var(--radius-*), so the staff hub can swap in
-   its rounder scale under html.hub-theme without touching the storefront. */
+   its own scale under html.hub-theme without touching the storefront. */
 @theme {
-  --radius-sm: 0.25rem;
-  --radius-md: 0.375rem;
-  --radius-lg: 0.5rem;
-  --radius-xl: 0.75rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
 }
 
 /* ===== DESIGN TOKENS =====
@@ -159,6 +161,10 @@
   --radius-lg: 8px;
   --ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Brand gradient behind the storefront header. Built from the theme's own
+     copper ramp rather than fixed hex, so switching theme restyles it too. */
+  --brand-gradient: linear-gradient(115deg, var(--copper-dark) 0%, var(--copper) 45%, var(--copper-light) 100%);
 }
 
 /* ===== BASE ===== layered so Tailwind utilities can override ===== */

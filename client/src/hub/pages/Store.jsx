@@ -1274,9 +1274,9 @@ function ThemeTab() {
       <ImageListSetting
         name="mid-banners"
         bodyKey="banners"
-        max={3}
-        title="Mid-page banners"
-        description="Up to 3 banners shown after the Best Sellers section — for promotions, new arrivals or seasonal campaigns."
+        max={4}
+        title="Promo banners"
+        description="Up to 4, used in order for the home page's promo slots: 1 and 2 stack beside the hero (on phones they become extra hero slides), 3 is a band between New Arrivals and All Products, 4 is the full-width sale banner. An empty slot simply isn't shown."
         blank={(image) => ({ image, mobileImage: '', title: '', subtitle: '', link: '/products' })}
       />
       <ImageListSetting

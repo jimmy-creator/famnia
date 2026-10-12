@@ -5,8 +5,7 @@
  * artwork is a photographed lockup with a gold gradient arc and embossed
  * letterforms, none of which survives being redrawn as tintable paths. So the
  * mark can no longer inherit `currentColor`, and each surface picks a variant
- * instead — `tone="light"` is the cream silhouette for the copper footer and
- * the dark bottom-nav pill. Built from the source mockup by keying out the
+ * instead — `tone="light"` is the cream silhouette for the dark footer. Built from the source mockup by keying out the
  * studio background; see client/public/images/femnia-logo*.webp.
  */
 
@@ -15,7 +14,7 @@ const LOCKUP = {
   light: { src: '/images/femnia-logo-light.webp', width: 392, height: 384 },
 };
 
-/** Arc + FN monogram only — for the dark bottom-nav pill. */
+/** Arc + FN monogram only — for the dark gradient header. */
 export function FemniaMonogram({ className = '', title = 'Femnia' }) {
   return (
     <img

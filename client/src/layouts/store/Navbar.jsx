@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, Search, User, ShoppingBag, ChevronDown, Home, LayoutGrid, Heart } from 'lucide-react';
+import { Menu, Search, User, ShoppingBag, Home, LayoutGrid, Heart } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
 import { useWishlist } from '../../context/WishlistContext';
@@ -10,9 +10,9 @@ import api from '../../api/axios';
 import ScrollToTopButton from '../../components/ScrollToTopButton';
 import AnnouncementBar from '../../components/AnnouncementBar';
 import ProductImage from '../../components/ProductImage';
-import FemniaLogo from './Logo';
+import { FemniaMonogram } from './Logo';
 import BottomNav from './BottomNav';
-import { CURRENCY, formatPrice } from '../../utils/currency';
+import { CurrencySymbol, formatPrice } from '../../utils/currency';
 import { localizedName } from '../../utils/i18nHelpers';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,8 +31,21 @@ import { cn } from '@/lib/utils';
 
 const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia';
 
-// Shared style for the desktop top-nav links (uppercase, letterspaced).
-const navLinkCls = 'text-[11px] font-medium uppercase tracking-[0.18em] text-foreground/70 transition-colors hover:text-foreground';
+// Links on the light category strip below the gradient masthead.
+const bandLinkCls =
+  'whitespace-nowrap text-[13px] font-medium text-muted-foreground transition-colors hover:text-primary';
+
+// Superscript count on the cart / wishlist icons. White-on-berry, since these
+// icons sit on the gradient. Declared at module scope so it isn't re-created
+// (and its subtree remounted) on every Navbar render.
+function CountBadge({ count }) {
+  if (!count) return null;
+  return (
+    <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-[10px] font-bold leading-none text-[color:var(--copper)]">
+      {count}
+    </span>
+  );
+}
 
 export default function Navbar() {
   const { t } = useTranslation();
@@ -43,33 +56,15 @@ export default function Navbar() {
   const navigate = useNavigate();
 
   const [categories, setCategories] = useState([]);
-  const [activeCat, setActiveCat] = useState('All Categories');
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [showSearch, setShowSearch] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
   const debounceRef = useRef(null);
-  const searchInputRef = useRef(null);
-
-  // Focus the field when the search row is toggled open.
-  useEffect(() => {
-    if (showSearch) searchInputRef.current?.focus();
-  }, [showSearch]);
 
   useEffect(() => {
     api.get('/categories').then((res) => setCategories(Array.isArray(res.data) ? res.data : [])).catch(() => {});
-  }, []);
-
-  // On the home page the bar is transparent over the hero and only takes on a
-  // solid background once the user scrolls past it.
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 24);
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
   useEffect(() => {
@@ -105,7 +100,6 @@ export default function Navbar() {
 
   const pickSuggestion = (product) => {
     setShowSuggestions(false);
-    setShowSearch(false);
     setQuery('');
     navigate(`/product/${product.slug}`);
     setShowMobileMenu(false);
@@ -128,7 +122,6 @@ export default function Navbar() {
   };
 
   const isAccount = ['/profile', '/login', '/orders', '/admin'].includes(location.pathname);
-  const isHome = location.pathname === '/' || location.pathname === '/ar';
 
   // Clicking Home (or the logo) while already on the home page is a no-op
   // navigation — scroll to top instead. Route changes already scroll via App.jsx.
@@ -142,71 +135,33 @@ export default function Navbar() {
     e?.preventDefault?.();
     const params = new URLSearchParams();
     if (query.trim()) params.set('search', query.trim());
-    if (activeCat && activeCat !== 'All Categories') params.set('category', activeCat);
     navigate(`/products?${params.toString()}`);
     setShowSuggestions(false);
-    setShowSearch(false);
     setShowMobileMenu(false);
   };
 
-  const pickCategory = (name) => {
-    setActiveCat(name);
-    if (name === 'All Categories') navigate('/products');
-    else navigate(`/products?category=${encodeURIComponent(name)}`);
-  };
-
-  const CartBadge = () =>
-    cartCount > 0 ? (
-      <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
-        {cartCount}
-      </span>
-    ) : null;
-
-  // Search bar — rendered twice: inline on desktop, and as a full-width row
-  // below the bar on mobile (standard e-commerce layout). `data-search` ties
-  // both instances to the outside-click handler above.
+  // Search pill — a white field sitting on the brand gradient. Rendered twice:
+  // inline in the desktop header row, and as its own full-width row beneath the
+  // bar on mobile. `data-search` ties both to the outside-click handler above.
   const searchForm = (
     <form onSubmit={handleSearch} data-search className="relative w-full">
-      <div className="flex h-10 w-full items-stretch overflow-hidden rounded-md border border-input bg-background transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/40">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="hidden shrink-0 items-center gap-1.5 border-r border-input pl-3.5 pr-3 text-sm text-muted-foreground transition-colors hover:text-foreground sm:inline-flex"
-            >
-              <LayoutGrid className="size-4" />
-              <span className="max-w-28 truncate">
-                {activeCat === 'All Categories'
-                  ? t('common.allCategories')
-                  : localizedName(categories.find((c) => c.name === activeCat) || { name: activeCat })}
-              </span>
-              <ChevronDown className="size-3.5 opacity-60" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
-            <DropdownMenuItem onSelect={() => pickCategory('All Categories')}>{t('common.allCategories')}</DropdownMenuItem>
-            {categories.map((c) => (
-              <DropdownMenuItem key={c.id || c.name} onSelect={() => pickCategory(c.name)}>{localizedName(c)}</DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
+      <div className="flex h-11 w-full items-center gap-2.5 rounded-full bg-white ps-4 pe-1.5 shadow-sm transition-shadow focus-within:ring-[3px] focus-within:ring-white/40">
+        <Search className="size-[18px] shrink-0 text-[color:var(--copper)]" />
         <input
-          ref={searchInputRef}
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
           onKeyDown={onSearchKeyDown}
-          placeholder={t('common.searchPlaceholder')}
-          className="min-w-0 flex-1 bg-transparent px-4 text-base md:text-sm text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:appearance-none"
+          placeholder={`${t('common.search')} ${STORE_NAME}`}
+          className="min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground md:text-sm [&::-webkit-search-cancel-button]:appearance-none"
         />
         <button
           type="submit"
-          aria-label="Search"
-          className="flex shrink-0 items-center justify-center bg-primary px-4 text-primary-foreground transition-colors hover:bg-primary/90"
+          aria-label={t('common.search')}
+          className="hidden h-8 shrink-0 items-center rounded-full bg-primary px-4 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 sm:flex"
         >
-          <Search className="size-4" />
+          {t('common.search')}
         </button>
       </div>
 
@@ -225,7 +180,7 @@ export default function Navbar() {
               </div>
               <div className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-foreground">{p.name}</span>
-                <span className="block truncate text-xs text-muted-foreground">{p.category} · {CURRENCY}{formatPrice(p.price)}</span>
+                <span className="block truncate text-xs text-muted-foreground">{p.category} · <CurrencySymbol />{formatPrice(p.price)}</span>
               </div>
             </button>
           ))}
@@ -241,103 +196,164 @@ export default function Navbar() {
     </form>
   );
 
-  const announcementBar = <AnnouncementBar />;
-
-  const header = (
-    <header
-      className={cn(
-        'sticky top-0 z-40 w-full border-b transition-colors duration-300',
-        // On the home page the bar is transparent on MOBILE ONLY, so the hero
-        // art (pulled up beneath it) shows through; it turns solid as soon as
-        // you scroll. From `md` up it is always the normal solid bar and the
-        // hero starts below it.
-        isHome && !scrolled
-          ? 'border-transparent bg-transparent md:border-border md:bg-background'
-          : 'border-border bg-background/95 backdrop-blur',
-      )}
+  // Gradient masthead: brand lock-up leading, search filling the middle on
+  // desktop, account actions trailing. On mobile the search drops to its own
+  // full-width row beneath, and the panel's bottom corners are rounded so the
+  // page scrolls up behind a soft edge.
+  const masthead = (
+    <div
+      className="rounded-b-[28px] text-white shadow-[0_6px_20px_rgba(43,22,32,0.15)] md:rounded-none md:shadow-none"
+      style={{ background: 'var(--brand-gradient)' }}
     >
-      <nav className="mx-auto flex h-20 max-w-7xl items-center gap-3 px-4 sm:gap-4 lg:px-8">
-          {/* Logo */}
-          <Link to="/" onClick={scrollTopIfHome} aria-label={STORE_NAME} className="flex shrink-0 items-center">
-            <FemniaLogo className="h-16 w-auto" title={STORE_NAME} />
+      <div className="mx-auto max-w-7xl px-4 lg:px-8">
+        <div className="flex h-16 items-center gap-3 md:h-20">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="-ms-2 shrink-0 text-white hover:bg-white/15 hover:text-white md:hidden"
+            onClick={() => setShowMobileMenu(true)}
+            aria-label={t('common.menu')}
+          >
+            <Menu className="size-5" />
+          </Button>
+
+          <Link
+            to="/"
+            onClick={scrollTopIfHome}
+            aria-label={STORE_NAME}
+            className="flex shrink-0 items-center gap-2.5"
+          >
+            {/* The cream monogram sits straight on the dark gradient — the
+                full lockup's wordmark is unreadable at this size, and the
+                store name is spelled out beside it anyway. */}
+            <FemniaMonogram className="h-10 w-auto shrink-0 md:h-12" title={STORE_NAME} />
+            <span className="flex flex-col leading-tight">
+              <span className="text-[9px] font-medium uppercase tracking-[0.2em] text-white/65">
+                {t('common.welcomeTo')}
+              </span>
+              <span className="text-[17px] font-extrabold tracking-tight text-white md:text-xl">
+                {STORE_NAME}
+              </span>
+            </span>
           </Link>
 
-          {/* Desktop nav links */}
-          <div className="ml-8 hidden items-center gap-6 md:flex lg:ml-12 lg:gap-9">
-            <Link to="/" onClick={scrollTopIfHome} className={navLinkCls}>{t('common.home')}</Link>
+          {/* Desktop search — takes whatever room the two clusters leave. */}
+          <div className="mx-6 hidden min-w-0 flex-1 md:block">{searchForm}</div>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button type="button" className={cn(navLinkCls, 'inline-flex items-center gap-1')}>
-                  {t('common.products')} <ChevronDown className="size-3.5 opacity-70" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
-                <DropdownMenuItem asChild>
-                  <Link to="/products">{t('products.allProducts')}</Link>
-                </DropdownMenuItem>
-                {categories.map((c) => (
-                  <DropdownMenuItem key={c.id || c.name} asChild>
-                    <Link to={`/products?category=${encodeURIComponent(c.name)}`}>{localizedName(c)}</Link>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <Link to="/about" className={navLinkCls}>{t('common.aboutUs')}</Link>
-            <Link to="/contact" className={navLinkCls}>{t('common.contact')}</Link>
-          </div>
-
-          {/* Actions */}
-          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
-            <LanguageSwitcher compact />
+          <div className="ms-auto flex items-center gap-0.5 sm:gap-1 md:ms-0">
+            <span className="hidden sm:inline-flex">
+              <LanguageSwitcher compact />
+            </span>
             <Button
-              type="button"
+              asChild
               variant="ghost"
               size="icon"
-              className={cn(showSearch && 'text-primary')}
-              onClick={() => setShowSearch((s) => !s)}
-              aria-label="Search"
-              aria-expanded={showSearch}
+              className="relative hidden text-white hover:bg-white/15 hover:text-white sm:inline-flex"
+              aria-label={t('common.wishlist')}
             >
-              <Search className="size-5" />
+              <Link to="/wishlist">
+                <Heart className="size-5" />
+                <CountBadge count={wishlistCount} />
+              </Link>
             </Button>
             <Button
               asChild
               variant="ghost"
               size="icon"
-              className={cn(isAccount && 'text-primary')}
-              aria-label={user ? 'Account' : 'Sign in'}
+              className={cn(
+                'hidden text-white hover:bg-white/15 hover:text-white sm:inline-flex',
+                isAccount && 'bg-white/15',
+              )}
+              aria-label={user ? t('common.account') : t('common.signIn')}
             >
               <Link to={user ? '/profile' : '/login'}>
                 <User className="size-5" />
               </Link>
             </Button>
-            <Button asChild variant="ghost" size="icon" className="relative" aria-label="Cart">
-              <Link to="/cart">
-                <ShoppingBag className="size-5" />
-                <CartBadge />
-              </Link>
-            </Button>
             <Button
-              type="button"
+              asChild
               variant="ghost"
               size="icon"
-              className="md:hidden"
-              onClick={() => setShowMobileMenu(true)}
-              aria-label={t('common.menu')}
+              className="relative text-white hover:bg-white/15 hover:text-white"
+              aria-label={t('common.cart')}
             >
-              <Menu className="size-5" />
+              <Link to="/cart">
+                <ShoppingBag className="size-5" />
+                <CountBadge count={cartCount} />
+              </Link>
             </Button>
           </div>
+        </div>
+
+        {/* Mobile search row — always on, rather than hidden behind a toggle. */}
+        <div className="pb-4 md:hidden">{searchForm}</div>
+      </div>
+    </div>
+  );
+
+  // Light category strip under the gradient: the "All Categories" launcher, the
+  // primary links, and the shipping note pinned to the trailing edge. Desktop
+  // only — mobile uses the slide-in sheet and the home page's chip row instead.
+  const categoryBand = (
+    <div className="hidden border-b border-border bg-card md:block">
+      <div className="mx-auto flex h-11 max-w-7xl items-stretch px-4 lg:px-8">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex shrink-0 items-center gap-2 pe-6 text-foreground transition-colors hover:text-primary"
+              aria-label={t('common.allCategories')}
+            >
+              <Menu className="size-[18px]" />
+              <span className="hidden text-[12px] font-semibold lg:inline">
+                {t('common.allCategories')}
+              </span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto">
+            <DropdownMenuItem asChild>
+              <Link to="/products">{t('products.allProducts')}</Link>
+            </DropdownMenuItem>
+            {categories.map((c) => (
+              <DropdownMenuItem key={c.id || c.name} asChild>
+                <Link to={`/products?category=${encodeURIComponent(c.name)}`}>{localizedName(c)}</Link>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <nav className="flex min-w-0 flex-1 items-center gap-6 overflow-x-auto [scrollbar-width:none] lg:gap-8 [&::-webkit-scrollbar]:hidden">
+          <Link to="/" onClick={scrollTopIfHome} className={bandLinkCls}>{t('common.home')}</Link>
+          <Link to="/products" className={bandLinkCls}>{t('nav.shop')}</Link>
+          {/* First few categories promoted onto the strip; the rest live in the
+              "All Categories" menu above. */}
+          {categories.slice(0, 4).map((c) => (
+            <Link
+              key={c.id || c.name}
+              to={`/products?category=${encodeURIComponent(c.name)}`}
+              className={bandLinkCls}
+            >
+              {localizedName(c)}
+            </Link>
+          ))}
+          <Link to="/about" className={bandLinkCls}>{t('common.aboutUs')}</Link>
+          <Link to="/contact" className={bandLinkCls}>{t('common.contact')}</Link>
         </nav>
 
-        {/* Search row — toggled by the search icon (all breakpoints) */}
-        {showSearch && (
-          <div className="border-t border-border bg-background px-4 py-3 lg:px-8">
-            <div className="mx-auto max-w-3xl">{searchForm}</div>
-          </div>
-        )}
+        <div className="hidden shrink-0 items-center lg:flex">
+          <span className="whitespace-nowrap rounded-full bg-[color:var(--bg-warm)] px-4 py-1.5 text-[11px] font-semibold text-[color:var(--copper)]">
+            {t('nav.announcement')}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
+  const header = (
+    <header className="sticky top-0 z-40 w-full">
+      {masthead}
+      {categoryBand}
     </header>
   );
 
@@ -345,7 +361,7 @@ export default function Navbar() {
     <>
       <ScrollToTopButton />
 
-      {announcementBar}
+      <AnnouncementBar />
       {header}
 
       {/* Mobile slide-in menu */}
@@ -378,6 +394,16 @@ export default function Navbar() {
               </Link>
             ))}
           </nav>
+          {/* Language, moved off the crowded mobile top row. The dropdown
+              renders in a portal, so it escapes the sheet. */}
+          <div className="border-t border-border p-2">
+            <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {t('common.language', 'Language')}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 px-3 pb-2">
+              <LanguageSwitcher />
+            </div>
+          </div>
           <div className="border-t border-border p-2">
             <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t('common.explore')}</div>
             <div className="flex flex-col">

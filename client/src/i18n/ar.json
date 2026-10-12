@@ -38,7 +38,14 @@
     "aboutUs": "من نحن",
     "contact": "اتصل بنا",
     "explore": "استكشف",
-    "wholesale": "البيع بالجملة"
+    "wholesale": "البيع بالجملة",
+    "welcomeTo": "مرحبًا بك في",
+    "options": "الخيارات",
+    "more": "المزيد",
+    "onlyLeft_one": "بقيت قطعة واحدة",
+    "onlyLeft_other": "بقي {{count}} فقط",
+    "pageOf": "صفحة {{current}} من {{total}}",
+    "sale": "تخفيض"
   },
   "home": {
     "bestSellersTitle": "وصل حديثًا",
@@ -61,7 +68,9 @@
     "clearFilters": "مسح الفلاتر",
     "noResults": "لا توجد منتجات",
     "results_one": "{{count}} نتيجة",
-    "results_other": "{{count}} نتيجة"
+    "results_other": "{{count}} نتيجة",
+    "items_one": "{{count}} منتج",
+    "items_other": "{{count}} منتج"
   },
   "product": {
     "description": "الوصف",
@@ -155,7 +164,9 @@
     "copyright": "© {{year}} {{store}}. جميع الحقوق محفوظة.",
     "newsletter": "اشترك في نشرتنا البريدية",
     "newsletterPlaceholder": "بريدك الإلكتروني",
-    "subscribe": "اشترك"
+    "subscribe": "اشترك",
+    "storeInfo": "معلومات المتجر",
+    "newsletterNote": "يمكنك إلغاء الاشتراك في أي وقت. لذلك، تجد بيانات التواصل معنا في الإشعار القانوني."
   },
   "brand": {
     "tagline": "أناقة خالدة"
@@ -303,5 +314,15 @@
     "shopByCategory": "تسوّق حسب الفئة",
     "newIn": "وصل حديثًا",
     "seal": "أناقة خالدة"
+  },
+  "trust": {
+    "shipping": "شحن مجاني",
+    "shippingDesc": "على كل طلب مؤهل",
+    "returns": "إرجاع سهل",
+    "returnsDesc": "سياسة إرجاع واضحة",
+    "secure": "دفع آمن",
+    "secureDesc": "إتمام شراء موثوق",
+    "support": "خدمة العملاء",
+    "supportDesc": "عبر واتساب والبريد الإلكتروني"
   }
 }

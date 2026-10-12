@@ -81,7 +81,10 @@ router.put('/banners', protect, admin, async (req, res) => {
   }
 });
 
-// Mid-page banners (rendered below the best-sellers section)
+// Promo banners. Four slots, in order: the two panels stacked beside the home
+// hero, the band between new arrivals and all products, and the full-width
+// sale banner. The setting key is still 'mid-banners' so existing rows keep
+// working.
 router.get('/mid-banners', async (req, res) => {
   try {
     const setting = await Setting.findByPk('mid-banners');
@@ -95,8 +98,8 @@ router.get('/mid-banners', async (req, res) => {
 router.put('/mid-banners', protect, admin, async (req, res) => {
   try {
     const { banners } = req.body;
-    if (!Array.isArray(banners) || banners.length > 3) {
-      return res.status(400).json({ message: 'Provide an array of up to 3 mid-page banners' });
+    if (!Array.isArray(banners) || banners.length > 4) {
+      return res.status(400).json({ message: 'Provide an array of up to 4 promo banners' });
     }
     await Setting.upsert({ key: 'mid-banners', value: JSON.stringify(banners) });
     res.json(banners);
