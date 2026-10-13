@@ -421,7 +421,7 @@ router.put('/products/:id/storefront', need('products.edit'), wrap(async (req, r
  * and category, appending to an existing variant product of the same name and
  * category when there is one (variant indexes only ever grow).
  */
-async function createSkuGroup({ base, skus, transaction, importBatchId = null }) {
+export async function createSkuGroup({ base, skus, transaction, importBatchId = null }) {
   const withOptions = skus.some((s) => s.size || s.color);
   const existing = await Product.findOne({
     where: {

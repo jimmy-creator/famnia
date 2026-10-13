@@ -33,11 +33,11 @@ const SOURCE_ACCOUNT_TYPE = {
   Fawran: 'bank', 'Company Money': 'other', 'Other Company Account': 'other',
 };
 // Reimbursements carry only a payment method in the design; this is the account they leave from by default.
-const METHOD_DEFAULT_SOURCE = {
+export const METHOD_DEFAULT_SOURCE = {
   Cash: 'Cash in Hand', Fawran: 'Fawran', Card: 'Company Bank', 'Bank Transfer': 'Company Bank', Other: 'Other Company Account',
 };
-const EXPENSE_METHOD = { Cash: 'cash', Card: 'card', Fawran: 'bank', 'Bank Transfer': 'bank', Other: 'other' };
-const ASSET_CATEGORY = {
+export const EXPENSE_METHOD = { Cash: 'cash', Card: 'card', Fawran: 'bank', 'Bank Transfer': 'bank', Other: 'other' };
+export const ASSET_CATEGORY = {
   Furniture: 'furniture', 'Fixtures & Racks': 'fixtures', Equipment: 'equipment', 'Computer / IT': 'computer',
   Printer: 'equipment', Vehicle: 'vehicle', 'Shop Improvement': 'leasehold', Software: 'other', Other: 'other',
 };

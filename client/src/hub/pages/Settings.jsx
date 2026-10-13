@@ -15,6 +15,7 @@ import { LocationsPanel } from '@/hub/components/LocationsPanel';
 import { CatalogueReplaceCard } from '@/hub/components/CatalogueReplaceCard';
 import { FundingAccountsCard } from '@/hub/components/FundingAccountsCard';
 import { DatabaseBackupCard } from '@/hub/components/DatabaseBackupCard';
+import { DataImportCard } from '@/hub/components/DataImportCard';
 import { ErrorState, Loading, PageHeader } from '@/hub/components/shared';
 import { Button } from '@/hub/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/hub/ui/card';
@@ -575,6 +576,7 @@ function SettingsForm({ saved, isAdmin, onRefresh, section, setSection, backup }
       {section === 'locations' && <LocationsPanel />}
 
       {section === 'backup' && isAdmin && <DatabaseBackupCard />}
+      {section === 'backup' && isAdmin && <DataImportCard />}
       {section === 'backup' && isAdmin && <CatalogueReplaceCard backupFilename={backup.data?.filename ?? null} />}
 
       {section === 'lists' && (

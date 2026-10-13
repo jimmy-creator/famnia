@@ -105,7 +105,7 @@ function lineVariantIndex(product, item) {
   return idx >= 0 ? idx : null;
 }
 
-const LEGACY_METHOD = {
+export const LEGACY_METHOD = {
   Cash: 'cash', Fawran: 'fawran', Card: 'card', 'Bank Transfer': 'bank_transfer', 'Online Payment': 'online',
   COD: 'cod', Other: 'other',
 };

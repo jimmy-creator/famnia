@@ -10,6 +10,7 @@
     "seed:femnia": "node src/seedFemnia.js",
     "seed:erp": "node src/scripts/seedErp.js",
     "migrate": "node src/scripts/migrate.js",
+    "import:hub": "node src/scripts/importHubData.js",
     "create:admin": "node src/scripts/createAdmin.js",
     "test:email": "node src/scripts/testEmail.js",
     "export:shiprocket": "node src/scripts/exportShiprocketInventory.js",
@@ -43,6 +44,7 @@
     "sequelize": "^6.37.8",
     "sharp": "^0.34.5",
     "stripe": "^22.0.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "xss-clean": "^0.1.4"
   },
   "devDependencies": {
