@@ -303,17 +303,23 @@ function rowsOf(sheets, name, report) {
 // ── steps ───────────────────────────────────────────────────────────
 
 /**
- * Staff in the old system are UUIDs. Their names come from the audit log
- * (login rows carry the id and the name); a name then matches one of our hub
- * accounts by name or username. Unmatched people fall back to the importer.
+ * Staff in the old system are UUIDs. Their names come from the audit log:
+ * on a Login row the record IS the person; other rows about an account
+ * ("Staff invited", "Account approved") carry the admin who acted, so they
+ * only count when the person never logged in. A name then matches one of our
+ * hub accounts by name or username. Unmatched people fall back to the importer.
  */
 async function loadStaff(ctx) {
   const names = new Map();
+  const fallback = new Map();
   for (const a of ctx.sheets['Audit Logs'] || []) {
     const id = text(a.record);
     const name = text(a.staff, 120);
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(id) && name && !names.has(id)) names.set(id, name);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(id) || !name) continue;
+    const into = /^log ?in$/i.test(text(a.action)) ? names : fallback;
+    if (!into.has(id)) into.set(id, name);
   }
+  for (const [id, name] of fallback) if (!names.has(id)) names.set(id, name);
   const users = await User.findAll({ where: { role: HUB_ROLES }, attributes: ['id', 'name', 'username', 'role'] });
   const byName = new Map();
   for (const u of users) {
