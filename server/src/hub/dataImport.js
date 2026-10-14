@@ -1002,6 +1002,7 @@ async function importFinance(ctx) {
     ctx.report.cash[account.name] = round2((ctx.report.cash[account.name] || 0) - amount);
   };
 
+  const earlier = [];   // [their liability id, our entry reference] for entries an earlier import created
   let n = 0;
   for (const { r, sheet, type } of entries) {
     n += 1;
@@ -1009,6 +1010,8 @@ async function importFinance(ctx) {
     const reference = text(r.reference_code, 40) || `${type === 'asset' ? 'AST' : 'EXP'}-IMP-${String(n).padStart(4, '0')}`;
     if (taken.has(reference)) {
       report.count(sheet, 'already existed');
+      const liabilityRow = (liabilityRows.get(text(r.id, 80)) || [])[0];
+      if (liabilityRow && text(liabilityRow.id)) earlier.push([text(liabilityRow.id, 80), reference]);
       continue;
     }
     taken.add(reference);
@@ -1080,22 +1083,34 @@ async function importFinance(ctx) {
     }
   }
 
-  const reimbursed = new Map();
+  // A later backup can pay back a liability an earlier import created.
+  if (earlier.length) {
+    const found = await HubExpenseEntry.findAll({ where: { reference: earlier.map(([, ref]) => ref) }, attributes: ['id', 'reference'], transaction: t });
+    const entryIds = new Map(found.map((e) => [e.reference, e.id]));
+    const owed = await HubLiability.findAll({ where: { entryId: [...entryIds.values()] }, transaction: t });
+    const byEntry = new Map(owed.map((l) => [l.entryId, l]));
+    for (const [theirId, ref] of earlier) {
+      const liability = byEntry.get(entryIds.get(ref));
+      if (liability) liabilities.set(theirId, liability);
+    }
+  }
+
+  const reimbursed = new Map(); // our liability id → total paid back, including earlier imports
   for (const r of rowsOf(ctx.sheets, 'Reimbursements', report)) {
-    const liability = liabilities.get(text(r.liability_id, 80));
     const key = text(r.idempotency_key, 120) || `IMP-RB-${text(r.id, 80) || r._row}`.slice(0, 120);
+    if (await HubReimbursement.findOne({ where: { idempotencyKey: key }, transaction: t })) {
+      report.count('Reimbursements', 'already existed');
+      continue;
+    }
+    const liability = liabilities.get(text(r.liability_id, 80));
     if (!liability) {
-      if (await HubReimbursement.findOne({ where: { idempotencyKey: key }, transaction: t })) {
-        report.count('Reimbursements', 'already existed');
-      } else {
-        report.error('Reimbursements', r._row, `liability ${text(r.liability_id) || '(none)'} is not one this file creates.`);
-      }
+      report.error('Reimbursements', r._row, `liability ${text(r.liability_id) || '(none)'} is not in this file or an earlier import.`);
       continue;
     }
     const amount = round2(num(r.amount));
     const paidOn = day(r.paid_on);
     if (!(amount > 0) || !paidOn) { report.error('Reimbursements', r._row, 'paid_on and an amount above 0 are required.'); continue; }
-    const total = round2((reimbursed.get(liability.id) || 0) + amount);
+    const total = round2((reimbursed.get(liability.id) ?? round2(liability.reimbursed)) + amount);
     if (total > round2(liability.amount) + 0.001) { report.error('Reimbursements', r._row, `${liability.person}: reimbursements exceed the amount owed.`); continue; }
     reimbursed.set(liability.id, total);
     const paymentMethod = PAYMENT_METHODS.includes(text(r.payment_method)) ? text(r.payment_method) : 'Cash';
@@ -1114,8 +1129,8 @@ async function importFinance(ctx) {
     report.count('Reimbursements', 'created');
   }
   for (const liability of liabilities.values()) {
-    const paid = reimbursed.get(liability.id) || 0;
-    if (!paid) continue;
+    const paid = reimbursed.get(liability.id);
+    if (paid === undefined) continue;
     await liability.update({
       reimbursed: paid, status: paid >= round2(liability.amount) - 0.001 ? 'paid' : 'partially_paid',
     }, { transaction: t });
