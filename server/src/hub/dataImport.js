@@ -31,8 +31,9 @@ import {
  * All of it runs in ONE transaction: a dry run (the default) rolls back and
  * only reports, and a real run commits only when no row has an error — a
  * migration is never half applied. Records that already exist (same SKU,
- * order number, expense reference, movement reference) are skipped, so the
- * same file can be imported again without doubling anything.
+ * expense reference, movement reference) are skipped, so the same file can be
+ * imported again without doubling anything. An order that already exists is
+ * brought up to date from a newer backup (see refreshOrder).
  *
  * Stock is rebuilt as a ledger, oldest first: opening stock, Stock In / Out,
  * adjustments and one sale per line of every confirmed order. For SKUs this
@@ -233,7 +234,7 @@ const INSTRUCTIONS = [
   ['Fill in the sheets you need and leave the others empty. A backup downloaded from the old FEMNIA Hub has exactly this layout and can be imported as it is.'],
   ['Rows whose values start with EXAMPLE- are skipped — delete or overwrite them.'],
   ['Always run Preview first. Nothing is saved unless every row is valid; fix the rows listed as errors and preview again.'],
-  ['Records that already exist (same SKU, order number, expense reference, stock reference) are skipped, so a file can be imported twice safely.'],
+  ['Records that already exist (same SKU, expense reference, stock reference) are skipped, so a file can be imported twice safely. An order that already exists is updated to match a newer backup (status, payment, delivery, lines, returns) unless it has been changed in this hub since.'],
   [''],
   ['Sheet', 'What it does'],
   ['Products', 'New SKUs. Rows with the same name and category become one product with size/colour variants. opening_stock is the first stock figure.'],
@@ -345,10 +346,14 @@ async function loadStaff(ctx) {
 async function importCustomers(ctx) {
   const { report, t } = ctx;
   ctx.customers = new Map();   // their id → our User id
-  const existing = await User.findAll({ where: { role: 'customer' }, attributes: ['id', 'phone', 'altPhone'], transaction: t });
+  const existing = await User.findAll({ where: { role: 'customer' }, attributes: ['id', 'name', 'phone', 'altPhone'], transaction: t });
   const byPhone = new Map();
+  // Placeholder numbers can't identify anyone alone; name + the same placeholder finds an earlier import's row.
+  const placeholderKey = (name, phone) => `${text(name).toLowerCase()}|${text(phone)}`;
+  const byPlaceholder = new Map();
   for (const u of existing) {
     for (const p of [u.phone, u.altPhone]) if (normalizePhone(p)) byPhone.set(normalizePhone(p), u.id);
+    if (normalizePhone(u.phone).length < 6) byPlaceholder.set(placeholderKey(u.name, u.phone), u.id);
   }
   const seen = new Set();
   for (const r of rowsOf(ctx.sheets, 'Customers', report)) {
@@ -361,11 +366,10 @@ async function importCustomers(ctx) {
     // Placeholder numbers ("000") are kept as given but never matched on.
     const usable = normalizePhone(phone).length >= 6;
     if (!usable) report.warn('Customers', r._row, `${name}: mobile number "${phone}" is not a real number — kept as given.`);
-    const match = usable ? byPhone.get(normalizePhone(phone)) : null;
+    const match = usable ? byPhone.get(normalizePhone(phone)) : byPlaceholder.get(placeholderKey(name, phone));
     if (match) {
       if (id) ctx.customers.set(id, match);
       report.count('Customers', 'matched');
-      report.warn('Customers', r._row, `${name} (${phone}) matches an existing customer — linked, not changed.`);
       continue;
     }
     const createdAt = when(r.created_at) || new Date();
@@ -418,7 +422,8 @@ async function importProducts(ctx) {
     seen.add(sku);
     if (ctx.skus.has(sku)) {
       report.count('Products', 'already existed');
-      report.warn(sheet, r._row, `${sku} already exists — left unchanged.`);
+      const target = num(inventory.get(sku)?.current_stock ?? r.current_stock);
+      if (Number.isInteger(target)) ctx.targets.set(sku, target);   // checked, never adjusted
       continue;
     }
     if (!name || !category) { report.error(sheet, r._row, `${sku}: name and category are required.`); continue; }
@@ -510,12 +515,11 @@ const imageOf = (r) => (/^https:\/\/[\w.-]+\//i.test(text(r.image_url)) ? text(r
 
 async function importOrders(ctx) {
   const { report, t, settings } = ctx;
-  ctx.orders = new Map();   // order number → { id, created }
+  ctx.orders = new Map();   // order number → { id, created, updated }
   const rows = rowsOf(ctx.sheets, 'Orders', report);
   const numbers = rows.map((r) => text(r.id, 60)).filter(Boolean);
-  const existing = numbers.length
-    ? await Order.findAll({ where: { orderNumber: numbers }, attributes: ['id', 'orderNumber'], transaction: t })
-    : [];
+  const existing = numbers.length ? await Order.findAll({ where: { orderNumber: numbers }, transaction: t }) : [];
+  const existingBy = new Map(existing.map((o) => [o.orderNumber, o]));
   for (const o of existing) ctx.orders.set(o.orderNumber, { id: o.id, created: false });
 
   const itemsBy = groupBy(rowsOf(ctx.sheets, 'Order Items', report), (r) => text(r.order_id, 60));
@@ -530,19 +534,21 @@ async function importOrders(ctx) {
     if (!number) { report.error('Orders', r._row, 'Order id is missing.'); continue; }
     if (seen.has(number)) { report.error('Orders', r._row, `${number} appears twice.`); continue; }
     seen.add(number);
-    if (ctx.orders.has(number)) {
+    const prev = existingBy.get(number);
+    if (prev?.channel === 'pos') {
       report.count('Orders', 'already existed');
-      report.warn('Orders', r._row, `${number} already exists — skipped.`);
+      report.warn('Orders', r._row, `${number} is a till sale here — skipped.`);
       continue;
     }
     const problems = [];
+    const notes = [];   // per-order warnings, reported only when the order is written
     const status = text(r.status, 30);
     if (!SALES_ORDER_STATUSES.includes(status)) problems.push(`unknown status "${status}"`);
     const paymentStatus = text(r.payment_status, 20) || 'Pending';
     if (!SALES_PAYMENT_STATUSES.includes(paymentStatus)) problems.push(`unknown payment status "${paymentStatus}"`);
     let paymentMode = text(r.payment_mode, 30) || 'Cash';
     if (!SALES_PAYMENT_METHODS.includes(paymentMode)) {
-      report.warn('Orders', r._row, `${number}: payment mode "${paymentMode}" recorded as Other.`);
+      notes.push(`${number}: payment mode "${paymentMode}" recorded as Other.`);
       paymentMode = 'Other';
     }
     const pickup = /pickup/i.test(text(r.fulfilment_method));
@@ -591,28 +597,25 @@ async function importOrders(ctx) {
     }
     if (problems.length) { report.error('Orders', r._row, `${number}: ${problems.join('; ')}.`); continue; }
     // The old system can export an order whose lines were lost; its header and payment still happened.
-    if (!lines.length) report.warn('Orders', r._row, `${number}: no lines in Order Items — imported with its total and payment only.`);
+    if (!lines.length) notes.push(`${number}: no lines in Order Items — imported with its total and payment only.`);
 
     const linesTotal = round2(lines.reduce((s, l) => s + l.lineTotal, 0));
     const total = grandTotal ?? round2(linesTotal + deliveryCharge);
     if (Math.abs(linesTotal + deliveryCharge - total) > 0.01) {
-      report.warn('Orders', r._row, `${number}: lines + delivery = ${round2(linesTotal + deliveryCharge)} but grand_total is ${total}; grand_total kept.`);
+      notes.push(`${number}: lines + delivery = ${round2(linesTotal + deliveryCharge)} but grand_total is ${total}; grand_total kept.`);
     }
     // A Draft never took stock; anything confirmed did (a cancel before confirmation has no confirmed_at).
     const deducted = Boolean(confirmedAt) || !['Draft', 'Cancelled'].includes(status);
     const assignee = text(r.assigned_to) ? ctx.staffUser(r.assigned_to) : null;
     if (text(r.assigned_to) && !assignee) {
-      report.warn('Orders', r._row, `${number}: driver ${ctx.staffName(r.assigned_to) || text(r.assigned_to)} has no hub account here — left unassigned.`);
+      notes.push(`${number}: driver ${ctx.staffName(r.assigned_to) || text(r.assigned_to)} has no hub account here — left unassigned.`);
     }
     const header = {
       customerName: text(r.customer_name, 120) || 'Customer', customerPhone: text(r.phone, 24) || '-',
       area: opt(r.area, 80), address: opt(r.address), landmark: opt(r.landmark, 200),
     };
-    const order = Order.build({
-      orderNumber: number,
-      channel: { online: 'web', pos: 'pos' }[text(r.channel).toLowerCase()] || 'staff',
+    const fields = {
       userId,
-      items: lines,
       totalAmount: total,
       discount: 0,
       shippingCharge: deliveryCharge,
@@ -645,6 +648,21 @@ async function importOrders(ctx) {
       assignedTo: assignee?.id ?? null,
       assignedAt: assignee ? when(r.assigned_at) || null : null,
       assignedBy: assignee ? ctx.staffUser(r.assigned_by)?.id ?? null : null,
+    };
+    const fileReturns = returnsBy.get(number) || [];
+
+    if (prev) {
+      const updated = await refreshOrder(ctx, prev, r, { fields, lines, deducted, restockedAt, fileReturns, hasRestock });
+      if (updated) for (const n of notes) report.warn('Orders', r._row, n);
+      continue;
+    }
+
+    for (const n of notes) report.warn('Orders', r._row, n);
+    const order = Order.build({
+      orderNumber: number,
+      channel: { online: 'web', pos: 'pos' }[text(r.channel).toLowerCase()] || 'staff',
+      items: lines,
+      ...fields,
       createdBy: ctx.createdBy(r.created_by),
       createdAt: orderDate,
     });
@@ -671,37 +689,164 @@ async function importOrders(ctx) {
       }
     }
 
-    // Returns: which line each one came back on, and whether it went back to stock.
-    const left = lines.map((l) => l.returnedQty);
-    const recorded = lines.map(() => 0);
-    for (const rr of returnsBy.get(number) || []) {
-      const sku = upper(rr.sku);
-      const qty = num(rr.quantity);
-      const idx = lines.findIndex((l, i) => l.sku.toUpperCase() === sku && left[i] - recorded[i] >= qty);
-      if (!Number.isInteger(qty) || qty < 1 || idx < 0) {
-        report.warn('Returns', rr._row, `${number} ${sku}: does not match a returned line on the order — skipped.`);
-        continue;
-      }
-      recorded[idx] += qty;
-      const restock = bool(rr.restock, false) && deducted;
-      const createdAt = when(rr.created_at) || orderDate;
-      await OrderReturn.create({
-        orderId: order.id, lineIndex: idx, productId: lines[idx].productId, variantIndex: lines[idx].variantIndex,
-        sku: lines[idx].sku, quantity: qty, reason: text(rr.reason, 120) || 'Other', restock, notes: opt(rr.notes),
-        createdBy: ctx.createdBy(rr.created_by), createdAt,
-      }, { transaction: t });
-      report.count('Returns', 'created');
-      if (restock && !hasRestock('RET', number)) {
-        ctx.events.push({ at: createdAt, sku, delta: qty,
-          ctx: { kind: 'return', reference: `RET-${number}-${lines[idx].sku}`, orderId: order.id, reason: text(rr.reason, 120) || 'Other' } });
-      }
-    }
-    lines.forEach((l, i) => {
-      if (l.returnedQty !== recorded[i]) {
-        report.warn('Returns', null, `${number} ${l.sku}: returned_qty is ${l.returnedQty} but the Returns sheet lists ${recorded[i]}.`);
-      }
-    });
+    await importReturns(ctx, order, lines, fileReturns, { deducted, hasRestock });
   }
+}
+
+/**
+ * Returns: which line each one came back on, and whether it went back to stock.
+ * An order imported before keeps the returns it has; only the file's later
+ * rows (beyond the count already recorded) are added.
+ */
+async function importReturns(ctx, order, lines, fileReturns, { deducted, hasRestock }) {
+  const { report, t } = ctx;
+  const number = order.orderNumber;
+  const prior = !ctx.orders.get(number)?.created
+    ? await OrderReturn.findAll({ where: { orderId: order.id }, attributes: ['lineIndex', 'quantity'], transaction: t })
+    : [];
+  const left = lines.map((l) => l.returnedQty);
+  const recorded = lines.map(() => 0);
+  for (const p of prior) if (recorded[p.lineIndex] !== undefined) recorded[p.lineIndex] += p.quantity;
+  for (const rr of fileReturns.slice(prior.length)) {
+    const sku = upper(rr.sku);
+    const qty = num(rr.quantity);
+    const idx = lines.findIndex((l, i) => l.sku.toUpperCase() === sku && left[i] - recorded[i] >= qty);
+    if (!Number.isInteger(qty) || qty < 1 || idx < 0) {
+      report.warn('Returns', rr._row, `${number} ${sku}: does not match a returned line on the order — skipped.`);
+      continue;
+    }
+    recorded[idx] += qty;
+    const restock = bool(rr.restock, false) && deducted;
+    const createdAt = when(rr.created_at) || order.createdAt;
+    await OrderReturn.create({
+      orderId: order.id, lineIndex: idx, productId: lines[idx].productId, variantIndex: lines[idx].variantIndex,
+      sku: lines[idx].sku, quantity: qty, reason: text(rr.reason, 120) || 'Other', restock, notes: opt(rr.notes),
+      createdBy: ctx.createdBy(rr.created_by), createdAt,
+    }, { transaction: t });
+    report.count('Returns', 'created');
+    if (restock && !hasRestock('RET', number)) {
+      ctx.events.push({ at: createdAt, sku, delta: qty,
+        ctx: { kind: 'return', reference: `RET-${number}-${lines[idx].sku}`, orderId: order.id, reason: text(rr.reason, 120) || 'Other' } });
+    }
+  }
+  lines.forEach((l, i) => {
+    if (l.returnedQty !== recorded[i]) {
+      report.warn('Returns', null, `${number} ${l.sku}: returned_qty is ${l.returnedQty} but the Returns sheet lists ${recorded[i]}.`);
+    }
+  });
+}
+
+const secs = (d) => Math.round(new Date(d).valueOf() / 1000);
+/** History-row key at whole seconds (DATETIME columns drop the milliseconds the old system exports). */
+const auditKeys = (d, label) => [`${secs(d)}|${label}`, `${Math.floor(new Date(d).valueOf() / 1000)}|${label}`];
+const auditField = (r) => text(r.field, 255) || text(r.action, 255) || 'Change';
+
+const parsed = (v) => {
+  if (typeof v !== 'string' || !/^[[{]/.test(v)) return v;
+  try { return JSON.parse(v); } catch { return v; }
+};
+/** A stable comparable form of a column value: numbers as numbers, objects key-sorted. */
+function comparable(v) {
+  v = parsed(v);
+  if (v === undefined || v === null || v === '') return null;
+  if (v instanceof Date) return v.valueOf();
+  if (typeof v === 'object') return JSON.stringify(Object.keys(v).sort().map((k) => [k, comparable(v[k])]));
+  if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) return Number(v);
+  return v;
+}
+/** Equal as stored: timestamps within the second a DATETIME column keeps. */
+const sameValue = (a, b) => (a instanceof Date && b instanceof Date
+  ? Math.abs(a.valueOf() - b.valueOf()) < 1000
+  : comparable(a) === comparable(b));
+
+const lineView = (l) => [upper(l.sku), Number(l.quantity), round2(l.unitPrice ?? l.price), round2(l.discount), round2(l.lineTotal),
+  Number(l.returnedQty || 0), text(l.name), text(l.size), text(l.color)];
+
+/** SKU → stock the order holds: minus its sale, plus a cancel restock the Stock In sheet does not carry. */
+function heldStock(lines, deducted, implicitRestock) {
+  const held = new Map();
+  if (!deducted) return held;
+  for (const l of lines) {
+    const sku = upper(l.sku);
+    const back = implicitRestock ? Number(l.quantity) - Number(l.returnedQty || 0) : 0;
+    held.set(sku, (held.get(sku) || 0) - Number(l.quantity) + back);
+  }
+  return held;
+}
+
+/**
+ * An order an earlier import brought in, now in a newer backup: apply what
+ * changed in the old system (status, payment, delivery, lines) and move stock
+ * by the difference. An order with any change-history row the file does not
+ * carry — changed in this hub since, or already updated from a newer backup —
+ * is left alone, so a re-import never overwrites work done here or rolls an
+ * order back. Returns true when the order was updated.
+ */
+async function refreshOrder(ctx, prev, r, { fields, lines, deducted, restockedAt, fileReturns, hasRestock }) {
+  const { report, t } = ctx;
+  const number = prev.orderNumber;
+
+  const fileHistory = new Set((ctx.sheets['Audit Logs'] || [])
+    .filter((a) => text(a.source).toLowerCase().startsWith('order') && text(a.record, 60) === number && when(a.logged_at))
+    .flatMap((a) => auditKeys(when(a.logged_at), auditField(a))));
+  const ours = await OrderAuditLog.findAll({ where: { orderId: prev.id }, attributes: ['field', 'createdAt'], transaction: t });
+  const editedHere = ours.some((h) => !auditKeys(h.createdAt, h.field).some((k) => fileHistory.has(k)));
+
+  const changed = Object.keys(fields).filter((k) => !sameValue(fields[k], prev.get(k)));
+  const prevLines = parsed(prev.items) || [];
+  // The old system exports an order's lines in no fixed order: compare them as a set.
+  const lineSet = (ls) => JSON.stringify(ls.map((l) => JSON.stringify(lineView(l))).sort());
+  const linesChanged = lineSet(prevLines) !== lineSet(lines);
+  const returnsAdded = fileReturns.length > (await OrderReturn.count({ where: { orderId: prev.id }, transaction: t }));
+  if (!changed.length && !linesChanged && !returnsAdded) {
+    report.count('Orders', 'unchanged');
+    return false;
+  }
+  if (editedHere) {
+    report.count('Orders', 'kept (newer here)');
+    report.warn('Orders', r._row, `${number} has changes here that this file does not (made in this hub, or from a newer backup) — left as it is.`);
+    return false;
+  }
+  if (prevLines.some((l) => !l.sku || !ctx.skus.has(upper(l.sku)))) {
+    report.error('Orders', r._row, `${number}: a line on the existing order has no known SKU, so its stock cannot be reconciled.`);
+    return false;
+  }
+
+  // Stock: the difference between what the order held before and what it holds now.
+  const implicitBefore = prev.stockState === 'restored' && !hasRestock('CAN', number);
+  const before = heldStock(prevLines, prev.stockState !== 'none', implicitBefore);
+  const after = heldStock(lines, deducted, Boolean(restockedAt) && !hasRestock('CAN', number));
+  const at = when(r.updated_at) || new Date();
+  for (const sku of new Set([...before.keys(), ...after.keys()])) {
+    const delta = (after.get(sku) || 0) - (before.get(sku) || 0);
+    if (!delta) continue;
+    const restoring = delta > 0 && Boolean(restockedAt) && !implicitBefore;
+    ctx.events.push({ at, sku, delta, ctx: restoring
+      ? { kind: 'cancel_restock', reference: `CAN-${number}-${sku}`.slice(0, 80), orderId: prev.id, reason: 'Order cancelled' }
+      : { kind: 'sale', reference: number, orderId: prev.id, notes: 'Order changed in the imported backup' } });
+  }
+
+  if (linesChanged) {
+    // Lines still on the order keep their position (returns point at line indexes) and recorded cost;
+    // new lines go after them at today's cost.
+    const pool = [...lines];
+    const kept = [];
+    for (const p of prevLines) {
+      const i = pool.findIndex((l) => upper(l.sku) === upper(p.sku));
+      if (i >= 0) kept.push({ ...pool.splice(i, 1)[0], costPrice: p.costPrice });
+    }
+    prev.items = [...kept, ...pool];
+  }
+  prev.set(fields);
+  prev.stockState = deducted ? (restockedAt ? 'restored' : 'deducted') : 'none';
+  syncLegacy(prev);
+  await prev.save({ transaction: t });
+  ctx.orders.set(number, { id: prev.id, created: false, updated: true });
+  report.count('Orders', 'updated');
+  const what = [...changed, ...(linesChanged ? ['lines'] : []), ...(returnsAdded ? ['returns'] : [])];
+  report.warn('Orders', r._row, `${number} updated from the backup: ${what.join(', ')}.`);
+  await importReturns(ctx, prev, prev.items, fileReturns, { deducted, hasRestock });
+  return true;
 }
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -802,7 +947,19 @@ async function replayStock(ctx) {
   // New SKUs must end on the stock the Inventory sheet says they hold.
   for (const [sku, target] of ctx.targets) {
     const s = ctx.skus.get(sku);
-    if (!s?.created) continue;
+    if (!s) continue;
+    if (!s.created) {
+      // An existing SKU this import moved: report a gap, never adjust it — sales made here explain a difference.
+      if (!events.some((e) => e.sku === sku)) continue;
+      const current = await skuStock(s.productId, s.variantIndex, t);
+      if (current !== target) {
+        report.count('Inventory', 'differs from the file');
+        report.warn('Inventory', null, `${sku}: stock here is ${current} after this import, the file says ${target} — not adjusted (check sales made here).`);
+      } else {
+        report.count('Inventory', 'matched');
+      }
+      continue;
+    }
     const current = await skuStock(s.productId, s.variantIndex, t);
     if (current !== target) {
       await applyStockDelta({
@@ -852,7 +1009,6 @@ async function importFinance(ctx) {
     const reference = text(r.reference_code, 40) || `${type === 'asset' ? 'AST' : 'EXP'}-IMP-${String(n).padStart(4, '0')}`;
     if (taken.has(reference)) {
       report.count(sheet, 'already existed');
-      report.warn(sheet, r._row, `${reference} already exists — skipped.`);
       continue;
     }
     taken.add(reference);
@@ -980,8 +1136,8 @@ async function importAudit(ctx) {
     const staff = ctx.staffUser(r.staff);
     if (source.startsWith('order')) {
       const o = ctx.orders.get(text(r.record, 60));
-      if (!o?.created) continue;
-      orderRows.push({ orderId: o.id, field: text(r.field, 255) || text(r.action, 255) || 'Change', oldValue: opt(r.old_value, 4000),
+      if (!o?.created && !o?.updated) continue;
+      orderRows.push({ orderId: o.id, field: auditField(r), oldValue: opt(r.old_value, 4000),
         newValue: opt(r.new_value, 4000), changedBy: staff?.id ?? null, staffName: text(r.staff, 120) || null, createdAt: at });
     } else if (source.startsWith('product')) {
       const s = ctx.skus.get(upper(r.record));
@@ -995,18 +1151,26 @@ async function importAudit(ctx) {
         details: { recordId: opt(r.record, 120), description, imported: true }, createdAt: at });
     }
   }
-  // Activity rows have no key of their own: skip ones an earlier import already added.
+  // History rows have no key of their own: skip ones an earlier import already added (matched at whole seconds).
   if (activityRows.length) {
     const times = activityRows.map((a) => a.createdAt.valueOf());
     const prior = await ActivityLog.findAll({
-      where: { createdAt: { [Op.between]: [new Date(Math.min(...times)), new Date(Math.max(...times))] } },
+      where: { createdAt: { [Op.between]: [new Date(Math.min(...times) - 1000), new Date(Math.max(...times) + 1000)] } },
       attributes: ['createdAt', 'action'], transaction: t,
     });
-    const seen = new Set(prior.map((p) => `${p.createdAt.valueOf()}|${p.action}`));
-    const fresh = activityRows.filter((a) => !seen.has(`${a.createdAt.valueOf()}|${a.action}`));
+    const seen = new Set(prior.map((p) => `${secs(p.createdAt)}|${p.action}`));
+    const fresh = activityRows.filter((a) => !auditKeys(a.createdAt, a.action).some((k) => seen.has(k)));
     report.count('Audit Logs', 'activity skipped (already imported)', activityRows.length - fresh.length);
     activityRows.length = 0;
     activityRows.push(...fresh);
+  }
+  const updatedIds = [...new Set(orderRows.map((o) => o.orderId))];
+  if (updatedIds.length) {
+    const prior = await OrderAuditLog.findAll({ where: { orderId: updatedIds }, attributes: ['orderId', 'field', 'createdAt'], transaction: t });
+    const seen = new Set(prior.map((p) => `${p.orderId}|${secs(p.createdAt)}|${p.field}`));
+    const fresh = orderRows.filter((o) => !auditKeys(o.createdAt, o.field).some((k) => seen.has(`${o.orderId}|${k}`)));
+    orderRows.length = 0;
+    orderRows.push(...fresh);
   }
   if (orderRows.length) await OrderAuditLog.bulkCreate(orderRows, { transaction: t });
   if (productRows.length) await ProductAuditLog.bulkCreate(productRows, { transaction: t });

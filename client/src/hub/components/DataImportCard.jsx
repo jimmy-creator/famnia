@@ -36,7 +36,11 @@ export function DataImportCard() {
       setReport(data);
       if (data.committed) {
         toast.success('Data imported.');
-        await client.invalidateQueries({ queryKey: qk.all });
+        // Not the settings: reloading them remounts the Settings form, which would wipe this report.
+        await client.invalidateQueries({
+          queryKey: qk.all,
+          predicate: (q) => q.queryKey[1] !== qk.appSettings[1],
+        });
       } else if (data.errorCount) {
         toast.error(`${data.errorCount} row(s) need fixing — nothing was saved.`);
       }
@@ -64,7 +68,8 @@ export function DataImportCard() {
           Brings in products with their stock history, customers, sales orders, returns, payments, expenses, assets,
           liabilities and audit logs from an Excel file. A backup from the old FEMNIA Hub can be imported as it is; for
           anything else, download the template and fill in the sheets you need. Records that already exist are skipped,
-          so importing the same file twice never doubles anything.
+          so importing the same file twice never doubles anything — except orders, which a newer backup brings up to
+          date (status, payment, lines, stock) unless they have been changed in this hub since.
         </p>
         <Button asChild variant="outline" className="h-11">
           <a href={`${api.defaults.baseURL}/hub/data-import/template`}>
