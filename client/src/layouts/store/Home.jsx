@@ -281,7 +281,7 @@ function CategoryCircles({ categories }) {
       <div className="-mx-4 flex gap-4 overflow-x-auto px-4 py-1 [scrollbar-width:none] sm:gap-6 lg:mx-0 lg:justify-center lg:px-0 [&::-webkit-scrollbar]:hidden">
         {categories.map((c) => (
           <Link
-            key={c.id || c.name}
+            key={c.name}
             to={`/products?category=${encodeURIComponent(c.name)}`}
             className="group flex w-[72px] shrink-0 flex-col items-center gap-2 sm:w-[88px]"
           >
@@ -408,9 +408,20 @@ export default function Home() {
       })
       .catch(() => {});
 
-    api.get('/categories')
-      .then((res) => setCategories(Array.isArray(res.data) ? res.data : []))
-      .catch(() => {});
+    // The circles list what the Shop page's chips list — the categories the
+    // products actually carry — so each one opens a non-empty filter. A
+    // Category row of the same name (any case) supplies the image and Arabic
+    // name; without one the circle shows the initial.
+    Promise.all([
+      api.get('/products/categories').then((r) => r.data).catch(() => []),
+      api.get('/categories').then((r) => r.data).catch(() => []),
+    ]).then(([names, rows]) => {
+      const byName = new Map((Array.isArray(rows) ? rows : []).map((c) => [c.name.toLowerCase(), c]));
+      setCategories((Array.isArray(names) ? names : []).map((name) => ({
+        ...byName.get(String(name).toLowerCase()),
+        name,
+      })));
+    });
 
     api.get(`/products?sort=createdAt&order=DESC&limit=${RAIL_LIMIT}`)
       .then((r) => setLatest(r.data.products || []))
