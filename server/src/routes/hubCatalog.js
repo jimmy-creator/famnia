@@ -8,7 +8,7 @@ import { protect } from '../middleware/auth.js';
 import { HUB_ROLES } from '../hub/permissions.js';
 import { bad, can, hubLog, need, wrap as wrapAs } from '../hub/http.js';
 import {
-  applyStockDelta, displaySku, hasVariants, listSkus, loadSku, nextProductCodes, normalizeProductCode,
+  applyStockDelta, displaySku, ensureCategory, hasVariants, listSkus, loadSku, nextProductCodes, normalizeProductCode,
   recomputeAfter, skuEntries, skuFields, skuKey, skuLock, skuRow, skuStock, supplierByName, uniqueSlug,
   usedIdentifiers, variantOptionsFrom, SIZE_KEYS, COLOR_KEYS,
 } from '../hub/catalog.js';
@@ -422,6 +422,7 @@ router.put('/products/:id/storefront', need('products.edit'), wrap(async (req, r
  * category when there is one (variant indexes only ever grow).
  */
 export async function createSkuGroup({ base, skus, transaction, importBatchId = null }) {
+  await ensureCategory(base.category, transaction);
   const withOptions = skus.some((s) => s.size || s.color);
   const existing = await Product.findOne({
     where: {

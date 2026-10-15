@@ -1,10 +1,25 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
-  Product, ProductStock, Location, Order, Supplier, StockMovement, recomputeProductStock,
+  Category, Product, ProductStock, Location, Order, Supplier, StockMovement, recomputeProductStock,
 } from '../models/index.js';
 import { withStockContext } from '../services/stockLedger.js';
 import { loadAppSettings } from './settings.js';
+
+/**
+ * Every product category needs a Category row — the storefront's category
+ * menu and home-page circles read that table. The importers take category
+ * names straight from the sheet, so a missing one is created here. MySQL's
+ * case-insensitive collation makes 'Kaftan' find an existing 'kaftan'.
+ */
+export async function ensureCategory(name, transaction) {
+  const clean = String(name ?? '').trim();
+  if (!clean) return false;
+  const [, created] = await Category.findOrCreate({
+    where: { name: clean }, defaults: { active: true, sortOrder: 0 }, transaction,
+  });
+  return created;
+}
 
 /**
  * The hub's SKU view of the catalogue.
