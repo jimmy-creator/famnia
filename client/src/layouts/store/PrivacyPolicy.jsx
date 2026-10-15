@@ -84,7 +84,8 @@ function EnglishBody() {
           5C6J+JMG<br />
           Ar-Rayyan, Qatar<br />
           Email: <a href="mailto:info@femnia.com">info@femnia.com</a><br />
-          Phone / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a>
+          Phone / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          Instagram: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a>
         </p>
         <p>We will acknowledge complaints within 24 hours and aim to resolve them within 15 days, in line with applicable Qatar regulations.</p>
       </section>
@@ -175,7 +176,8 @@ function ArabicBody() {
           محل رقم 03، مبنى رقم 3360، المنطقة الصناعية 17<br />
           الريان، قطر<br />
           البريد الإلكتروني: <a href="mailto:info@femnia.com">info@femnia.com</a><br />
-          الهاتف / واتساب: <a href="tel:+97466543343">+974 6654 3343</a>
+          الهاتف / واتساب: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          إنستغرام: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a>
         </p>
         <p>سنُقرّ باستلام الشكاوى خلال 24 ساعة ونسعى إلى حلّها خلال 15 يومًا، وفقًا للأنظمة القطرية المعمول بها.</p>
       </section>

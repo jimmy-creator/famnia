@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ShoppingBag, Award, Truck, ShieldCheck, Headphones, RefreshCw, Mail, Phone, MessageCircle } from 'lucide-react';
 import StaticPage from './StaticPage';
+import InstagramCard from '../../components/InstagramCard';
 
 const CONTACT_LINKS = (t) => [
   { href: 'mailto:info@femnia.com', Icon: Mail, title: t('contact.emailUs'), lines: ['info@femnia.com'] },
@@ -12,7 +13,7 @@ const CONTACT_LINKS = (t) => [
 function ContactCards() {
   const { t } = useTranslation();
   return (
-    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
       {CONTACT_LINKS(t).map(({ href, Icon, title, lines }) => (
         <a
           key={href}
@@ -30,6 +31,7 @@ function ContactCards() {
           </div>
         </a>
       ))}
+      <InstagramCard />
     </div>
   );
 }

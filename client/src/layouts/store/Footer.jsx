@@ -6,6 +6,7 @@ import api from '../../api/axios';
 import { localizedName } from '../../utils/i18nHelpers';
 import FemniaLogo from './Logo';
 import { cn } from '@/lib/utils';
+import { INSTAGRAM_ACCOUNTS } from '@/lib/social';
 
 const B2B_ENABLED = import.meta.env.VITE_FEATURE_B2B === 'true';
 const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia';
@@ -30,10 +31,9 @@ function FooterCol({ title, children, className }) {
 }
 
 // Brand social icons (inline SVG — avoids depending on brand icons that some
-// lucide versions drop). Links are placeholders until real profiles are shared.
+// lucide versions drop). One Instagram icon per account (see lib/social.js).
 const SOCIALS = [
-  { label: 'Facebook', href: '#', path: 'M13.5 9H15V6.5h-1.9C11 6.5 10 7.8 10 9.7V11H8.5v2.5H10V19h2.6v-5.5h1.8l.3-2.5h-2.1V9.9c0-.6.2-.9.9-.9Z' },
-  { label: 'Instagram', href: '#', path: 'M12 8.6A3.4 3.4 0 1 0 12 15.4 3.4 3.4 0 0 0 12 8.6Zm0 5.6a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4Zm3.6-5.9a.8.8 0 1 1-1.6 0 .8.8 0 0 1 1.6 0ZM8.4 6.2h7.2A2.6 2.6 0 0 1 18.2 8.8v6.4a2.6 2.6 0 0 1-2.6 2.6H8.4a2.6 2.6 0 0 1-2.6-2.6V8.8a2.6 2.6 0 0 1 2.6-2.6Zm0 1.3A1.3 1.3 0 0 0 7.1 8.8v6.4a1.3 1.3 0 0 0 1.3 1.3h7.2a1.3 1.3 0 0 0 1.3-1.3V8.8a1.3 1.3 0 0 0-1.3-1.3H8.4Z' },
+  ...INSTAGRAM_ACCOUNTS.map((a) => ({ label: `Instagram @${a.handle}`, href: a.url, path: 'M12 8.6A3.4 3.4 0 1 0 12 15.4 3.4 3.4 0 0 0 12 8.6Zm0 5.6a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4Zm3.6-5.9a.8.8 0 1 1-1.6 0 .8.8 0 0 1 1.6 0ZM8.4 6.2h7.2A2.6 2.6 0 0 1 18.2 8.8v6.4a2.6 2.6 0 0 1-2.6 2.6H8.4a2.6 2.6 0 0 1-2.6-2.6V8.8a2.6 2.6 0 0 1 2.6-2.6Zm0 1.3A1.3 1.3 0 0 0 7.1 8.8v6.4a1.3 1.3 0 0 0 1.3 1.3h7.2a1.3 1.3 0 0 0 1.3-1.3V8.8a1.3 1.3 0 0 0-1.3-1.3H8.4Z' })),
   { label: 'WhatsApp', href: `https://wa.me/${CONTACT.whatsapp}`, path: 'M12 5.5A6.4 6.4 0 0 0 6.3 15l-.8 3 3.1-.8A6.4 6.4 0 1 0 12 5.5Zm0 1.3a5.1 5.1 0 0 1 0 10.2 5 5 0 0 1-2.6-.7l-.2-.1-1.5.4.4-1.5-.1-.2a5.1 5.1 0 0 1 4-8.1Zm-1.7 2.4c-.1-.3-.2-.3-.4-.3h-.3a.7.7 0 0 0-.5.2c-.2.2-.6.6-.6 1.4s.6 1.6.7 1.7c.1.2 1.2 1.9 3 2.6 1.5.6 1.8.5 2.1.4.3 0 1-.4 1.1-.8.2-.4.2-.7.1-.8l-.4-.2-1-.5c-.2 0-.3-.1-.4.1l-.5.6c-.1.1-.2.2-.4.1a4.2 4.2 0 0 1-1.2-.8 4.6 4.6 0 0 1-.9-1.1c0-.2 0-.3.1-.4l.3-.3.2-.3v-.3l-.5-1.2Z' },
 ];
 
@@ -82,7 +82,10 @@ function NewsletterSignup() {
           <a
             key={s.label}
             href={s.href}
+            target="_blank"
+            rel="noopener noreferrer"
             aria-label={s.label}
+            title={s.label}
             className="inline-flex size-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-[color:var(--gold)] hover:text-[color:var(--bg-dark)]"
           >
             <svg viewBox="0 0 24 24" className="size-4" fill="currentColor" aria-hidden="true">
@@ -91,6 +94,14 @@ function NewsletterSignup() {
           </a>
         ))}
       </div>
+      <p className="text-xs text-white/60">
+        {INSTAGRAM_ACCOUNTS.map((a, i) => (
+          <span key={a.handle}>
+            {i > 0 && ' · '}
+            <a href={a.url} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-[color:var(--gold)]">@{a.handle}</a>
+          </span>
+        ))}
+      </p>
     </div>
   );
 }

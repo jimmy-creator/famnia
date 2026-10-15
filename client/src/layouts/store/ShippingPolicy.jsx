@@ -85,6 +85,7 @@ function EnglishBody() {
         <h2>9. Contact</h2>
         <p>
           📞 / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          📷 Instagram: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a><br />
           📧 <a href="mailto:info@femnia.com">info@femnia.com</a>
         </p>
       </section>
@@ -176,6 +177,7 @@ function ArabicBody() {
         <h2>9. التواصل</h2>
         <p>
           📞 / واتساب: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          📷 إنستغرام: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a><br />
           📧 <a href="mailto:info@femnia.com">info@femnia.com</a>
         </p>
       </section>

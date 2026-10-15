@@ -93,7 +93,8 @@ function EnglishBody() {
           <strong>Femnia Fashion</strong><br />
           📍 5C6J+JMG, Ar-Rayyan, Qatar<br />
           📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
-          📞 / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a>
+          📞 / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          📷 Instagram: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a>
         </p>
       </section>
     </>
@@ -192,7 +193,8 @@ function ArabicBody() {
           <strong>Femnia Fashion</strong><br />
           📍 5C6J+JMG، الريان، قطر<br />
           📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
-          📞 / واتساب: <a href="tel:+97466543343">+974 6654 3343</a>
+          📞 / واتساب: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          📷 إنستغرام: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a>
         </p>
       </section>
     </>

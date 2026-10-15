@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import api from '../../api/axios';
 import SEO from '../../components/SEO';
+import InstagramCard from '../../components/InstagramCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -75,6 +76,7 @@ export default function ContactUs() {
               </div>
             </a>
           ))}
+          <InstagramCard />
         </div>
 
         {/* Contact form */}
