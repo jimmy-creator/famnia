@@ -269,41 +269,32 @@ function HeroBlock({ slides, active, seal, promos, compact, onSelect, onTouchSta
 
 /* ── Categories ───────────────────────────────────────────────────────── */
 
-// Scrolling pill row: a leading "All" chip, then one chip per category with
-// its thumbnail. Purely a shortcut into the catalogue — nothing filters here.
-function CategoryChips({ categories }) {
-  const { t } = useTranslation();
+// Horizontal strip directly under the navbar: a round thumbnail per category
+// with its name beneath. Scrolls sideways when it overflows; centred when it
+// fits. Purely a shortcut into the catalogue — nothing filters here.
+function CategoryCircles({ categories }) {
   if (!categories.length) return null;
 
   return (
-    <section className="mx-auto mt-8 max-w-7xl px-4 lg:px-8">
-      <SectionHead title={t('common.categories')} to="/products" actionLabel={t('common.viewAll')} />
-
-      <div className="-mx-4 flex gap-2.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] lg:mx-0 lg:flex-wrap lg:px-0 [&::-webkit-scrollbar]:hidden">
-        <Link
-          to="/products"
-          className="flex shrink-0 items-center gap-2 rounded-full bg-primary py-1.5 pe-4 ps-1.5 text-[13px] font-semibold text-primary-foreground"
-        >
-          <span className="flex size-8 items-center justify-center rounded-full bg-white/20 text-[11px] font-bold">
-            {categories.length}
-          </span>
-          {t('common.all')}
-        </Link>
-
+    <section className="mx-auto max-w-7xl px-4 pt-4 lg:px-8">
+      {/* py-1: the scroller clips both axes, so the 2px hover ring needs room. */}
+      <div className="-mx-4 flex gap-4 overflow-x-auto px-4 py-1 [scrollbar-width:none] sm:gap-6 lg:mx-0 lg:justify-center lg:px-0 [&::-webkit-scrollbar]:hidden">
         {categories.map((c) => (
           <Link
             key={c.id || c.name}
             to={`/products?category=${encodeURIComponent(c.name)}`}
-            className="flex shrink-0 items-center gap-2 rounded-full bg-card py-1.5 pe-4 ps-1.5 text-[13px] font-medium text-foreground ring-1 ring-border transition-colors hover:ring-primary"
+            className="group flex w-[72px] shrink-0 flex-col items-center gap-2 sm:w-[88px]"
           >
-            <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[color:var(--bg-warm)]">
+            <span className="flex size-16 items-center justify-center overflow-hidden rounded-full bg-[color:var(--bg-warm)] ring-1 ring-border transition-shadow group-hover:ring-2 group-hover:ring-primary sm:size-20">
               {c.image ? (
                 <img src={c.image} alt="" loading="lazy" className="size-full object-cover" />
               ) : (
-                <span className="text-[11px] font-bold text-foreground/40">{localizedName(c)?.[0]}</span>
+                <span className="text-lg font-bold text-foreground/40">{localizedName(c)?.[0]}</span>
               )}
             </span>
-            <span className="whitespace-nowrap">{localizedName(c)}</span>
+            <span className="line-clamp-2 text-center text-xs font-medium leading-tight text-foreground group-hover:text-primary">
+              {localizedName(c)}
+            </span>
           </Link>
         ))}
       </div>
@@ -501,6 +492,8 @@ export default function Home() {
     <div className="pb-4">
       <SEO title={t('home.seoTitle')} description={t('home.seoDescription')} />
 
+      <CategoryCircles categories={categories} />
+
       <HeroBlock
         slides={slides}
         active={safeActive}
@@ -512,8 +505,6 @@ export default function Home() {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       />
-
-      <CategoryChips categories={categories} />
 
       {/* New arrivals — one horizontal rail, so the newest stock is one swipe
           away rather than a grid the customer has to scroll past. */}
