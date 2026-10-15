@@ -162,6 +162,7 @@
     "privacyPolicy": "Privacy policy",
     "terms": "Terms of service",
     "copyright": "© {{year}} {{store}}. All rights reserved.",
+    "crNumber": "CR No: {{number}}",
     "newsletter": "Subscribe to our newsletter",
     "newsletterPlaceholder": "Your email",
     "subscribe": "Subscribe",

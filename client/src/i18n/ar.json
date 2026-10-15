@@ -162,6 +162,7 @@
     "privacyPolicy": "سياسة الخصوصية",
     "terms": "الشروط والأحكام",
     "copyright": "© {{year}} {{store}}. جميع الحقوق محفوظة.",
+    "crNumber": "رقم السجل التجاري: {{number}}",
     "newsletter": "اشترك في نشرتنا البريدية",
     "newsletterPlaceholder": "بريدك الإلكتروني",
     "subscribe": "اشترك",

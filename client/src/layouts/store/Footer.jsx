@@ -18,6 +18,7 @@ const CONTACT = {
   whatsapp: '97466543343',
 };
 const ADDRESS = '5C6J+JMG, Ar-Rayyan, Qatar';
+const CR_NUMBER = '244701'; // Qatar commercial registration
 
 function FooterCol({ title, children, className }) {
   return (
@@ -174,6 +175,7 @@ export default function Footer() {
         <div className="mx-auto flex max-w-7xl flex-col items-center gap-4 px-4 py-5 text-xs text-white/55 md:flex-row md:justify-between lg:px-8">
           <p className="order-3 text-center md:order-1 md:text-start">
             {t('footer.copyright', { year: new Date().getFullYear(), store: STORE_NAME })}
+            <span className="whitespace-nowrap"> · {t('footer.crNumber', { number: CR_NUMBER })}</span>
           </p>
 
           {methods.length > 0 && (
