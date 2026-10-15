@@ -141,7 +141,7 @@ async function applyCoupon(couponCode, subtotal, userId) {
 
 export const createOrder = async (req, res) => {
   try {
-    const { items, shippingAddress, paymentMethod, couponCode, shippingMethod = 'standard' } = req.body;
+    const { items, shippingAddress, paymentMethod, couponCode, shippingMethod: requestedMethod = 'standard' } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ message: 'No items in order' });
@@ -153,7 +153,9 @@ export const createOrder = async (req, res) => {
 
     const { totalTax, breakdown } = calculateTax(orderItems);
 
-    const shippingResult = calculateShipping(afterDiscount, orderItems.length, shippingAddress?.state);
+    const shippingResult = await calculateShipping(afterDiscount, orderItems.length, shippingAddress?.state);
+    // An option the store does not offer (express while hidden) falls back to standard.
+    const shippingMethod = shippingResult[requestedMethod]?.rate !== undefined ? requestedMethod : 'standard';
     const shippingCharge = shippingResult[shippingMethod]?.rate || shippingResult.standard.rate;
 
     const finalAmount = Math.round((afterDiscount + shippingCharge) * 100) / 100;
@@ -190,7 +192,7 @@ export const createOrder = async (req, res) => {
 
 export const createGuestOrder = async (req, res) => {
   try {
-    const { items, shippingAddress, paymentMethod, guestEmail, couponCode, shippingMethod = 'standard' } = req.body;
+    const { items, shippingAddress, paymentMethod, guestEmail, couponCode, shippingMethod: requestedMethod = 'standard' } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ message: 'No items in order' });
@@ -210,7 +212,9 @@ export const createGuestOrder = async (req, res) => {
 
     const { totalTax, breakdown } = calculateTax(orderItems);
 
-    const shippingResult = calculateShipping(afterDiscount, orderItems.length, shippingAddress?.state);
+    const shippingResult = await calculateShipping(afterDiscount, orderItems.length, shippingAddress?.state);
+    // An option the store does not offer (express while hidden) falls back to standard.
+    const shippingMethod = shippingResult[requestedMethod]?.rate !== undefined ? requestedMethod : 'standard';
     const shippingCharge = shippingResult[shippingMethod]?.rate || shippingResult.standard.rate;
 
     const finalAmount = Math.round((afterDiscount + shippingCharge) * 100) / 100;

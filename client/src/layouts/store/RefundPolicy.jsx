@@ -4,12 +4,12 @@ import StaticPage from './StaticPage';
 function EnglishBody() {
   return (
     <>
-      <p className="s2-static-date">Last updated: May 2026</p>
+      <p className="s2-static-date">Last updated: October 2026</p>
 
       <section className="s2-static-section">
         <h2>Our Position</h2>
         <p>
-          We want you to be happy with what you bought. If the size doesn't fit, the colour isn't quite right, or you simply changed your mind — bring it back within <strong>14 days</strong> in original condition and we'll refund or exchange it.
+          We want you to be happy with what you bought. If the size doesn't fit, the colour isn't quite right, or you simply changed your mind — bring it back within <strong>7 days</strong> in original condition and we'll refund or exchange it.
         </p>
         <p>
           Anything that arrived damaged, wrong or defective is on us — report within 7 days with photos and we'll cover the cost of resolution.
@@ -20,7 +20,7 @@ function EnglishBody() {
         <h2>1. Refund-Eligible Returns</h2>
         <ul>
           <li><strong>Unworn and unwashed</strong> with all original tags and labels still attached.</li>
-          <li>Returned within <strong>14 days</strong> of in-store purchase or delivery.</li>
+          <li>Returned within <strong>7 days</strong> of in-store purchase or delivery.</li>
           <li>Proof of purchase: original receipt or order number.</li>
           <li>For online orders, the original courier packaging should be intact where possible.</li>
         </ul>
@@ -80,12 +80,12 @@ function EnglishBody() {
 function ArabicBody() {
   return (
     <>
-      <p className="s2-static-date">آخر تحديث: مايو 2026</p>
+      <p className="s2-static-date">آخر تحديث: أكتوبر 2026</p>
 
       <section className="s2-static-section">
         <h2>موقفنا</h2>
         <p>
-          نريدك أن تكون راضيًا عمّا اشتريته. إذا لم يناسبك المقاس أو اللون، أو غيّرت رأيك ببساطة — أعِد المنتج خلال <strong>14 يومًا</strong> بحالته الأصلية وسنقوم باسترداد المبلغ أو الاستبدال.
+          نريدك أن تكون راضيًا عمّا اشتريته. إذا لم يناسبك المقاس أو اللون، أو غيّرت رأيك ببساطة — أعِد المنتج خلال <strong>7 أيام</strong> بحالته الأصلية وسنقوم باسترداد المبلغ أو الاستبدال.
         </p>
         <p>
           أي منتج وصل تالفًا أو خطأً أو معيبًا فهو على عاتقنا — أبلِغنا خلال 7 أيام مع صور، وسنتحمل تكلفة الحلّ.
@@ -96,7 +96,7 @@ function ArabicBody() {
         <h2>1. الإرجاعات المؤهَّلة لاسترداد المبلغ</h2>
         <ul>
           <li><strong>غير ملبوسة وغير مغسولة</strong> مع جميع البطاقات والملصقات الأصلية مثبَّتة.</li>
-          <li>الإرجاع خلال <strong>14 يومًا</strong> من تاريخ الشراء من المعرض أو التسليم.</li>
+          <li>الإرجاع خلال <strong>7 أيام</strong> من تاريخ الشراء من المعرض أو التسليم.</li>
           <li>إثبات الشراء: الفاتورة الأصلية أو رقم الطلب.</li>
           <li>للطلبات الإلكترونية، يُفضَّل أن يكون التغليف الأصلي للشحن سليمًا قدر الإمكان.</li>
         </ul>
@@ -160,8 +160,8 @@ export default function RefundPolicy() {
     <StaticPage
       title="Refund Policy"
       titleAr="سياسة استرداد المبالغ"
-      description="Femnia Fashion refund policy. Returns accepted within 14 days on unworn items with tags attached."
-      descriptionAr="سياسة استرداد المبالغ لدى Femnia Fashion. نقبل الإرجاع خلال 14 يومًا للقطع غير الملبوسة مع بطاقاتها الأصلية."
+      description="Femnia Fashion refund policy. Returns accepted within 7 days on unworn items with tags attached."
+      descriptionAr="سياسة استرداد المبالغ لدى Femnia Fashion. نقبل الإرجاع خلال 7 أيام للقطع غير الملبوسة مع بطاقاتها الأصلية."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

@@ -1,11 +1,10 @@
 import { FaWhatsapp } from 'react-icons/fa6';
-
-const WHATSAPP_NUMBER = '97466543343';
+import { whatsappUrl } from '@/lib/whatsapp';
 
 export default function FloatingWhatsApp() {
   return (
     <a
-      href={`https://wa.me/${WHATSAPP_NUMBER}`}
+      href={whatsappUrl()}
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Chat with us on WhatsApp"

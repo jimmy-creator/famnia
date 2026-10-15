@@ -109,7 +109,7 @@ router.get('/gateways', (req, res) => {
 router.post('/calculate-shipping', async (req, res) => {
   try {
     const { subtotal, itemCount, shippingState } = req.body;
-    const result = calculateShipping(subtotal || 0, itemCount || 1, shippingState);
+    const result = await calculateShipping(subtotal || 0, itemCount || 1, shippingState);
     res.json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -214,8 +214,10 @@ router.post('/create-order', optionalAuth, async (req, res) => {
     const { totalTax, breakdown: taxBreakdown } = calculateTax(orderItems);
 
     // Calculate shipping
-    const shippingMethod = req.body.shippingMethod || 'standard';
-    const shippingResult = calculateShipping(afterDiscount, orderItems.length, shippingAddress?.state);
+    const requestedMethod = req.body.shippingMethod || 'standard';
+    const shippingResult = await calculateShipping(afterDiscount, orderItems.length, shippingAddress?.state);
+    // An option the store does not offer (express while hidden) falls back to standard.
+    const shippingMethod = shippingResult[requestedMethod]?.rate !== undefined ? requestedMethod : 'standard';
     const shipping = shippingResult[shippingMethod]?.rate || shippingResult.standard.rate;
     // Tax is inclusive — not added on top
     const finalAmount = Math.round((afterDiscount + shipping) * 100) / 100;

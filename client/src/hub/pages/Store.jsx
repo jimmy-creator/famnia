@@ -1301,6 +1301,11 @@ function ThemeTab() {
         )}
       />
       <SettingLoader
+        name="shipping-express"
+        title="Delivery"
+        render={(data) => <ExpressDeliveryEditor initial={data?.enabled === true} />}
+      />
+      <SettingLoader
         name="b2b-bank-details"
         title="B2B bank details"
         render={(data) => <BankDetailsEditor initial={data?.value || ''} />}
@@ -1605,6 +1610,31 @@ function HeroSealEditor({ initial }) {
         saving={save.isPending}
         onSave={() => save.mutate(seal, { onSuccess: () => { setDirty(false); toast.success('Hero seal saved'); } })}
       />
+    </Section>
+  );
+}
+
+function ExpressDeliveryEditor({ initial }) {
+  const [enabled, setEnabled] = useState(initial);
+  const save = useSaveSetting('shipping-express', (body) => body);
+  return (
+    <Section
+      title="Delivery"
+      description="Standard delivery is QAR 10, free on orders of QAR 100 and above. Express delivery is an extra option at checkout."
+    >
+      <label className="flex items-center gap-3 text-sm">
+        <Switch
+          checked={enabled}
+          disabled={save.isPending}
+          onCheckedChange={(v) =>
+            save.mutate(
+              { enabled: v },
+              { onSuccess: () => { setEnabled(v); toast.success(v ? 'Express delivery shown at checkout' : 'Express delivery hidden'); } },
+            )
+          }
+        />
+        Offer express delivery at checkout
+      </label>
     </Section>
   );
 }

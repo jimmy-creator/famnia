@@ -30,6 +30,8 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { openWhatsApp, productOrderMessage } from '@/lib/whatsapp';
+import WhatsAppButton from '@/components/WhatsAppButton';
 
 function Stars({ value, size = 14 }) {
   return (
@@ -124,6 +126,15 @@ export default function ProductDetail() {
     addToCart(product, quantity, hasVariants ? selectedOptions : null);
     navigate('/checkout');
   };
+  // Opens a pre-filled WhatsApp chat — no order is created; staff add the
+  // sale in the hub once the customer confirms in the chat.
+  const handleWhatsAppOrder = () => openWhatsApp(productOrderMessage({
+    name: product.name,
+    price: displayPrice,
+    quantity,
+    selectedVariant: hasVariants ? selectedOptions : null,
+    url: `${window.location.origin}/product/${product.slug}`,
+  }));
 
   const isOptionAvailable = (type, value) => {
     if (!hasVariants) return true;
@@ -288,6 +299,9 @@ export default function ProductDetail() {
               <Button type="button" size="lg" onClick={handleBuyNow} className="gap-2">
                 <Zap className="size-4" /> Buy now
               </Button>
+              <WhatsAppButton size="lg" onClick={handleWhatsAppOrder} className="w-full sm:w-auto">
+                Order on WhatsApp
+              </WhatsAppButton>
             </div>
           ) : (
             <Button type="button" size="lg" disabled className="mt-6 w-full sm:w-auto">Sold out</Button>
@@ -330,6 +344,7 @@ export default function ProductDetail() {
           <Button type="button" className="flex-1 gap-1.5" onClick={handleBuyNow}>
             <Zap className="size-4" /> Buy now
           </Button>
+          <WhatsAppButton size="icon" onClick={handleWhatsAppOrder} aria-label="Order on WhatsApp" className="size-9 shrink-0" />
         </div>
       )}
 

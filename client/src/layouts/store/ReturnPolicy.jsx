@@ -4,12 +4,12 @@ import StaticPage from './StaticPage';
 function EnglishBody() {
   return (
     <>
-      <p className="s2-static-date">Last updated: May 2026</p>
+      <p className="s2-static-date">Last updated: October 2026</p>
 
       <section className="s2-static-section">
-        <h2>14-Day Returns, No Hassle</h2>
+        <h2>7-Day Returns, No Hassle</h2>
         <p>
-          You have <strong>14 days</strong> from the date of delivery to return any unworn item for a refund or exchange. The item must be unworn, unwashed and still have its original tags attached.
+          You have <strong>7 days</strong> from the date of delivery to return any unworn item for a refund or exchange. The item must be unworn, unwashed and still have its original tags attached.
         </p>
       </section>
 
@@ -30,7 +30,7 @@ function EnglishBody() {
           <li>Pierced jewellery, and swimwear or intimates with the hygiene seal removed.</li>
           <li>Personalised, monogrammed or made-to-measure pieces.</li>
           <li>Sale or clearance items marked "Final Sale".</li>
-          <li>Items past the 14-day window.</li>
+          <li>Items past the 7-day window.</li>
           <li>Items damaged through wear, mishandling, or washing not per the care label.</li>
         </ul>
       </section>
@@ -47,7 +47,7 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>4. Exchanges</h2>
         <p>
-          Wrong size? Wrong colour? Bring it back within 14 days for an exchange, subject to stock availability.
+          Wrong size? Wrong colour? Bring it back within 7 days for an exchange, subject to stock availability.
         </p>
       </section>
 
@@ -81,12 +81,12 @@ function EnglishBody() {
 function ArabicBody() {
   return (
     <>
-      <p className="s2-static-date">آخر تحديث: مايو 2026</p>
+      <p className="s2-static-date">آخر تحديث: أكتوبر 2026</p>
 
       <section className="s2-static-section">
-        <h2>إرجاع خلال 14 يومًا بدون متاعب</h2>
+        <h2>إرجاع خلال 7 أيام بدون متاعب</h2>
         <p>
-          لديك <strong>14 يومًا</strong> من تاريخ الشراء من المعرض أو التسليم لإرجاع أي قطعة غير ملبوسة لاسترداد المبلغ أو الاستبدال، بشرط أن تكون غير مغسولة وبطاقاتها الأصلية ما زالت مثبّتة.
+          لديك <strong>7 أيام</strong> من تاريخ الشراء من المعرض أو التسليم لإرجاع أي قطعة غير ملبوسة لاسترداد المبلغ أو الاستبدال، بشرط أن تكون غير مغسولة وبطاقاتها الأصلية ما زالت مثبّتة.
         </p>
       </section>
 
@@ -107,7 +107,7 @@ function ArabicBody() {
           <li>مجوهرات الثقب، وملابس السباحة أو الملابس الداخلية إذا أُزيل ختم النظافة.</li>
           <li>القطع المخصَّصة أو المطرَّزة بالأحرف أو المفصَّلة حسب المقاس.</li>
           <li>منتجات التخفيضات أو التصفية الموسومة بـ "بيع نهائي".</li>
-          <li>المنتجات المُرجَعة بعد انتهاء مهلة 14 يومًا.</li>
+          <li>المنتجات المُرجَعة بعد انتهاء مهلة 7 أيام.</li>
           <li>القطع التالفة بسبب الاستعمال أو سوء المعاملة أو الغسل بخلاف تعليمات بطاقة العناية.</li>
         </ul>
       </section>
@@ -124,7 +124,7 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>4. الاستبدال</h2>
         <p>
-          مقاس خاطئ؟ لون خاطئ؟ أعِد المنتج خلال 14 يومًا لاستبداله، وذلك حسب توفر المخزون.
+          مقاس خاطئ؟ لون خاطئ؟ أعِد المنتج خلال 7 أيام لاستبداله، وذلك حسب توفر المخزون.
         </p>
       </section>
 
@@ -162,8 +162,8 @@ export default function ReturnPolicy() {
     <StaticPage
       title="Return Policy"
       titleAr="سياسة الإرجاع"
-      description="Femnia Fashion return policy. 14-day returns on unworn items with tags attached, in-store and online."
-      descriptionAr="سياسة الإرجاع لدى Femnia Fashion. إرجاع خلال 14 يومًا للقطع غير الملبوسة مع بطاقاتها الأصلية، في متجرنا وعبر الإنترنت."
+      description="Femnia Fashion return policy. 7-day returns on unworn items with tags attached, in-store and online."
+      descriptionAr="سياسة الإرجاع لدى Femnia Fashion. إرجاع خلال 7 أيام للقطع غير الملبوسة مع بطاقاتها الأصلية، في متجرنا وعبر الإنترنت."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

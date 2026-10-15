@@ -14,6 +14,15 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
+import WhatsAppButton from '@/components/WhatsAppButton';
+import { openWhatsApp, checkoutOrderMessage } from '@/lib/whatsapp';
+
+// Listed after the store's real payment methods; handled entirely client-side.
+const WHATSAPP_METHOD = {
+  id: 'whatsapp',
+  name: 'Order via WhatsApp',
+  description: 'Send your order to us on WhatsApp — we confirm it with you in the chat',
+};
 
 const toastStyle = {
   style: {
@@ -486,7 +495,9 @@ export default function Checkout() {
     try {
       const method = form.paymentMethod;
 
-      if (method === 'cod' || method === 'bank_transfer') {
+      if (method === 'whatsapp') {
+        handleWhatsAppOrder();
+      } else if (method === 'cod' || method === 'bank_transfer') {
         await handleCODOrder();
       } else if (method === 'razorpay') {
         await handleRazorpayPayment();
@@ -515,7 +526,22 @@ export default function Checkout() {
   const shipping = shippingOptions?.[shippingMethod]?.rate ?? 0;
   // Tax is inclusive in price — not added on top
   const grandTotal = Math.max(0, cartTotal - discountAmount + shipping);
-  const isOnlinePayment = !['cod', 'bank_transfer'].includes(form.paymentMethod);
+  const isOnlinePayment = !['cod', 'bank_transfer', 'whatsapp'].includes(form.paymentMethod);
+
+  // WhatsApp orders create nothing: many are never confirmed in the chat, so
+  // staff enter the sale in the hub once it is. The cart is kept as-is.
+  function handleWhatsAppOrder() {
+    openWhatsApp(checkoutOrderMessage({
+      items: cart,
+      subtotal: cartTotal,
+      discount: discountAmount,
+      couponCode: couponApplied?.code,
+      shipping,
+      total: grandTotal,
+      address: { ...getShippingAddress(), email: isGuest ? form.email : user.email },
+    }));
+    toast.success('Send the message in WhatsApp to confirm your order', toastStyle);
+  }
 
   const Row = ({ label, value, className }) => (
     <div className={cn('flex justify-between text-sm', className)}>
@@ -611,7 +637,7 @@ export default function Checkout() {
               onValueChange={(v) => setForm((f) => ({ ...f, paymentMethod: v }))}
               className="gap-3"
             >
-              {paymentMethods.map((method) => (
+              {[...paymentMethods, WHATSAPP_METHOD].map((method) => (
                 <Label
                   key={method.id}
                   htmlFor={`pm-${method.id}`}
@@ -645,13 +671,19 @@ export default function Checkout() {
               </p>
             )}
 
-            <Button type="submit" size="lg" className="mt-6 w-full" disabled={loading}>
-              {loading
-                ? t('checkout.placingOrder')
-                : isOnlinePayment
-                  ? <>{t('checkout.placeOrder')} — <Money amount={grandTotal} /></>
-                  : t('checkout.placeOrder')}
-            </Button>
+            {form.paymentMethod === 'whatsapp' ? (
+              <WhatsAppButton type="submit" size="lg" className="mt-6 w-full">
+                Send order on WhatsApp — <Money amount={grandTotal} />
+              </WhatsAppButton>
+            ) : (
+              <Button type="submit" size="lg" className="mt-6 w-full" disabled={loading}>
+                {loading
+                  ? t('checkout.placingOrder')
+                  : isOnlinePayment
+                    ? <>{t('checkout.placeOrder')} — <Money amount={grandTotal} /></>
+                    : t('checkout.placeOrder')}
+              </Button>
+            )}
           </section>
         </div>
 

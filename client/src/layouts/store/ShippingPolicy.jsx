@@ -4,7 +4,7 @@ import StaticPage from './StaticPage';
 function EnglishBody() {
   return (
     <>
-      <p className="s2-static-date">Last updated: May 2026</p>
+      <p className="s2-static-date">Last updated: October 2026</p>
 
       <section className="s2-static-section">
         <h2>Where We Deliver</h2>
@@ -40,8 +40,8 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>3. Shipping Charges</h2>
         <ul>
-          <li><strong>Free home delivery</strong> on orders above the minimum order value (shown at checkout).</li>
-          <li>Flat delivery fee for orders below the threshold; exact amount shown at checkout.</li>
+          <li><strong>Free home delivery</strong> on orders of QAR 100 and above.</li>
+          <li>Standard delivery is <strong>QAR 10</strong> for orders below QAR 100.</li>
           <li>Cash on Delivery may carry a small handling fee.</li>
         </ul>
       </section>
@@ -95,7 +95,7 @@ function EnglishBody() {
 function ArabicBody() {
   return (
     <>
-      <p className="s2-static-date">آخر تحديث: مايو 2026</p>
+      <p className="s2-static-date">آخر تحديث: أكتوبر 2026</p>
 
       <section className="s2-static-section">
         <h2>أين نوصِّل</h2>
@@ -131,8 +131,8 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>3. رسوم التوصيل</h2>
         <ul>
-          <li><strong>توصيل مجاني</strong> للطلبات التي تتجاوز الحد الأدنى لقيمة الطلب (يظهر عند الدفع).</li>
-          <li>رسوم توصيل ثابتة للطلبات التي تقلّ عن الحد الأدنى؛ المبلغ المحدّد يظهر عند الدفع.</li>
+          <li><strong>توصيل مجاني</strong> للطلبات بقيمة 100 ريال قطري فأكثر.</li>
+          <li>رسوم التوصيل العادي <strong>10 ريالات قطرية</strong> للطلبات التي تقلّ عن 100 ريال قطري.</li>
           <li>قد تخضع الدفع عند الاستلام لرسوم إضافية بسيطة.</li>
         </ul>
       </section>
@@ -190,8 +190,8 @@ export default function ShippingPolicy() {
     <StaticPage
       title="Shipping Policy"
       titleAr="سياسة الشحن"
-      description="Femnia Fashion delivery across Qatar. Free over a minimum order, fast delivery to most areas."
-      descriptionAr="توصيل Femnia Fashion في جميع أنحاء قطر. توصيل مجاني فوق الحد الأدنى للطلب، وتوصيل سريع لمعظم المناطق."
+      description="Femnia Fashion delivery across Qatar. Free on orders of QAR 100 and above (QAR 10 below), fast delivery to most areas."
+      descriptionAr="توصيل Femnia Fashion في جميع أنحاء قطر. توصيل مجاني للطلبات بقيمة 100 ريال فأكثر (10 ريالات لما دون ذلك)، وتوصيل سريع لمعظم المناطق."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

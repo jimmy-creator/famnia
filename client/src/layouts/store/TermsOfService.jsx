@@ -48,7 +48,7 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>6. Returns &amp; Refunds</h2>
         <p>
-          We offer 14-day returns on unworn items with their original tags attached. Full details in our <a href="/return-policy">Return Policy</a> and <a href="/refund-policy">Refund Policy</a>.
+          We offer 7-day returns on unworn items with their original tags attached. Full details in our <a href="/return-policy">Return Policy</a> and <a href="/refund-policy">Refund Policy</a>.
         </p>
       </section>
 
@@ -147,7 +147,7 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>6. الإرجاع والاسترداد</h2>
         <p>
-          نوفّر إمكانية الإرجاع خلال 14 يومًا للقطع غير الملبوسة مع بطاقاتها الأصلية. التفاصيل الكاملة في <a href="/ar/return-policy">سياسة الإرجاع</a> و<a href="/ar/refund-policy">سياسة استرداد المبالغ</a>.
+          نوفّر إمكانية الإرجاع خلال 7 أيام للقطع غير الملبوسة مع بطاقاتها الأصلية. التفاصيل الكاملة في <a href="/ar/return-policy">سياسة الإرجاع</a> و<a href="/ar/refund-policy">سياسة استرداد المبالغ</a>.
         </p>
       </section>
 

@@ -86,7 +86,7 @@ function EnglishBody() {
           { Icon: Award, title: 'Quality Fabrics', body: 'Linen, silk, cotton and fine knits — chosen for how they wear, drape and last.' },
           { Icon: Truck, title: 'Fast Delivery', body: 'Quick, protected shipping with free delivery above a minimum order value.' },
           { Icon: ShieldCheck, title: 'Secure Checkout', body: 'Multiple payment options with encrypted, secure payment processing.' },
-          { Icon: RefreshCw, title: 'Easy Returns', body: 'Return unworn items with tags attached within 14 days.' },
+          { Icon: RefreshCw, title: 'Easy Returns', body: 'Return unworn items with tags attached within 7 days.' },
           { Icon: Headphones, title: 'Real Support', body: 'Questions on sizing, fit or an order? Reach us and we’ll actually help.' },
         ]} />
       </section>
@@ -140,7 +140,7 @@ function ArabicBody() {
           { Icon: Award, title: 'أقمشة عالية الجودة', body: 'كتان وحرير وقطن وتريكو ناعم — مختارة لملمسها وانسدالها ومتانتها.' },
           { Icon: Truck, title: 'توصيل سريع', body: 'شحن سريع ومحمي مع توصيل مجاني للطلبات فوق الحد الأدنى.' },
           { Icon: ShieldCheck, title: 'دفع آمن', body: 'خيارات دفع متعددة مع معالجة مشفّرة وآمنة للمدفوعات.' },
-          { Icon: RefreshCw, title: 'إرجاع سهل', body: 'أعِدي القطع غير الملبوسة مع بطاقاتها خلال 14 يومًا.' },
+          { Icon: RefreshCw, title: 'إرجاع سهل', body: 'أعِدي القطع غير الملبوسة مع بطاقاتها خلال 7 أيام.' },
           { Icon: Headphones, title: 'دعم حقيقي', body: 'لديك سؤال عن المقاس أو الطلب؟ تواصلي معنا وسنساعدك فعلًا.' },
         ]} />
       </section>

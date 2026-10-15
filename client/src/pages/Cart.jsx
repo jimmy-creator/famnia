@@ -9,6 +9,8 @@ import { localizedName } from '../utils/i18nHelpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import WhatsAppButton from '@/components/WhatsAppButton';
+import { openWhatsApp, cartOrderMessage } from '@/lib/whatsapp';
 
 export default function Cart() {
   const { t } = useTranslation();
@@ -103,6 +105,10 @@ export default function Cart() {
               <Button asChild size="lg" className="mt-2 w-full">
                 <Link to="/checkout">{t('cart.proceedToCheckout')}</Link>
               </Button>
+              {/* A chat, not an order — staff enter the sale once it's confirmed. */}
+              <WhatsAppButton size="lg" className="w-full" onClick={() => openWhatsApp(cartOrderMessage(cart, cartTotal))}>
+                Order on WhatsApp
+              </WhatsAppButton>
             </CardContent>
           </Card>
         </div>

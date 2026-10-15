@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { Setting, Counter } from '../models/index.js';
 import { protect, admin, requirePermission } from '../middleware/auth.js';
+import { isExpressEnabled } from '../utils/shipping.js';
 
 const router = Router();
 
@@ -178,6 +179,22 @@ router.put('/hero-seal', protect, admin, async (req, res) => {
     };
     await Setting.upsert({ key: 'hero-seal', value: JSON.stringify(seal) });
     res.json(seal);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Express delivery toggle — off by default; checkout offers only standard
+// delivery until an admin enables it. Shape: { enabled: boolean }
+router.get('/shipping-express', protect, admin, async (req, res) => {
+  res.json({ enabled: await isExpressEnabled() });
+});
+
+router.put('/shipping-express', protect, admin, async (req, res) => {
+  try {
+    const value = { enabled: req.body.enabled === true };
+    await Setting.upsert({ key: 'shipping-express', value: JSON.stringify(value) });
+    res.json(value);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
