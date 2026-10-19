@@ -1,3 +1,5 @@
+import { imageOf } from '@/lib/productImages';
+
 const categoryIcons = {
   Electronics: (
     <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -99,7 +101,8 @@ export default function ProductImage({ product, size = 'normal', fit = 'cover' }
   const s = sizeStyles[size];
 
   // Check if product has a real image
-  const imageUrl = product.images?.length > 0 && product.images[0] ? product.images[0] : null;
+  // Cart lines carry `selectedVariant`, so they show the chosen colour's image.
+  const imageUrl = imageOf(product, product.selectedVariant);
   const hasImage = imageUrl && !imgError;
 
   if (hasImage) {

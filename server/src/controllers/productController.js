@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import { Product, syncProductStockFromForm } from '../models/index.js';
-import { priceFromMargin, PUBLIC_PRODUCT_ATTRIBUTES } from '../utils/pricing.js';
+import { priceFromMargin, PUBLIC_PRODUCT_ATTRIBUTES, publicProduct } from '../utils/pricing.js';
 
 // Storefront visibility: active AND not flagged POS-only. Applied to every
 // public-facing product query so a `hideOnline` product never leaks out.
@@ -70,7 +70,7 @@ export const getProducts = async (req, res) => {
     });
 
     res.json({
-      products: rows,
+      products: rows.map(publicProduct),
       totalPages: Math.ceil(count / limit),
       currentPage: parseInt(page),
       total: count,
@@ -91,7 +91,7 @@ export const getProduct = async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    res.json(product);
+    res.json(publicProduct(product));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

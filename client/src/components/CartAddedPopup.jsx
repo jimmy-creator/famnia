@@ -4,6 +4,7 @@ import { CheckCircle, X, ShoppingBag } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { CURRENCY, formatPrice } from '../utils/currency';
 import { Button } from '@/components/ui/button';
+import { imageOf } from '@/lib/productImages';
 
 export default function CartAddedPopup() {
   const { lastAdded, dismissLastAdded, cartCount } = useCart();
@@ -17,7 +18,7 @@ export default function CartAddedPopup() {
   if (!lastAdded) return null;
 
   const { product, quantity, selectedVariant } = lastAdded;
-  const img = product.images?.[0];
+  const img = imageOf(product, selectedVariant);
   const variantText = selectedVariant
     ? Object.entries(selectedVariant).map(([k, v]) => `${k}: ${v}`).join(' · ')
     : null;

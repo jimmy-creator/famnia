@@ -15,6 +15,7 @@ import api from '../../api/axios';
 import { showToast } from '../../utils/toast';
 import { CURRENCY, CurrencySymbol, formatPrice } from '../../utils/currency';
 import { localizedName, localizedDescription } from '../../utils/i18nHelpers';
+import { galleryOf, variantFor, optionImage } from '../../lib/productImages';
 import ProductCard from './ProductCard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -59,6 +60,11 @@ export default function ProductDetail() {
   const [linkCopied, setLinkCopied] = useState(false);
   const { t } = useTranslation();
 
+  // Picking a colour/design with its own image turns the gallery to that image.
+  const showVariantImage = (p, options) => {
+    setActiveImage(Math.max(0, galleryOf(p).indexOf(variantFor(p, options)?.image)));
+  };
+
   useEffect(() => {
     setLoading(true);
     setActiveImage(0);
@@ -72,6 +78,7 @@ export default function ProductDetail() {
             defaults[type] = values[0];
           });
           setSelectedOptions(defaults);
+          showVariantImage(res.data, defaults);
         }
       })
       .catch(console.error)
@@ -114,6 +121,9 @@ export default function ProductDetail() {
   const activeVariant = hasVariants
     ? product.variants.find((v) => !v.archived && Object.entries(selectedOptions).every(([k, val]) => v.options[k] === val))
     : null;
+  // A colour without its own photo must not show another colour's photo:
+  // fall back to the product's own gallery, or the placeholder.
+  const gallery = activeVariant && !activeVariant.image ? (product.images || []).filter(Boolean) : galleryOf(product);
 
   // A size the staff hub has deactivated or archived is not for sale online.
   const variantSellable = (v) => v && v.active !== false && !v.archived;
@@ -168,7 +178,7 @@ export default function ProductDetail() {
       <SEO
         title={product.name}
         description={product.description?.slice(0, 160) || `${product.name} at ${CURRENCY}${formatPrice(displayPrice)}`}
-        image={product.images?.[0] ? `${window.location.origin}${product.images[0]}` : undefined}
+        image={galleryOf(product)[0] ? `${window.location.origin}${galleryOf(product)[0]}` : undefined}
         type="product"
         product={{ ...product, price: displayPrice, stock: displayStock }}
         breadcrumbs={[
@@ -185,7 +195,7 @@ export default function ProductDetail() {
 
       <div className="grid gap-10 lg:grid-cols-2">
         <Gallery
-          images={product.images}
+          images={gallery}
           product={product}
           activeImage={activeImage}
           setActiveImage={setActiveImage}
@@ -236,25 +246,37 @@ export default function ProductDetail() {
                       {values.map((val) => {
                         const available = isOptionAvailable(type, val);
                         const active = selectedOptions[type] === val;
+                        // Colours are names like "Black Floral": show the variant's photo when it has one,
+                        // a dot only for a real CSS colour, otherwise the name itself.
+                        const thumb = isColor ? optionImage(product, type, val, selectedOptions) : null;
+                        const swatch = isColor && !thumb && typeof CSS !== 'undefined' && CSS.supports('color', val);
                         return (
                           <button
                             key={val}
                             type="button"
                             disabled={!available}
                             title={val}
+                            aria-label={val}
                             onClick={() => {
                               if (available) {
-                                setSelectedOptions({ ...selectedOptions, [type]: val });
+                                const next = { ...selectedOptions, [type]: val };
+                                setSelectedOptions(next);
                                 setQuantity(1);
+                                showVariantImage(product, next);
                               }
                             }}
                             className={cn(
-                              'flex min-w-10 items-center justify-center rounded-md border px-3 py-2 text-sm transition-colors',
+                              'flex min-w-10 items-center justify-center rounded-md border text-sm transition-colors',
+                              thumb ? 'size-14 overflow-hidden p-0.5' : 'px-3 py-2',
                               active ? 'border-primary bg-primary/10 font-medium text-primary' : 'border-input hover:bg-accent',
-                              !available && 'cursor-not-allowed opacity-40 line-through',
+                              active && thumb && 'ring-2 ring-primary',
+                              !available && 'cursor-not-allowed opacity-40',
+                              !available && !thumb && 'line-through',
                             )}
                           >
-                            {isColor ? (
+                            {thumb ? (
+                              <img src={thumb} alt={val} loading="lazy" className="size-full rounded object-cover" />
+                            ) : swatch ? (
                               <span className="size-5 rounded-full border" style={{ backgroundColor: val }} />
                             ) : val}
                           </button>
@@ -403,7 +425,7 @@ function Gallery({ images, product, activeImage, setActiveImage, discount, inWis
               </div>
             ))
           ) : (
-            <div className="size-full shrink-0"><ProductImage product={product} size="large" /></div>
+            <div className="size-full shrink-0"><ProductImage product={{ ...product, images: [], variants: [] }} size="large" /></div>
           )}
         </div>
 

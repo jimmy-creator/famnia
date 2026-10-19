@@ -6,6 +6,7 @@ import { useWishlist } from '../../context/WishlistContext';
 import { CurrencySymbol, formatPrice } from '../../utils/currency';
 import { localizedName } from '../../utils/i18nHelpers';
 import { cn } from '@/lib/utils';
+import { imageOf } from '@/lib/productImages';
 
 // Below this, the card shows a scarcity badge instead of the discount one —
 // "two left" is the more urgent message when both are true.
@@ -25,7 +26,7 @@ export default function ProductCard({ product, eager = false }) {
   const { toggleWishlist, isInWishlist } = useWishlist();
 
   const displayName = localizedName(product);
-  const imgFull = product.images?.[0];
+  const imgFull = imageOf(product);
   const img = imgFull?.replace(/\/uploads\/(.+?)\.webp$/, '/api/upload/thumb/$1.webp') || imgFull;
 
   const hasDiscount = product.comparePrice && product.comparePrice > product.price;

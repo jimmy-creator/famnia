@@ -87,7 +87,7 @@ router.get('/:slug/related', async (req, res) => {
     });
     if (!product) return res.json([]);
 
-    const { PUBLIC_PRODUCT_ATTRIBUTES } = await import('../utils/pricing.js');
+    const { PUBLIC_PRODUCT_ATTRIBUTES, publicProduct } = await import('../utils/pricing.js');
     const related = await Product.findAll({
       attributes: PUBLIC_PRODUCT_ATTRIBUTES,
       where: {
@@ -103,7 +103,7 @@ router.get('/:slug/related', async (req, res) => {
       order: [['ratings', 'DESC'], ['featured', 'DESC']],
     });
 
-    res.json(related);
+    res.json(related.map(publicProduct));
   } catch (error) {
     res.status(500).json([]);
   }
