@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { Product, Category } from '../models/index.js';
+import { STOREFRONT_WHERE } from '../utils/pricing.js';
 
 const router = Router();
 
@@ -9,7 +10,7 @@ router.get('/sitemap.xml', async (req, res) => {
     const I18N_ON = process.env.FEATURE_I18N === 'true';   // stores that mirror /ar/*
 
     const products = await Product.findAll({
-      where: { active: true, hideOnline: false },
+      where: STOREFRONT_WHERE,
       attributes: ['slug', 'updatedAt'],
       order: [['updatedAt', 'DESC']],
     });

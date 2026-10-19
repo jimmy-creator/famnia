@@ -11,7 +11,7 @@ function itemSummary(order, productCodes = {}) {
   for (const i of order.items) {
     const name = (i.name ?? '').trim() || i.sku;
     const key = name.toLowerCase();
-    const code = productCodes[i.sku];
+    const code = i.productCode || productCodes[i.sku];
     const entry = grouped.get(key);
     if (entry) {
       entry.quantity += i.quantity;

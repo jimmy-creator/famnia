@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Trash2, Minus, Plus, ShoppingCart } from 'lucide-react';
@@ -11,10 +12,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import WhatsAppButton from '@/components/WhatsAppButton';
 import { openWhatsApp, cartOrderMessage } from '@/lib/whatsapp';
+import { productCodeOf } from '@/lib/productCode';
+import FreeDeliveryNudge from '@/components/FreeDeliveryNudge';
 
 export default function Cart() {
   const { t } = useTranslation();
-  const { cart, removeFromCart, updateQuantity, cartTotal } = useCart();
+  const { cart, removeFromCart, updateQuantity, cartTotal, refreshCart } = useCart();
+
+  // Sold-out items leave the cart before the shopper heads to checkout.
+  useEffect(() => { refreshCart(); }, [refreshCart]);
 
   if (cart.length === 0) {
     return (
@@ -35,6 +41,8 @@ export default function Cart() {
     <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
       <h1 className="mb-6 font-serif text-3xl font-semibold tracking-tight">{t('cart.title')}</h1>
 
+      <FreeDeliveryNudge subtotal={cartTotal} excludeIds={cart.map((i) => i.id)} className="mb-6" />
+
       <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
         {/* Items */}
         <div className="flex min-w-0 flex-col divide-y divide-border rounded-lg border border-border">
@@ -54,6 +62,9 @@ export default function Cart() {
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {Object.entries(item.selectedVariant).map(([k, v]) => `${k}: ${v}`).join(' / ')}
                       </p>
+                    )}
+                    {productCodeOf(item, item.selectedVariant) && (
+                      <p className="text-xs text-muted-foreground">Product code: {productCodeOf(item, item.selectedVariant)}</p>
                     )}
                     <p className="mt-1 text-sm text-muted-foreground"><CurrencySymbol />{formatPrice(item.price)}</p>
                   </div>

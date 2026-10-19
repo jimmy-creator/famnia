@@ -36,9 +36,9 @@ export default function ShippingInfo() {
 
       <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[
-          { Icon: Truck, title: 'Standard Shipping', price: `${CURRENCY}49`, body: 'Delivered in 2-3 business days. Available for all orders across Qatar.' },
+          { Icon: Truck, title: 'Standard Shipping', price: `${CURRENCY}10`, body: 'Delivered in 1-2 business days. Available for all orders across Qatar.' },
           { Icon: Zap, title: 'Express Shipping', price: `${CURRENCY}99`, body: 'Delivered in 1-2 business days. Get your order faster when you need it.' },
-          { Icon: Package, title: 'Free Shipping', price: `${CURRENCY}0`, body: `Free standard shipping on all orders above ${CURRENCY}500. No code needed!`, highlight: true },
+          { Icon: Package, title: 'Free Shipping', price: `${CURRENCY}0`, body: `Free delivery on all orders of ${CURRENCY}100 and above. No code needed!`, highlight: true },
         ].map(({ Icon, title, price, body, highlight }) => (
           <div key={title} className={cn('rounded-lg border p-5', highlight ? 'border-primary bg-primary/5' : 'border-border bg-card')}>
             <Icon className="size-6 text-primary" />
@@ -54,7 +54,7 @@ export default function ShippingInfo() {
         <div className="mt-4 grid gap-6 sm:grid-cols-2">
           <div>
             <h4 className="flex items-center gap-2 font-medium"><MapPin className="size-4 text-primary" /> Domestic Shipping</h4>
-            <p className="mt-2 text-sm text-muted-foreground">We deliver across all of Qatar. Doha and nearby areas receive deliveries within 1-2 business days, while outlying areas may take 2-3 business days.</p>
+            <p className="mt-2 text-sm text-muted-foreground">We deliver across all of Qatar. Every area of Qatar receives deliveries within 1-2 business days.</p>
           </div>
           <div>
             <h4 className="flex items-center gap-2 font-medium"><Clock className="size-4 text-primary" /> Processing Time</h4>

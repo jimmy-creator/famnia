@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { SalesOrderDetails } from '@/hub/components/SalesOrderDetails';
+import { CustomerWhatsApp } from '@/hub/components/CustomerWhatsApp';
 import { ErrorState, LoadingRows, PageHeader, StatusBadge } from '@/hub/components/shared';
 import { Button } from '@/hub/ui/button';
 import { Input } from '@/hub/ui/input';
@@ -43,7 +44,8 @@ export default function SalesOrdersPage() {
       if (status !== 'All' && o.status !== status) return false;
       if (fulfilment !== 'All' && o.fulfilmentMethod !== fulfilment) return false;
       if (!q) return true;
-      return [o.id, o.customerName, o.customerCode, o.phone, o.email, o.area, o.trackingNumber, o.courier, o.channel, o.couponCode, o.paymentGateway]
+      return [o.id, o.customerName, o.customerCode, o.phone, o.altPhone, o.email, o.area, o.trackingNumber, o.courier, o.channel, o.couponCode, o.paymentGateway,
+        ...(o.items ?? []).map((i) => i.productCode)]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
@@ -94,6 +96,7 @@ export default function SalesOrdersPage() {
                       Date: new Date(o.orderDate).toLocaleString('en-GB'),
                       Customer: o.customerName,
                       Phone: o.phone,
+                      'Product codes': (o.items ?? []).map((i) => i.productCode).filter(Boolean).join(', '),
                       Fulfilment: o.fulfilmentMethod,
                       Status: o.status,
                       Payment: o.paymentMode,
@@ -125,7 +128,7 @@ export default function SalesOrdersPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Order, customer, phone, area"
+            placeholder="Order, customer, phone, area, product code"
             className="h-11 pl-9"
             aria-label="Search sales orders"
           />
@@ -160,7 +163,8 @@ export default function SalesOrdersPage() {
       {/* mobile cards */}
       <div className="space-y-3 lg:hidden">
         {rows.map((o) => (
-          <button key={o.id} type="button" onClick={() => open(o.id)} className="card-surface w-full p-4 text-left">
+          <div key={o.id} className="card-surface p-4">
+          <button type="button" onClick={() => open(o.id)} className="w-full text-left">
             <div className="flex items-center justify-between gap-2">
               <p className="flex items-center gap-2 font-medium">
                 {o.id} <ChannelTag channel={o.channel} />
@@ -176,6 +180,8 @@ export default function SalesOrdersPage() {
               <span className="text-xs text-muted-foreground">Balance {money(o.remainingBalance)}</span>
             </div>
           </button>
+          {!o.tillSale && <CustomerWhatsApp order={o} compact className="mt-3" />}
+          </div>
         ))}
       </div>
 
@@ -203,8 +209,13 @@ export default function SalesOrdersPage() {
                 </td>
                 <td className="p-3">{new Date(o.orderDate).toLocaleDateString('en-GB')}</td>
                 <td className="p-3">
-                  <p>{o.customerName}</p>
-                  <p className="text-xs text-muted-foreground">{o.phone}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p>{o.customerName}</p>
+                      <p className="text-xs text-muted-foreground">{o.phone}</p>
+                    </div>
+                    {!o.tillSale && <CustomerWhatsApp order={o} compact className="shrink-0 flex-nowrap" />}
+                  </div>
                 </td>
                 <td className="p-3">{o.fulfilmentMethod}</td>
                 <td className="p-3">

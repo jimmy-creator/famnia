@@ -1,3 +1,4 @@
+import { Op } from 'sequelize';
 import { dp } from './money.js';
 
 // Selling price from landed cost + margin %: cost 10 at 25% → 12.50.
@@ -22,16 +23,33 @@ export const PUBLIC_PRODUCT_ATTRIBUTES = {
     'notes', 'batchNumber', 'sourceCountry', 'wholesaler', 'importBatchId'],
 };
 
-// Hub SKU data (cost, supplier, batch…) lives on each variant, so variants are allowlisted.
-const PUBLIC_VARIANT_KEYS = ['sku', 'price', 'comparePrice', 'stock', 'active', 'archived', 'options', 'image'];
+// Storefront visibility: active, not POS-only, and something left to sell —
+// a sold-out product is hidden from shoppers rather than shown as "Out of stock".
+export const STOREFRONT_WHERE = { active: true, hideOnline: false, stock: { [Op.gt]: 0 } };
 
-/** A product row as the storefront API returns it. */
+// Hub SKU data (cost, supplier, batch…) lives on each variant, so variants are
+// allowlisted. `barcode` is the product code printed on the tag.
+const PUBLIC_VARIANT_KEYS = ['sku', 'barcode', 'price', 'comparePrice', 'stock', 'active', 'archived', 'options', 'image', 'video'];
+
+const sellableVariant = (v) => v && typeof v === 'object' && v.active !== false && !v.archived && (parseInt(v.stock, 10) || 0) > 0;
+
+/**
+ * A product row as the storefront API returns it: only the variants a shopper
+ * can buy (sold-out, inactive and archived ones are left out, and their option
+ * values with them), or null when nothing is left to sell.
+ */
 export function publicProduct(product) {
   const json = product.toJSON();
-  if (Array.isArray(json.variants)) {
-    json.variants = json.variants.map((v) => (v && typeof v === 'object'
-      ? Object.fromEntries(PUBLIC_VARIANT_KEYS.filter((k) => k in v).map((k) => [k, v[k]]))
-      : v));
+  if ((parseInt(json.stock, 10) || 0) <= 0) return null;
+  if (Array.isArray(json.variants) && json.variants.length) {
+    json.variants = json.variants.filter(sellableVariant)
+      .map((v) => Object.fromEntries(PUBLIC_VARIANT_KEYS.filter((k) => k in v).map((k) => [k, v[k]])));
+    if (!json.variants.length) return null;
+    if (json.variantOptions && typeof json.variantOptions === 'object') {
+      json.variantOptions = Object.fromEntries(Object.entries(json.variantOptions).map(([type, values]) => [
+        type, (Array.isArray(values) ? values : []).filter((val) => json.variants.some((v) => v.options?.[type] === val)),
+      ]));
+    }
   }
   return json;
 }

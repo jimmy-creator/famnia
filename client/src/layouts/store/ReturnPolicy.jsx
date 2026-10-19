@@ -1,157 +1,185 @@
 import { useTranslation } from 'react-i18next';
 import StaticPage from './StaticPage';
 
-function EnglishBody() {
+const WHATSAPP_URL = 'https://wa.me/97466543343';
+
+export function EnglishBody() {
   return (
     <>
       <p className="s2-static-date">Last updated: October 2026</p>
 
       <section className="s2-static-section">
-        <h2>7-Day Returns, No Hassle</h2>
         <p>
-          You have <strong>7 days</strong> from the date of delivery to return any unworn item for a refund or exchange. The item must be unworn, unwashed and still have its original tags attached.
+          At FEMNIA, customer satisfaction is our priority. Please read our Return &amp; Exchange Policy carefully before placing your order.
         </p>
       </section>
 
       <section className="s2-static-section">
-        <h2>1. What We Accept</h2>
+        <h2>1. Exchange Policy</h2>
         <ul>
-          <li>Unworn, unwashed garments with all original tags still attached.</li>
-          <li>Items free of make-up marks, deodorant, perfume or other scents.</li>
-          <li>Co-ord sets returned complete — both pieces together.</li>
-          <li>Accessories, bags and shoes returned unused, with any dust bag or box they came in.</li>
+          <li><strong>7-Day Exchange:</strong> Customers can request an exchange within 7 days of receiving their order.</li>
+          <li><strong>Size Issues:</strong> Exchanges are available for size-related issues, subject to product availability.</li>
+          <li><strong>Pickup Charges:</strong> Additional pickup charges may apply if FEMNIA arranges to collect the product for an exchange.</li>
+          <li><strong>No Refunds for Size Issues:</strong> Refunds are not available for size-related issues or change-of-mind requests.</li>
         </ul>
       </section>
 
       <section className="s2-static-section">
-        <h2>2. What We Don't Accept</h2>
+        <h2>2. Product Condition for Exchanges</h2>
+        <p>To be eligible for an exchange, the product must meet the following conditions:</p>
         <ul>
-          <li>Items worn, washed, altered or with the tags removed.</li>
-          <li>Pierced jewellery, and swimwear or intimates with the hygiene seal removed.</li>
-          <li>Personalised, monogrammed or made-to-measure pieces.</li>
-          <li>Sale or clearance items marked "Final Sale".</li>
-          <li>Items past the 7-day window.</li>
-          <li>Items damaged through wear, mishandling, or washing not per the care label.</li>
+          <li>The product must be unused and unwashed.</li>
+          <li>All original product tags and barcodes must remain attached and intact.</li>
+          <li>Products with removed, detached, or damaged tags or barcodes are not eligible for exchange.</li>
+          <li>The product must be returned in its original condition, without damage caused by use, washing, or handling.</li>
         </ul>
       </section>
 
       <section className="s2-static-section">
-        <h2>3. How to Return</h2>
+        <h2>3. Damaged or Incorrect Products</h2>
+        <p>
+          If you receive a damaged, defective, or incorrect product, please contact us through <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">WhatsApp</a> as soon as possible.
+        </p>
+        <ul>
+          <li><strong>Proof Required:</strong> You must send clear photos or videos showing the damage, defect, or incorrect product.</li>
+          <li><strong>Tags and Barcodes:</strong> Original tags and barcodes must not be removed or tampered with. If the product arrives with damage or defects, please keep all tags and packaging intact until our team reviews your complaint.</li>
+          <li><strong>Verification:</strong> Our team will review the evidence before approving a refund or exchange.</li>
+          <li><strong>Resolution Time:</strong> Once the issue and supporting evidence are verified, FEMNIA will arrange an eligible refund or exchange within 3–4 days.</li>
+        </ul>
+        <p>Please do not wash, use, or remove the tags from a product you believe is damaged or incorrect before contacting us.</p>
+      </section>
+
+      <section className="s2-static-section">
+        <h2>4. Refund Policy</h2>
+        <p>FEMNIA does not offer refunds for general returns, size issues, or change-of-mind requests.</p>
+        <p>Refunds will only be considered for verified cases involving damaged, defective, or incorrect products, subject to our review and approval.</p>
+      </section>
+
+      <section className="s2-static-section">
+        <h2>5. How to Request an Exchange or Refund</h2>
+        <p>To request an exchange or report a damaged or incorrect product:</p>
         <ol>
-          <li><strong>In-store</strong>: walk in to our store with the item and your receipt or order number. Refund or exchange on the spot.</li>
-          <li><strong>By courier</strong>: contact us by email or WhatsApp with your order number. We'll share return instructions. For change-of-mind returns the customer covers return shipping; for damaged or wrong items we cover it.</li>
-          <li><strong>Inspection</strong>: items are inspected before the refund is processed. If something fails the check (e.g. clear wear) we'll be in touch to discuss next steps.</li>
+          <li>Contact us through our official <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">WhatsApp support</a>.</li>
+          <li>Provide your order number and purchase details.</li>
+          <li>Send clear photos or videos of the product as proof, where applicable.</li>
+          <li>Keep the product unused and unwashed, with all original tags and barcodes intact.</li>
+          <li>Wait for our team to review your request and provide further instructions.</li>
         </ol>
       </section>
 
       <section className="s2-static-section">
-        <h2>4. Exchanges</h2>
-        <p>
-          Wrong size? Wrong colour? Bring it back within 7 days for an exchange, subject to stock availability.
-        </p>
+        <h2>6. Important Conditions</h2>
+        <ul>
+          <li>Exchange requests must be made within 7 days of receiving the order.</li>
+          <li>Exchanges are subject to product availability.</li>
+          <li>Pickup charges may apply to exchanges.</li>
+          <li>Products that have been used, washed, or returned without their original tags and barcodes may not qualify for an exchange.</li>
+          <li>Damaged or incorrect products must be reported promptly, with clear supporting evidence.</li>
+          <li>Refunds and exchanges for damaged, defective, or incorrect products are subject to verification and approval.</li>
+        </ul>
       </section>
 
       <section className="s2-static-section">
-        <h2>5. Damaged or Defective on Arrival</h2>
+        <h2>7. Contact Us</h2>
         <p>
-          Report within <strong>7 days of receipt</strong> with photos. We arrange free pickup and offer a replacement, repair (where the manufacturer's warranty applies), or refund.
+          For exchange requests, refund inquiries, or product-related concerns, please contact FEMNIA through our official WhatsApp support.
         </p>
-      </section>
-
-      <section className="s2-static-section">
-        <h2>6. Refund Timeline & Method</h2>
         <p>
-          Refunds processed within <strong>5–10 business days</strong> of receiving the return, credited to the original payment method. See our <a href="/refund-policy">Refund Policy</a> for the full breakdown.
+          📞 / WhatsApp: <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">+974 6654 3343</a>
         </p>
-      </section>
-
-      <section className="s2-static-section">
-        <h2>7. Contact</h2>
-        <p>
-          <strong>Femnia Fashion</strong><br />
-          📍 5C6J+JMG, Ar-Rayyan, Qatar<br />
-          📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
-          📞 / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a><br />
-          📷 Instagram: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a>
-        </p>
+        <p><strong>FEMNIA – Elegant | Comfort | Affordable</strong></p>
+        <p>Thank you for shopping with FEMNIA!</p>
       </section>
     </>
   );
 }
 
-function ArabicBody() {
+export function ArabicBody() {
   return (
     <>
       <p className="s2-static-date">آخر تحديث: أكتوبر 2026</p>
 
       <section className="s2-static-section">
-        <h2>إرجاع خلال 7 أيام بدون متاعب</h2>
         <p>
-          لديك <strong>7 أيام</strong> من تاريخ الشراء من المعرض أو التسليم لإرجاع أي قطعة غير ملبوسة لاسترداد المبلغ أو الاستبدال، بشرط أن تكون غير مغسولة وبطاقاتها الأصلية ما زالت مثبّتة.
+          في FEMNIA، رضا عملائنا هو أولويتنا. يُرجى قراءة سياسة الإرجاع والاستبدال بعناية قبل تقديم طلبك.
         </p>
       </section>
 
       <section className="s2-static-section">
-        <h2>1. ما نقبله</h2>
+        <h2>1. سياسة الاستبدال</h2>
         <ul>
-          <li>القطع غير الملبوسة وغير المغسولة مع جميع بطاقاتها الأصلية.</li>
-          <li>القطع الخالية من آثار المكياج أو مزيل العرق أو العطر أو أي روائح.</li>
-          <li>الأطقم المتناسقة عند إرجاعها كاملة — بقطعتيها معًا.</li>
-          <li>الإكسسوارات والحقائب والأحذية غير المستعمَلة، مع كيس الحفظ أو العلبة المرفقة.</li>
+          <li><strong>استبدال خلال 7 أيام:</strong> يمكن للعملاء طلب الاستبدال خلال 7 أيام من استلام الطلب.</li>
+          <li><strong>مشاكل المقاس:</strong> الاستبدال متاح لمشاكل المقاس، وذلك حسب توفر المنتج.</li>
+          <li><strong>رسوم الاستلام:</strong> قد تُطبَّق رسوم استلام إضافية إذا رتّبت FEMNIA استلام المنتج لاستبداله.</li>
+          <li><strong>لا استرداد لمشاكل المقاس:</strong> لا يتوفر استرداد المبلغ لمشاكل المقاس أو لتغيير الرأي.</li>
         </ul>
       </section>
 
       <section className="s2-static-section">
-        <h2>2. ما لا نقبله</h2>
+        <h2>2. حالة المنتج للاستبدال</h2>
+        <p>ليكون المنتج مؤهلًا للاستبدال، يجب أن يستوفي الشروط التالية:</p>
         <ul>
-          <li>القطع الملبوسة أو المغسولة أو المعدَّلة أو التي أُزيلت بطاقاتها.</li>
-          <li>مجوهرات الثقب، وملابس السباحة أو الملابس الداخلية إذا أُزيل ختم النظافة.</li>
-          <li>القطع المخصَّصة أو المطرَّزة بالأحرف أو المفصَّلة حسب المقاس.</li>
-          <li>منتجات التخفيضات أو التصفية الموسومة بـ "بيع نهائي".</li>
-          <li>المنتجات المُرجَعة بعد انتهاء مهلة 7 أيام.</li>
-          <li>القطع التالفة بسبب الاستعمال أو سوء المعاملة أو الغسل بخلاف تعليمات بطاقة العناية.</li>
+          <li>أن يكون المنتج غير مستعمل وغير مغسول.</li>
+          <li>أن تبقى جميع البطاقات والباركودات الأصلية مثبّتة وسليمة.</li>
+          <li>المنتجات التي أُزيلت أو فُصلت أو تلفت بطاقاتها أو باركوداتها غير مؤهلة للاستبدال.</li>
+          <li>يجب إرجاع المنتج بحالته الأصلية، دون أضرار ناتجة عن الاستعمال أو الغسل أو التعامل.</li>
         </ul>
       </section>
 
       <section className="s2-static-section">
-        <h2>3. كيف تتمّ عملية الإرجاع</h2>
+        <h2>3. المنتجات التالفة أو الخاطئة</h2>
+        <p>
+          إذا استلمت منتجًا تالفًا أو معيبًا أو خاطئًا، يُرجى التواصل معنا عبر <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">واتساب</a> في أقرب وقت ممكن.
+        </p>
+        <ul>
+          <li><strong>الإثبات مطلوب:</strong> يجب إرسال صور أو مقاطع فيديو واضحة تُظهر التلف أو العيب أو المنتج الخاطئ.</li>
+          <li><strong>البطاقات والباركودات:</strong> يجب عدم إزالة البطاقات والباركودات الأصلية أو العبث بها. إذا وصل المنتج تالفًا أو معيبًا، يُرجى الإبقاء على جميع البطاقات والتغليف سليمة حتى يراجع فريقنا شكواك.</li>
+          <li><strong>التحقق:</strong> سيراجع فريقنا الإثباتات قبل الموافقة على الاسترداد أو الاستبدال.</li>
+          <li><strong>مدة الحل:</strong> بعد التحقق من المشكلة والإثباتات، ستُرتّب FEMNIA الاسترداد أو الاستبدال المستحق خلال 3–4 أيام.</li>
+        </ul>
+        <p>يُرجى عدم غسل المنتج الذي تعتقد أنه تالف أو خاطئ أو استعماله أو إزالة بطاقاته قبل التواصل معنا.</p>
+      </section>
+
+      <section className="s2-static-section">
+        <h2>4. سياسة استرداد المبالغ</h2>
+        <p>لا تقدّم FEMNIA استرداد المبالغ للإرجاع العام أو لمشاكل المقاس أو لتغيير الرأي.</p>
+        <p>يُنظر في استرداد المبالغ فقط في الحالات المُتحقَّق منها للمنتجات التالفة أو المعيبة أو الخاطئة، وذلك بعد مراجعتنا وموافقتنا.</p>
+      </section>
+
+      <section className="s2-static-section">
+        <h2>5. كيفية طلب الاستبدال أو الاسترداد</h2>
+        <p>لطلب الاستبدال أو الإبلاغ عن منتج تالف أو خاطئ:</p>
         <ol>
-          <li><strong>من المعرض</strong>: توجَّه إلى معرضنا مع المنتج وفاتورتك أو رقم طلبك. يتمّ استرداد المبلغ أو الاستبدال فورًا.</li>
-          <li><strong>عن طريق الشحن</strong>: تواصل معنا بالبريد الإلكتروني أو واتساب مع رقم طلبك، وسنرسل لك تعليمات الإرجاع. في حالة الإرجاع بسبب تغيير الرأي يتحمّل العميل تكلفة الشحن العائد؛ أما في حالة المنتجات التالفة أو الخاطئة فنحن نتحمّلها.</li>
-          <li><strong>الفحص</strong>: يتمّ فحص المنتجات قبل صرف الاسترداد. في حال لم يجتَز المنتج الفحص (مثلًا علامات استعمال واضحة)، سنتواصل معك لمناقشة الخيارات.</li>
+          <li>تواصل معنا عبر <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">دعم واتساب الرسمي</a>.</li>
+          <li>أرسل رقم طلبك وتفاصيل الشراء.</li>
+          <li>أرسل صورًا أو مقاطع فيديو واضحة للمنتج كإثبات، عند الحاجة.</li>
+          <li>أبقِ المنتج غير مستعمل وغير مغسول، مع جميع البطاقات والباركودات الأصلية سليمة.</li>
+          <li>انتظر مراجعة فريقنا لطلبك وتزويدك بالتعليمات التالية.</li>
         </ol>
       </section>
 
       <section className="s2-static-section">
-        <h2>4. الاستبدال</h2>
-        <p>
-          مقاس خاطئ؟ لون خاطئ؟ أعِد المنتج خلال 7 أيام لاستبداله، وذلك حسب توفر المخزون.
-        </p>
+        <h2>6. شروط مهمة</h2>
+        <ul>
+          <li>يجب تقديم طلبات الاستبدال خلال 7 أيام من استلام الطلب.</li>
+          <li>الاستبدال يخضع لتوفر المنتج.</li>
+          <li>قد تُطبَّق رسوم استلام على الاستبدال.</li>
+          <li>المنتجات المستعملة أو المغسولة أو المُعادة دون بطاقاتها وباركوداتها الأصلية قد لا تكون مؤهلة للاستبدال.</li>
+          <li>يجب الإبلاغ عن المنتجات التالفة أو الخاطئة فورًا مع إثباتات واضحة.</li>
+          <li>الاسترداد والاستبدال للمنتجات التالفة أو المعيبة أو الخاطئة يخضعان للتحقق والموافقة.</li>
+        </ul>
       </section>
 
       <section className="s2-static-section">
-        <h2>5. التالف أو المعيب عند الاستلام</h2>
+        <h2>7. تواصل معنا</h2>
         <p>
-          أبلِغنا خلال <strong>7 أيام من الاستلام</strong> مع الصور. سنرتّب استلامًا مجانيًا ونقدّم استبدالًا أو إصلاحًا (متى انطبق ضمان الشركة المصنّعة) أو استرداد المبلغ.
+          لطلبات الاستبدال أو استفسارات الاسترداد أو أي استفسار عن المنتجات، يُرجى التواصل مع FEMNIA عبر دعم واتساب الرسمي.
         </p>
-      </section>
-
-      <section className="s2-static-section">
-        <h2>6. مدة الاسترداد ووسيلة الدفع</h2>
         <p>
-          تتم معالجة المبالغ المُسترَدة خلال <strong>5 إلى 10 أيام عمل</strong> من استلام المنتج المُرجَع، وتُعاد إلى وسيلة الدفع الأصلية. راجع <a href="/ar/refund-policy">سياسة استرداد المبالغ</a> للاطلاع على التفاصيل الكاملة.
+          📞 / واتساب: <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">+974 6654 3343</a>
         </p>
-      </section>
-
-      <section className="s2-static-section">
-        <h2>7. التواصل</h2>
-        <p>
-          <strong>Femnia Fashion</strong><br />
-          📍 5C6J+JMG، الريان، قطر<br />
-          📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
-          📞 / واتساب: <a href="tel:+97466543343">+974 6654 3343</a><br />
-          📷 إنستغرام: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a>
-        </p>
+        <p><strong>FEMNIA – أناقة | راحة | أسعار مناسبة</strong></p>
+        <p>شكرًا لتسوّقك مع FEMNIA!</p>
       </section>
     </>
   );
@@ -162,10 +190,10 @@ export default function ReturnPolicy() {
   const isAr = i18n.language === 'ar';
   return (
     <StaticPage
-      title="Return Policy"
-      titleAr="سياسة الإرجاع"
-      description="Femnia Fashion return policy. 7-day returns on unworn items with tags attached, in-store and online."
-      descriptionAr="سياسة الإرجاع لدى Femnia Fashion. إرجاع خلال 7 أيام للقطع غير الملبوسة مع بطاقاتها الأصلية، في متجرنا وعبر الإنترنت."
+      title="Return & Exchange Policy"
+      titleAr="سياسة الإرجاع والاستبدال"
+      description="FEMNIA return & exchange policy: 7-day exchanges on unused items with tags and barcodes intact; refunds only for verified damaged, defective or incorrect products."
+      descriptionAr="سياسة الإرجاع والاستبدال لدى FEMNIA: استبدال خلال 7 أيام للمنتجات غير المستعملة مع البطاقات والباركودات سليمة، والاسترداد فقط للمنتجات التالفة أو المعيبة أو الخاطئة بعد التحقق."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

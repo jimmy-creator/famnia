@@ -96,6 +96,8 @@ export function skuFields(product, variantIndex) {
     // Per-SKU supplier and image live on the variant; the product's are the fallback.
     supplier: (v && v.supplier) || product.preferredSupplier?.name || null,
     image: (v && v.image) || (Array.isArray(product.images) && product.images[0]) || null,
+    // A size/colour's own video only; the product-wide one is a storefront field.
+    video: (v ? v.video : product.videoUrl) || null,
   };
 }
 
@@ -194,6 +196,7 @@ export function flattenSku(product, variantIndex, { totals, stock, settings, sup
     reorderLevel,
     supplier: (variantIndex != null && product.variants?.[variantIndex]?.supplier) || supplierName || null,
     imageUrl: f.image,
+    videoUrl: f.video,
     stockStatus: status,
     replenishQuantity: status === 'In Stock' ? 0 : Math.max(reorderLevel * settings.reorderMultiplier - current, 0),
     notes: f.notes,

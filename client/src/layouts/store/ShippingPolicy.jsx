@@ -30,9 +30,7 @@ function EnglishBody() {
             </tr>
           </thead>
           <tbody>
-            <tr><td>Doha</td><td>Same day – 1 business day</td></tr>
-            <tr><td>Al Rayyan, Al Wakrah, Lusail, Umm Salal</td><td>1–2 business days</td></tr>
-            <tr><td>Al Khor, Al Daayen, Mesaieed, Al Shamal</td><td>2–3 business days</td></tr>
+            <tr><td>All areas of Qatar</td><td>1–2 business days</td></tr>
           </tbody>
         </table>
       </section>
@@ -122,9 +120,7 @@ function ArabicBody() {
             </tr>
           </thead>
           <tbody>
-            <tr><td>الدوحة</td><td>نفس اليوم – يوم عمل واحد</td></tr>
-            <tr><td>الريان، الوكرة، لوسيل، أم صلال</td><td>1–2 يوم عمل</td></tr>
-            <tr><td>الخور، الظعاين، مسيعيد، الشمال</td><td>2–3 أيام عمل</td></tr>
+            <tr><td>جميع مناطق قطر</td><td>1–2 يوم عمل</td></tr>
           </tbody>
         </table>
       </section>

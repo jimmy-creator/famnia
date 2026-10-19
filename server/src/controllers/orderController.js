@@ -5,6 +5,7 @@ import { sendOrderConfirmation, sendOrderStatusUpdate, sendNewOrderNotification 
 import { calculateTax } from '../utils/tax.js';
 import { calculateShipping } from '../utils/shipping.js';
 import { autoCreateShipment } from '../services/shipping.js';
+import { contactPhoneError } from '../utils/phone.js';
 
 const generateOrderNumber = () => {
   const prefix = 'ORD';
@@ -27,6 +28,8 @@ async function buildOrderItems(items) {
 
     let price = parseFloat(product.price);
     let variantInfo = null;
+    // The product code printed on the tag — what staff and customers quote.
+    let productCode = product.barcode || null;
 
     if (item.selectedVariant && product.variants && product.variants.length > 0) {
       const variant = product.variants.find((v) =>
@@ -38,6 +41,7 @@ async function buildOrderItems(items) {
       }
       if (variant.price != null) price = parseFloat(variant.price);
       variantInfo = { ...item.selectedVariant, sku: variant.sku };
+      productCode = variant.barcode || null;
     } else if (product.variants && product.variants.length > 0 && !item.selectedVariant) {
       throw new Error(`Please select options for ${product.name}`);
     } else {
@@ -51,6 +55,7 @@ async function buildOrderItems(items) {
     return {
       productId: product.id,
       name: product.name,
+      productCode,
       price,
       quantity: item.quantity,
       image: product.images?.[0] || null,
@@ -146,6 +151,8 @@ export const createOrder = async (req, res) => {
     if (!items || items.length === 0) {
       return res.status(400).json({ message: 'No items in order' });
     }
+    const phoneError = contactPhoneError(shippingAddress);
+    if (phoneError) return res.status(400).json({ message: phoneError });
 
     const { orderItems, totalAmount, products } = await buildOrderItems(items);
     const { discount, code } = await applyCoupon(couponCode, totalAmount, req.user.id);
@@ -205,6 +212,8 @@ export const createGuestOrder = async (req, res) => {
     if (!shippingAddress?.fullName || !shippingAddress?.address || !shippingAddress?.phone) {
       return res.status(400).json({ message: 'Shipping address with name, address, and phone is required' });
     }
+    const phoneError = contactPhoneError(shippingAddress);
+    if (phoneError) return res.status(400).json({ message: phoneError });
 
     const { orderItems, totalAmount, products } = await buildOrderItems(items);
     const { discount, code } = await applyCoupon(couponCode, totalAmount, null, guestEmail);

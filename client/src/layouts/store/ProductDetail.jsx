@@ -16,6 +16,8 @@ import { showToast } from '../../utils/toast';
 import { CURRENCY, CurrencySymbol, formatPrice } from '../../utils/currency';
 import { localizedName, localizedDescription } from '../../utils/i18nHelpers';
 import { galleryOf, variantFor, optionImage } from '../../lib/productImages';
+import { productCodeOf } from '../../lib/productCode';
+import ProductVideo from '../../components/ProductVideo';
 import ProductCard from './ProductCard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -73,9 +75,12 @@ export default function ProductDetail() {
         setProduct(res.data);
         addViewed(res.data);
         if (res.data.variantOptions) {
+          // Start on a variant that exists: the API only lists ones in stock,
+          // so the first value of each option may not combine into one.
+          const first = res.data.variants?.[0]?.options || {};
           const defaults = {};
           Object.entries(res.data.variantOptions).forEach(([type, values]) => {
-            defaults[type] = values[0];
+            defaults[type] = first[type] ?? values[0];
           });
           setSelectedOptions(defaults);
           showVariantImage(res.data, defaults);
@@ -130,6 +135,9 @@ export default function ProductDetail() {
   const displayPrice = activeVariant?.price != null ? activeVariant.price : product.price;
   const displayStock = hasVariants ? (variantSellable(activeVariant) ? (activeVariant.stock ?? 0) : 0) : product.stock;
   const discount = product.comparePrice ? Math.round((1 - displayPrice / product.comparePrice) * 100) : 0;
+  const productCode = productCodeOf(product, hasVariants ? selectedOptions : null);
+  // The selected colour/size's own video wins over the product's.
+  const video = activeVariant?.video || product.videoUrl || null;
 
   const handleAddToCart = () => addToCart(product, quantity, hasVariants ? selectedOptions : null);
   const handleBuyNow = () => {
@@ -140,6 +148,7 @@ export default function ProductDetail() {
   // sale in the hub once the customer confirms in the chat.
   const handleWhatsAppOrder = () => openWhatsApp(productOrderMessage({
     name: product.name,
+    productCode,
     price: displayPrice,
     quantity,
     selectedVariant: hasVariants ? selectedOptions : null,
@@ -205,6 +214,7 @@ export default function ProductDetail() {
             toggleWishlist(product);
             showToast(isInWishlist(product.id) ? 'Removed from wishlist' : 'Added to wishlist');
           }}
+          video={video}
         />
 
         {/* Info */}
@@ -286,9 +296,9 @@ export default function ProductDetail() {
                   </div>
                 );
               })}
-              {activeVariant?.sku && <p className="text-xs text-muted-foreground">SKU · {activeVariant.sku}</p>}
             </div>
           )}
+          {productCode && <p className="mt-3 text-xs text-muted-foreground">Product code · <span className="font-medium text-foreground">{productCode}</span></p>}
 
           {descLines.length > 1 ? (
             <ul className="mt-6 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
@@ -302,7 +312,7 @@ export default function ProductDetail() {
             {displayStock > 0 ? `In stock · ${displayStock} available` : 'Out of stock'}
           </div>
 
-          {displayStock > 0 && <div className="mt-2"><EstimatedDelivery minDays={1} maxDays={3} skipFriday /></div>}
+          {displayStock > 0 && <div className="mt-2"><EstimatedDelivery minDays={1} maxDays={2} skipFriday /></div>}
 
           {displayStock > 0 ? (
             <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -393,7 +403,7 @@ export default function ProductDetail() {
   );
 }
 
-function Gallery({ images, product, activeImage, setActiveImage, discount, inWishlist, onToggleWishlist }) {
+function Gallery({ images, product, activeImage, setActiveImage, discount, inWishlist, onToggleWishlist, video }) {
   const touchStart = useRef(null);
   const touchDelta = useRef(0);
   const imgCount = images?.length || 0;
@@ -474,6 +484,8 @@ function Gallery({ images, product, activeImage, setActiveImage, discount, inWis
           ))}
         </div>
       )}
+
+      {video && <ProductVideo url={video} title={product.name} className="mt-2" />}
     </div>
   );
 }

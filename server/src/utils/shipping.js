@@ -27,7 +27,7 @@ export async function calculateShipping(subtotal, itemCount, shippingState) {
   // Free shipping above threshold
   if (subtotal >= freeThreshold) {
     return {
-      standard: { rate: 0, label: 'Free Shipping', days: '5-7 business days' },
+      standard: { rate: 0, label: 'Free Shipping', days: '1-2 business days' },
       ...express,
       freeThreshold,
     };
@@ -36,7 +36,7 @@ export async function calculateShipping(subtotal, itemCount, shippingState) {
   const standardRate = flatRate + (perItemRate * (itemCount - 1));
 
   return {
-    standard: { rate: Math.round(standardRate * 100) / 100, label: 'Standard Shipping', days: '5-7 business days' },
+    standard: { rate: Math.round(standardRate * 100) / 100, label: 'Standard Shipping', days: '1-2 business days' },
     ...express,
     freeThreshold,
     amountForFree: Math.round((freeThreshold - subtotal) * 100) / 100,

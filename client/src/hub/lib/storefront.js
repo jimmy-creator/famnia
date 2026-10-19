@@ -14,6 +14,7 @@ export const emptyStorefront = () => ({
   nameAr: '',
   descriptionAr: '',
   reorderQty: '',
+  videoUrl: '',
 });
 
 /** Storefront values from the API shape (numbers → strings for inputs). */
@@ -29,6 +30,7 @@ export const storefrontForm = (s) => ({
   nameAr: s?.nameAr ?? '',
   descriptionAr: s?.descriptionAr ?? '',
   reorderQty: s?.reorderQty ?? '',
+  videoUrl: s?.videoUrl ?? '',
 });
 
 /** Form values → API payload (blank numbers become null). */
@@ -43,4 +45,5 @@ export const storefrontPayload = (f) => ({
   hideOnline: f.hideOnline,
   ...(I18N ? { nameAr: f.nameAr || null, descriptionAr: f.descriptionAr || null } : {}),
   reorderQty: f.reorderQty === '' ? null : Number(f.reorderQty),
+  videoUrl: f.videoUrl.trim() || null,
 });

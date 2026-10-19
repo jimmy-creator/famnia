@@ -7,6 +7,7 @@ import { autoCreateShipment } from '../services/shipping.js';
 import { Op } from 'sequelize';
 import { calculateTax } from '../utils/tax.js';
 import { calculateShipping } from '../utils/shipping.js';
+import { contactPhoneError } from '../utils/phone.js';
 
 // Reuse coupon logic
 async function applyCouponForPayment(couponCode, subtotal, userId, orderItems = [], paymentMethod = null) {
@@ -156,6 +157,8 @@ router.post('/create-order', optionalAuth, async (req, res) => {
     if (isGuest && (!guestEmail || !/\S+@\S+\.\S+/.test(guestEmail))) {
       return res.status(400).json({ message: 'Valid email is required for guest checkout' });
     }
+    const phoneError = contactPhoneError(shippingAddress);
+    if (phoneError) return res.status(400).json({ message: phoneError });
 
     // Calculate total from DB prices (never trust client-side amounts)
     const productIds = items.map((item) => item.productId);
@@ -172,6 +175,7 @@ router.post('/create-order', optionalAuth, async (req, res) => {
       // bill a "6 Pack" as a "1 Pack" (matches orderController.buildOrderItems).
       let price = parseFloat(product.price);
       let variantInfo = null;
+      let productCode = product.barcode || null;
 
       if (item.selectedVariant && product.variants && product.variants.length > 0) {
         const variant = product.variants.find((v) =>
@@ -183,6 +187,7 @@ router.post('/create-order', optionalAuth, async (req, res) => {
         }
         if (variant.price != null) price = parseFloat(variant.price);
         variantInfo = { ...item.selectedVariant, sku: variant.sku };
+        productCode = variant.barcode || null;
       } else if (product.variants && product.variants.length > 0 && !item.selectedVariant) {
         throw new Error(`Please select options for ${product.name}`);
       } else if (product.stock < item.quantity) {
@@ -193,6 +198,7 @@ router.post('/create-order', optionalAuth, async (req, res) => {
       return {
         productId: product.id,
         name: product.name,
+        productCode,
         category: product.category,
         price,
         quantity: item.quantity,

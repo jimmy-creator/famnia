@@ -1,4 +1,5 @@
 import { CURRENCY, formatPrice } from '../utils/currency';
+import { productCodeOf } from './productCode';
 
 // WhatsApp orders are only a pre-filled chat message — nothing is saved on
 // the server. Customers often don't confirm, so staff enter the sale in the
@@ -18,20 +19,23 @@ const variantText = (v) => (v ? Object.entries(v).map(([k, val]) => `${k}: ${val
 function itemLines(items) {
   return items.map((it, i) => {
     const variant = variantText(it.selectedVariant);
+    const code = productCodeOf(it, it.selectedVariant);
     return [
       `${i + 1}. ${it.name}${variant ? ` (${variant})` : ''}`,
+      code ? `   Product code: ${code}` : null,
       `   ${it.quantity} × ${money(it.price)} = ${money(parseFloat(it.price) * it.quantity)}`,
-    ].join('\n');
+    ].filter((l) => l != null).join('\n');
   });
 }
 
 /** One product straight from its page. */
-export function productOrderMessage({ name, price, quantity, selectedVariant, url }) {
+export function productOrderMessage({ name, productCode, price, quantity, selectedVariant, url }) {
   const variant = variantText(selectedVariant);
   return [
     "Hi, I'd like to order:",
     '',
     `*${name}*`,
+    productCode ? `Product code: ${productCode}` : null,
     variant || null,
     `Qty: ${quantity}`,
     `Price: ${money(parseFloat(price) * quantity)}`,
@@ -66,6 +70,7 @@ export function checkoutOrderMessage({ items, subtotal, discount, couponCode, sh
     '*Deliver to*',
     address.fullName,
     address.phone,
+    address.altPhone || null,
     address.address,
     address.city || null,
     address.email || null,

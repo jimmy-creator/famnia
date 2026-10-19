@@ -126,6 +126,8 @@ export function mapItem(it, lineIndex) {
     productId: it.productId ?? null,
     variantIndex: it.variantIndex ?? null,
     sku: it.sku || opts?.sku || (it.productId ? `P${it.productId}` : ''),
+    // Till lines snapshot it as `barcode`; older lines are back-filled by scripts/backfillOrderProductCodes.js.
+    productCode: it.productCode || it.barcode || null,
     name: it.name || 'Item',
     size: it.size ?? optionValue(opts, ['size', 'size/age', 'age']),
     color: it.color ?? optionValue(opts, ['color', 'colour', 'colour/variant', 'variant']),
@@ -172,6 +174,8 @@ export function toSalesOrder(order, { customerPrefix = 'CUS' } = {}) {
     customerCode: customerCode(order.userId, customerPrefix),
     customerName: order.customerName || ship.fullName || ship.name || 'Customer',
     phone: order.customerPhone || ship.phone || '',
+    // Second mobile number from web checkout (optional, any country).
+    altPhone: ship.altPhone || null,
     email: order.guestEmail || ship.email || null,
     area: order.area ?? (ship.city || ship.state || null),
     address: addressText,

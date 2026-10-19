@@ -217,6 +217,18 @@ export function StorefrontFields({ value, onChange, canEditPrice = true }) {
           />
         </Field>
       </div>
+      <Field label="Product video (optional)">
+        <Input
+          type="url"
+          value={value.videoUrl}
+          onChange={(e) => set('videoUrl', e.target.value)}
+          placeholder="https://www.instagram.com/reel/… or https://youtu.be/…"
+          className="h-11"
+        />
+        <p className="mt-1 text-xs text-muted-foreground">
+          Instagram post/reel or YouTube link, shown on the product page. A colour/size can have its own video (edit that SKU).
+        </p>
+      </Field>
       <div className="grid gap-2 sm:grid-cols-3">
         <Toggle label="Featured" hint="Shown in featured spots on the storefront." checked={value.featured} onChange={(v) => set('featured', v)} />
         <Toggle label="VAT taxable" hint="Charge VAT at the rate above." checked={value.taxable} onChange={(v) => set('taxable', v)} />

@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Product } from '../models/index.js';
+import { STOREFRONT_WHERE } from '../utils/pricing.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST_INDEX = path.resolve(__dirname, '../../../client/dist/index.html');
@@ -170,7 +171,7 @@ function renderHtml({ title, description, image, url, type = 'website', jsonLd =
 }
 
 async function renderProduct(slug, requestUrl, locale, alternates) {
-  const product = await Product.findOne({ where: { slug, active: true, hideOnline: false } });
+  const product = await Product.findOne({ where: { slug, ...STOREFRONT_WHERE } });
   if (!product) return null;
 
   // Use Arabic name/description when serving the Arabic URL and the

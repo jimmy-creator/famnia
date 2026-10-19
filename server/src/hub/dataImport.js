@@ -392,7 +392,7 @@ async function importProducts(ctx) {
   for (const s of await listSkus({ showCost: true })) {
     ctx.skus.set(s.sku.toUpperCase(), {
       productId: s.productId, variantIndex: s.variantIndex, sku: s.sku, name: s.name, size: s.size, color: s.color,
-      category: s.category, costPrice: s.costPrice, image: s.imageUrl, created: false,
+      category: s.category, costPrice: s.costPrice, image: s.imageUrl, productCode: s.productCode, created: false,
     });
   }
   ctx.targets = new Map();   // sku → current_stock the import must end on
@@ -496,7 +496,7 @@ async function importProducts(ctx) {
       const f = list.find((x) => x.sku === s.sku);
       ctx.skus.set(f.sku, {
         productId, variantIndex, sku: f.sku, name: f.name, size: f.size, color: f.color, category: f.category,
-        costPrice: f.cost, image: imageOf(f.row), created: true,
+        costPrice: f.cost, image: imageOf(f.row), productCode: f.code ? normalizeProductCode(f.code) : null, created: true,
       });
       ctx.touched.add(productId);
       ctx.events.push({
@@ -588,7 +588,7 @@ async function importOrders(ctx) {
         otherCost: round2(num(it.consignment_other_cost) || 0),
       } : null;
       lines.push({
-        productId: s.productId, variantIndex: s.variantIndex, sku: s.sku, name: text(it.name, 200) || s.name,
+        productId: s.productId, variantIndex: s.variantIndex, sku: s.sku, productCode: s.productCode || null, name: text(it.name, 200) || s.name,
         size: opt(it.size, 60) ?? s.size, color: opt(it.color, 60) ?? s.color, category: s.category, image: s.image,
         quantity, price: round2(unitPrice), unitPrice: round2(unitPrice), discount: round2(discount),
         lineTotal: round2(Number.isFinite(lineTotal) ? lineTotal : Math.max(quantity * unitPrice - discount, 0)),

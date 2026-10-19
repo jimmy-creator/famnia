@@ -16,6 +16,8 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
 import WhatsAppButton from '@/components/WhatsAppButton';
 import { openWhatsApp, checkoutOrderMessage } from '@/lib/whatsapp';
+import { productCodeOf } from '@/lib/productCode';
+import FreeDeliveryNudge from '@/components/FreeDeliveryNudge';
 
 // Listed after the store's real payment methods; handled entirely client-side.
 const WHATSAPP_METHOD = {
@@ -46,6 +48,12 @@ function loadScript(src) {
   });
 }
 
+// The 8 local digits of a Qatar number, whether typed with or without +974.
+function qatarLocal(value) {
+  const d = String(value || '').replace(/\D/g, '');
+  return (d.length > 8 && d.startsWith('974') ? d.slice(3) : d).slice(0, 8);
+}
+
 // The store ships within Qatar — popular cities suggested in the address combobox
 // (customers can also type any city not listed).
 const QATAR_CITIES = [
@@ -55,7 +63,7 @@ const QATAR_CITIES = [
 
 export default function Checkout() {
   const { t } = useTranslation();
-  const { cart, cartTotal, clearCart } = useCart();
+  const { cart, cartTotal, clearCart, refreshCart } = useCart();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
@@ -85,9 +93,14 @@ export default function Checkout() {
     city: '',
     state: '',
     country: 'Qatar',
-    phone: user?.phone || '',
+    // Mobile 1 is a Qatar number: +974 is fixed, the shopper types the 8 digits.
+    phone: qatarLocal(user?.phone),
+    altPhone: user?.altPhone || '',
     paymentMethod: 'cod',
   });
+
+  // Sold-out items leave the cart before the order is placed.
+  useEffect(() => { refreshCart(); }, [refreshCart]);
 
   // Save abandoned cart when checkout page loads
   useEffect(() => {
@@ -139,7 +152,8 @@ export default function Checkout() {
   const getShippingAddress = () => ({
     fullName: form.fullName, address: form.address,
     city: form.city, state: form.state,
-    country: form.country, phone: form.phone,
+    country: form.country, phone: `+974 ${form.phone}`,
+    ...(form.altPhone.trim() ? { altPhone: form.altPhone.trim() } : {}),
   });
 
   const handleApplyCoupon = async (codeOverride) => {
@@ -489,6 +503,16 @@ export default function Checkout() {
       toast.error(t('checkout.cityRequired'), toastStyle);
       return;
     }
+    // Staff send order updates on WhatsApp, so the Qatar number must be a real one.
+    if (form.phone.length !== 8) {
+      toast.error('Enter your 8-digit Qatar mobile number (WhatsApp).', toastStyle);
+      return;
+    }
+    const altDigits = form.altPhone.replace(/\D/g, '');
+    if (altDigits && (altDigits.length < 7 || altDigits.length > 15)) {
+      toast.error('Mobile number 2 is not valid — include the country code, e.g. +91 98765 43210.', toastStyle);
+      return;
+    }
 
     setLoading(true);
 
@@ -544,9 +568,9 @@ export default function Checkout() {
   }
 
   const Row = ({ label, value, className }) => (
-    <div className={cn('flex justify-between text-sm', className)}>
+    <div className={cn('flex justify-between gap-3 text-sm', className)}>
       <span className="text-muted-foreground">{label}</span>
-      <span>{value}</span>
+      <span className="shrink-0">{value}</span>
     </div>
   );
 
@@ -568,6 +592,9 @@ export default function Checkout() {
           <Link to="/login" className="font-medium text-primary hover:underline">{t('checkout.guestSignIn')}</Link>
         </div>
       )}
+
+      {/* Same basis as the server's free-delivery check: the subtotal after the coupon. */}
+      <FreeDeliveryNudge subtotal={Math.max(0, cartTotal - discountAmount)} excludeIds={cart.map((i) => i.id)} className="mb-6" />
 
       <form onSubmit={handleSubmit} className="grid gap-8 lg:grid-cols-[1fr_380px]">
         {/* Left: address + payment */}
@@ -623,8 +650,37 @@ export default function Checkout() {
                 </datalist>
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="phone">{t('checkout.phone')}</Label>
-                <Input id="phone" name="phone" value={form.phone} onChange={handleChange} required />
+                <Label htmlFor="phone">Mobile number 1 (WhatsApp) *</Label>
+                <div className="flex">
+                  <span className="inline-flex items-center rounded-l-md border border-r-0 border-input bg-secondary px-3 text-sm text-muted-foreground">+974</span>
+                  <Input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel-national"
+                    placeholder="5555 1234"
+                    value={form.phone}
+                    onChange={(e) => setForm((f) => ({ ...f, phone: qatarLocal(e.target.value) }))}
+                    pattern="\d{8}"
+                    title="8-digit Qatar mobile number"
+                    className="rounded-l-none"
+                    required
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">We send your order updates to this number on WhatsApp.</p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="altPhone">Mobile number 2 (optional)</Label>
+                <Input
+                  id="altPhone"
+                  name="altPhone"
+                  type="tel"
+                  autoComplete="tel"
+                  placeholder="With country code, e.g. +91 98765 43210"
+                  value={form.altPhone}
+                  onChange={handleChange}
+                />
               </div>
             </div>
           </section>
@@ -696,7 +752,12 @@ export default function Checkout() {
               {cart.map((item) => (
                 <Row
                   key={item.cartKey}
-                  label={`${item.name}${item.selectedVariant ? ` (${Object.values(item.selectedVariant).join(', ')})` : ''} × ${item.quantity}`}
+                  label={<>
+                    {`${item.name}${item.selectedVariant ? ` (${Object.values(item.selectedVariant).join(', ')})` : ''} × ${item.quantity}`}
+                    {productCodeOf(item, item.selectedVariant) && (
+                      <span className="block text-xs">Product code: {productCodeOf(item, item.selectedVariant)}</span>
+                    )}
+                  </>}
                   value={<Money amount={parseFloat(item.price) * item.quantity} />}
                 />
               ))}
@@ -806,9 +867,6 @@ export default function Checkout() {
                     </Label>
                   );
                 })}
-                {shippingOptions.amountForFree && (
-                  <p className="text-xs text-muted-foreground">{t('shippingOpt.addMorePre')} <Money amount={shippingOptions.amountForFree} /> {t('shippingOpt.addMorePost')}</p>
-                )}
               </RadioGroup>
             )}
 

@@ -6,6 +6,7 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  STOREFRONT_WHERE,
 } from '../controllers/productController.js';
 import { protect, admin, requirePermission } from '../middleware/auth.js';
 
@@ -58,8 +59,7 @@ router.get('/search-suggestions', async (req, res) => {
 
     const products = await Product.findAll({
       where: {
-        active: true,
-        hideOnline: false,
+        ...STOREFRONT_WHERE,
         [Op.or]: [
           { name: { [Op.like]: `%${q}%` } },
           { category: { [Op.like]: `%${q}%` } },
@@ -91,8 +91,7 @@ router.get('/:slug/related', async (req, res) => {
     const related = await Product.findAll({
       attributes: PUBLIC_PRODUCT_ATTRIBUTES,
       where: {
-        active: true,
-        hideOnline: false,
+        ...STOREFRONT_WHERE,
         id: { [Op.ne]: product.id },
         [Op.or]: [
           { category: product.category },
@@ -103,7 +102,7 @@ router.get('/:slug/related', async (req, res) => {
       order: [['ratings', 'DESC'], ['featured', 'DESC']],
     });
 
-    res.json(related.map(publicProduct));
+    res.json(related.map(publicProduct).filter(Boolean));
   } catch (error) {
     res.status(500).json([]);
   }

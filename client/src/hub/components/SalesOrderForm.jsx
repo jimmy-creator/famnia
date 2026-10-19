@@ -34,6 +34,7 @@ import {
 } from '@/hub/lib/api';
 import { can } from '@/hub/lib/permissions';
 import { clearCart, getCart, setCart } from '@/hub/lib/cart';
+import { orderStatusMessage, whatsappLink } from '@/hub/lib/whatsapp';
 import {
   FULFILMENT_METHODS,
   PAYMENT_HELD_IN_OPTIONS,
@@ -482,10 +483,12 @@ function OrderForm({ products }) {
     mutationFn: async () => confirmSalesOrder(await buildInput()),
     onSuccess: async ({ order, duplicate }) => {
       await queryClient.invalidateQueries({ queryKey: qk.all });
+      const href = order.phone && order.items ? whatsappLink(order.phone, orderStatusMessage(order)) : null;
       toast.success(
         duplicate
           ? `Order ${order.id} was already confirmed — stock was not deducted twice.`
           : `Order ${order.id} confirmed. Stock updated.`,
+        { action: href ? { label: 'WhatsApp customer', onClick: () => window.open(href, '_blank', 'noopener,noreferrer') } : undefined },
       );
       orderCompleted.current = true; // The cart is consumed by this order, so it is cleared on unmount.
       resetForm();

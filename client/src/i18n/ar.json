@@ -157,7 +157,7 @@
     "aboutUs": "من نحن",
     "contactUs": "تواصل معنا",
     "shippingPolicy": "سياسة الشحن",
-    "returnPolicy": "سياسة الإرجاع",
+    "returnPolicy": "سياسة الإرجاع والاستبدال",
     "refundPolicy": "سياسة الاسترداد",
     "privacyPolicy": "سياسة الخصوصية",
     "terms": "الشروط والأحكام",
@@ -302,7 +302,7 @@
     "express": "الشحن السريع",
     "freeShipping": "شحن مجاني",
     "free": "مجاني",
-    "standardDays": "5–7 أيام عمل",
+    "standardDays": "1–2 يوم عمل",
     "expressDays": "1–2 يوم عمل",
     "addMorePre": "أضف",
     "addMorePost": "إضافية للحصول على شحن مجاني"
@@ -320,8 +320,8 @@
   "trust": {
     "shipping": "شحن مجاني",
     "shippingDesc": "على كل طلب مؤهل",
-    "returns": "إرجاع سهل",
-    "returnsDesc": "سياسة إرجاع واضحة",
+    "returns": "استبدال خلال 7 أيام",
+    "returnsDesc": "استبدال سهل للقطع غير المستعملة",
     "secure": "دفع آمن",
     "secureDesc": "إتمام شراء موثوق",
     "support": "خدمة العملاء",

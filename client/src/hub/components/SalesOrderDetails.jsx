@@ -33,6 +33,8 @@ import {
 } from '@/hub/lib/api';
 import { cancelOrderWithEmail } from '@/hub/lib/apiOrders';
 import { WebOrderPanel } from '@/hub/components/WebOrderPanel';
+import { CustomerWhatsApp } from '@/hub/components/CustomerWhatsApp';
+import { orderStatusMessage, whatsappLink } from '@/hub/lib/whatsapp';
 import { computeConsignment } from '@/hub/lib/consignment';
 import { invalidateSales } from '@/hub/lib/invalidate';
 import { can } from '@/hub/lib/permissions';
@@ -151,6 +153,12 @@ function OrderBody({ data }) {
 
   const refresh = () => invalidateSales(queryClient, data.id);
 
+  /** Toast button that drafts the WhatsApp update for the order as it now stands. */
+  const waAction = (patch) => {
+    const href = whatsappLink(data.phone, orderStatusMessage({ ...data, ...patch }));
+    return href ? { label: 'WhatsApp customer', onClick: () => window.open(href, '_blank', 'noopener,noreferrer') } : undefined;
+  };
+
   const save = useMutation({
     mutationFn: () =>
       updateFulfilmentAndPayment({
@@ -175,8 +183,20 @@ function OrderBody({ data }) {
       }),
     onSuccess: async (result) => {
       await refresh();
+      const received = canPayments ? Number(amountReceived) || 0 : data.amountReceived;
       toast.success(result.changes ? `Saved ${result.changes} change(s). Stock was not affected.` : 'Nothing changed.', {
         description: result.emailed ? 'The customer was emailed about the new status.' : undefined,
+        action: result.changes
+          ? waAction({
+              status,
+              paymentStatus: canPayments ? paymentStatus : data.paymentStatus,
+              amountReceived: received,
+              remainingBalance: Math.max(data.grandTotal - received, 0),
+              deliveryDate: pickup ? data.deliveryDate : deliveryDate || null,
+              courier,
+              trackingNumber,
+            })
+          : undefined,
       });
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Could not update the order.'),
@@ -209,7 +229,9 @@ function OrderBody({ data }) {
     mutationFn: () => cancelOrderWithEmail(data.id, cancelReason, cancelRestock, isWeb ? emailCustomer : undefined),
     onSuccess: async (result) => {
       setCancelOpen(false);
-      toast.success(result.restored ? 'Order cancelled and stock restored.' : 'Order cancelled.');
+      toast.success(result.restored ? 'Order cancelled and stock restored.' : 'Order cancelled.', {
+        action: waAction({ status: 'Cancelled' }),
+      });
       await refresh();
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Could not cancel the order.'),
@@ -395,6 +417,15 @@ function OrderBody({ data }) {
         result.duplicate
           ? 'This order was already confirmed — stock was not deducted again.'
           : 'Order confirmed and stock deducted',
+        {
+          action: waAction({
+            status: 'Confirmed',
+            paymentStatus,
+            amountReceived: Number(amountReceived) || 0,
+            remainingBalance: Math.max(data.grandTotal - (Number(amountReceived) || 0), 0),
+            deliveryDate: pickup ? null : deliveryDate || data.deliveryDate || null,
+          }),
+        },
       );
       await refresh();
     },
@@ -449,6 +480,7 @@ function OrderBody({ data }) {
                 )}
               </p>
               <p className="text-muted-foreground">{data.phone}</p>
+              {data.altPhone && <p className="text-muted-foreground">{data.altPhone} (2nd number)</p>}
               {data.area && <p className="text-muted-foreground">{data.area}</p>}
               {data.address && <p className="whitespace-pre-line text-muted-foreground">{data.address}</p>}
               {data.landmark && <p className="text-muted-foreground">Landmark: {data.landmark}</p>}
@@ -459,6 +491,14 @@ function OrderBody({ data }) {
               </Button>
             )}
           </div>
+          {!readOnly && (
+            <div className="mt-3 border-t border-border pt-3">
+              <CustomerWhatsApp order={data} />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Opens WhatsApp with a message drafted for “{data.status}” — review it and press send.
+              </p>
+            </div>
+          )}
           {!readOnly && canUpdate && !canEditContact && (
             <p className="mt-2 text-xs text-muted-foreground">
               {isCancelled
@@ -484,6 +524,7 @@ function OrderBody({ data }) {
                   <td className="p-2">
                     <p className="font-medium">{i.name}</p>
                     <p className="text-xs text-muted-foreground">
+                      {i.productCode && <span className="font-mono font-semibold text-foreground">{i.productCode} · </span>}
                       {i.sku} · {i.size || '—'} · {i.color || '—'}
                       {i.returnedQty ? ` · returned ${i.returnedQty}` : ''}
                     </p>
@@ -1022,7 +1063,7 @@ function OrderBody({ data }) {
                 <div key={k} className="rounded-xl border border-border p-3">
                   <p className="text-sm font-medium">{i.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {i.sku} · up to {max} returnable
+                    {i.productCode ? `${i.productCode} · ` : ''}{i.sku} · up to {max} returnable
                   </p>
                   <div className="mt-2 grid gap-2 sm:grid-cols-2">
                     <div>

@@ -70,7 +70,8 @@ router.get('/delivery/mine', need('delivery.my_deliveries'), wrap(async (req, re
       amountReceived: v.amountReceived,
       deliveryNotes: v.deliveryNotes,
       paymentNotes: v.paymentNotes,
-      items: v.items.map((i) => ({ name: i.name, size: i.size, color: i.color, quantity: i.quantity })),
+      altPhone: v.altPhone,
+      items: v.items.map((i) => ({ name: i.name, productCode: i.productCode, size: i.size, color: i.color, quantity: i.quantity })),
     }));
   res.set('Cache-Control', 'no-store');
   res.json(rows);

@@ -79,7 +79,7 @@ function orderItemsHTML(items) {
   return items.map((item) => `
     <tr>
       <td style="padding:12px 16px;border-bottom:1px solid ${brandBorder};font-size:14px;color:${textMain};">
-        ${item.name}${item.variant ? `<br><span style="font-size:12px;color:${textDim};">${Object.entries(item.variant).map(([k,v]) => `${k}: ${v}`).join(', ')}</span>` : ''}
+        ${item.name}${item.variant ? `<br><span style="font-size:12px;color:${textDim};">${Object.entries(item.variant).filter(([k]) => k !== 'sku').map(([k,v]) => `${k}: ${v}`).join(', ')}</span>` : ''}${item.productCode ? `<br><span style="font-size:12px;color:${textDim};">Product code: ${item.productCode}</span>` : ''}
       </td>
       <td style="padding:12px 16px;border-bottom:1px solid ${brandBorder};font-size:14px;color:${textDim};text-align:center;">
         ${item.quantity}

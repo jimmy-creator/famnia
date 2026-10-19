@@ -70,6 +70,8 @@ function ProductEditDialogForm({ product, open, onClose }) {
   const [imagePath, setImagePath] = useState(product?.imageUrl ?? null);
   const [imagePreview, setImagePreview] = useState(product?.imageUrl ?? null);
   const [pendingFile, setPendingFile] = useState(null);
+  // This size/colour's own video (a product without sizes uses the storefront video).
+  const [video, setVideo] = useState(product?.videoUrl ?? '');
   const [confirmClose, setConfirmClose] = useState(false);
   // Storefront (product-level) fields load per product; `sf` stays null until edited.
   const canAdjust = can(access, 'inventory.adjust');
@@ -110,10 +112,11 @@ function ProductEditDialogForm({ product, open, onClose }) {
       isActive !== product.isActive ||
       imagePath !== (product.imageUrl ?? null) ||
       Boolean(pendingFile) ||
+      (isVariant && video.trim() !== (product.videoUrl ?? '')) ||
       sfDirty ||
       stockDirty
     );
-  }, [product, productCode, name, rack, shelf, supplier, price, cost, canEditCost, reorder, notes, size, color, isActive, imagePath, pendingFile, sfDirty, stockDirty]);
+  }, [product, productCode, name, rack, shelf, supplier, price, cost, canEditCost, reorder, notes, size, color, isActive, imagePath, pendingFile, video, isVariant, sfDirty, stockDirty]);
 
   const variantLocked = lock.data?.hasHistory ?? true;
 
@@ -134,6 +137,7 @@ function ProductEditDialogForm({ product, open, onClose }) {
         notes: notes || null,
         isActive,
         imageUrl: nextImage,
+        ...(isVariant && video.trim() !== (product.videoUrl ?? '') ? { videoUrl: video.trim() || null } : {}),
         // A single-SKU product given a size / colour becomes a one-size product (new key).
         ...(variantLocked ? {} : { size: size || null, color: color || null }),
       });
@@ -422,6 +426,22 @@ function ProductEditDialogForm({ product, open, onClose }) {
             <Labelled label="Notes">
               <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
             </Labelled>
+
+            {isVariant && (
+              <Labelled label={`Video for this size / colour (optional)`}>
+                <Input
+                  type="url"
+                  value={video}
+                  onChange={(event) => setVideo(event.target.value)}
+                  placeholder="https://www.instagram.com/reel/… or https://youtu.be/…"
+                  disabled={!canImages}
+                  className="h-11"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Shown on the product page while this {[product.size, product.color].filter(Boolean).join(' / ') || 'variant'} is selected, instead of the product video below.
+                </p>
+              </Labelled>
+            )}
 
             <section className="space-y-3 rounded-2xl border border-border p-4">
               <h3 className="text-sm font-semibold text-foreground">Storefront · shared by every size / colour of {product.name}</h3>

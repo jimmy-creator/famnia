@@ -12,6 +12,7 @@
     "migrate": "node src/scripts/migrate.js",
     "import:hub": "node src/scripts/importHubData.js",
     "backfill:categories": "node src/scripts/backfillCategories.js",
+    "backfill:order-codes": "node src/scripts/backfillOrderProductCodes.js",
     "create:admin": "node src/scripts/createAdmin.js",
     "test:email": "node src/scripts/testEmail.js",
     "export:shiprocket": "node src/scripts/exportShiprocketInventory.js",

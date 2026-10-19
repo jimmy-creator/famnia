@@ -110,6 +110,12 @@ const Product = sequelize.define('Product', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  videoUrl: {
+    // Optional Instagram or YouTube link, embedded on the product page.
+    // A variant can carry its own `video` (in `variants[]`), which wins while it is selected.
+    type: DataTypes.STRING(500),
+    allowNull: true,
+  },
   ratings: {
     type: DataTypes.DECIMAL(3, 2),
     defaultValue: 0,

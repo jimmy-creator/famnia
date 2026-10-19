@@ -148,6 +148,7 @@ export default function Orders() {
                       {item.name}
                       {item.variant && ` (${Object.entries(item.variant).filter(([k]) => k !== 'sku').map(([, v]) => v).join(', ')})`}
                       {' × '}{item.quantity}
+                      {item.productCode && <span className="block text-xs">Product code: {item.productCode}</span>}
                     </span>
                     <span className="shrink-0 whitespace-nowrap">{CURRENCY}{formatPrice(item.price * item.quantity)}</span>
                   </div>

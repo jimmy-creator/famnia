@@ -21,10 +21,12 @@ import { deliveryPaymentModesQuery, myDeliveriesQuery, qk, updateMyDelivery } fr
 import { DELIVERY_PAYMENT_STATUSES, DELIVERY_STATUSES } from '@/hub/lib/delivery';
 import { QAR } from '@/hub/lib/format';
 import { useHubTitle } from '@/hub/lib/useHubTitle';
+import { CustomerWhatsApp } from '@/hub/components/CustomerWhatsApp';
+import { orderStatusMessage, whatsappLink } from '@/hub/lib/whatsapp';
 
 const itemsSummary = (delivery) =>
   (delivery.items ?? [])
-    .map((i) => `${i.name}${i.size ? ` ${i.size}` : ''}${i.color ? ` ${i.color}` : ''} × ${i.quantity}`)
+    .map((i) => `${i.productCode ? `[${i.productCode}] ` : ''}${i.name}${i.size ? ` ${i.size}` : ''}${i.color ? ` ${i.color}` : ''} × ${i.quantity}`)
     .join(', ') || 'No items';
 
 function DeliveryCard({ delivery }) {
@@ -50,7 +52,17 @@ function DeliveryCard({ delivery }) {
         note,
       }),
     onSuccess: async () => {
-      toast.success(`${delivery.id} updated.`);
+      const href = whatsappLink(delivery.phone, orderStatusMessage({
+        ...delivery,
+        status: status === 'Pending' ? 'Confirmed' : status,
+        fulfilmentMethod: 'Delivery',
+        paymentStatus,
+        amountReceived: Number(amount) || 0,
+        remainingBalance: paymentStatus === 'Paid' ? 0 : Math.max(delivery.grandTotal - (Number(amount) || 0), 0),
+      }));
+      toast.success(`${delivery.id} updated.`, {
+        action: href ? { label: 'WhatsApp customer', onClick: () => window.open(href, '_blank', 'noopener,noreferrer') } : undefined,
+      });
       setOpen(false);
       setNote('');
       await client.invalidateQueries({ queryKey: qk.myDeliveries });
@@ -96,6 +108,10 @@ function DeliveryCard({ delivery }) {
           </span>
         </p>
         <p className="text-xs text-muted-foreground break-words">{itemsSummary(delivery)}</p>
+        {/* "Pending" here is a confirmed order not yet out for delivery. */}
+        <CustomerWhatsApp
+          order={{ ...delivery, status: delivery.status === 'Pending' ? 'Confirmed' : delivery.status, fulfilmentMethod: 'Delivery' }}
+        />
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-sm">

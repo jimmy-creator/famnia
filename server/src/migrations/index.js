@@ -79,6 +79,8 @@ const STEPS = [
   ['Products.sourceCountry', () => addColumnIfMissing('Products', 'sourceCountry', { type: DataTypes.STRING, allowNull: true })],
   ['Products.wholesaler', () => addColumnIfMissing('Products', 'wholesaler', { type: DataTypes.STRING, allowNull: true })],
   ['Products.importBatchId', () => addColumnIfMissing('Products', 'importBatchId', { type: DataTypes.INTEGER, allowNull: true })],
+  // Optional Instagram / YouTube video shown on the product page.
+  ['Products.videoUrl', () => addColumnIfMissing('Products', 'videoUrl', { type: DataTypes.STRING(500), allowNull: true })],
 
   // ── 2026-10 FEMNIA Hub: sales orders & customers (phase 3) ──────────
   ['Orders.channel += staff', () => ensureEnum('Orders', 'channel',

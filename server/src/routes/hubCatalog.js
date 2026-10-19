@@ -13,6 +13,7 @@ import {
   usedIdentifiers, variantOptionsFrom, SIZE_KEYS, COLOR_KEYS,
 } from '../hub/catalog.js';
 import { todayLocal } from '../services/stockLedger.js';
+import { cleanVideoUrl } from '../utils/video.js';
 
 /**
  * FEMNIA Hub catalogue & stock: Products, Inventory, Stock In, Stock Out,
@@ -299,7 +300,7 @@ const STOREFRONT_LABELS = {
   description: 'Description', brand: 'Brand', nameAr: 'Arabic name', descriptionAr: 'Arabic description',
   categories: 'Categories', comparePrice: 'Compare-at price', featured: 'Featured', taxable: 'VAT taxable',
   taxRate: 'VAT rate', hsnCode: 'HSN code', hideOnline: 'Hidden online (POS only)', reorderQty: 'Reorder quantity',
-  images: 'Gallery images',
+  images: 'Gallery images', videoUrl: 'Video',
 };
 
 const storefrontOf = (p) => ({
@@ -317,6 +318,7 @@ const storefrontOf = (p) => ({
   hideOnline: Boolean(p.hideOnline),
   reorderQty: p.reorderQty ?? null,
   images: Array.isArray(p.images) ? p.images : [],
+  videoUrl: p.videoUrl || '',
 });
 
 async function loadProduct(id, options = {}) {
@@ -374,6 +376,9 @@ async function storefrontInput(b) {
     if (urls.length > 20) throw bad('Keep the gallery to 20 images or fewer.');
     if (urls.some((u) => !/^(https:\/\/|\/uploads\/)/i.test(u))) throw bad('Use uploaded images or secure https:// links.');
     out.images = [...new Set(urls)];
+  }
+  if (b.videoUrl !== undefined) {
+    try { out.videoUrl = cleanVideoUrl(b.videoUrl); } catch (e) { throw bad(e.message); }
   }
   return out;
 }
@@ -536,7 +541,7 @@ router.post('/products', need('products.add'), wrap(async (req, res) => {
   const name = clean(b.name);
   // Storefront fields (classic product form): categories from the Category
   // table, gallery, compare-at price, VAT, Arabic, hide online…
-  const storefrontKeys = ['categories', 'images', 'comparePrice', 'featured', 'taxable', 'taxRate', 'hsnCode', 'hideOnline', 'nameAr', 'descriptionAr', 'reorderQty'];
+  const storefrontKeys = ['categories', 'images', 'comparePrice', 'featured', 'taxable', 'taxRate', 'hsnCode', 'hideOnline', 'nameAr', 'descriptionAr', 'reorderQty', 'videoUrl'];
   const storefront = await storefrontInput(Object.fromEntries(storefrontKeys.filter((k) => b[k] !== undefined).map((k) => [k, b[k]])));
   if (storefront.images && !storefront.images.length) delete storefront.images;
   const category = storefront.category || clean(b.category);
@@ -776,6 +781,17 @@ router.put('/skus/:key', need('products.edit'), wrap(async (req, res) => {
           product.images = url ? [url, ...rest] : rest;
           product.changed('images', true);
         }
+      }
+    }
+    // This colour/size's own video; a product without sizes keeps it on the product.
+    if (b.videoUrl !== undefined) {
+      let url;
+      try { url = cleanVideoUrl(b.videoUrl); } catch (e) { throw bad(e.message); }
+      if (url !== (before.video || null)) {
+        if (!can(req, 'products.images')) throw bad('You do not have image permission.', 403);
+        track('Video', before.video, url);
+        if (v) v.video = url;
+        else product.videoUrl = url;
       }
     }
 

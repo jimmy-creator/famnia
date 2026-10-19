@@ -77,7 +77,7 @@ export function InvoiceSheet({ order, business = PRINT_BUSINESS_FALLBACK }) {
         <thead>
           <tr className="border-y border-black/30 text-left">
             <th className="py-1">#</th>
-            <th className="py-1">SKU</th>
+            <th className="py-1">Code</th>
             <th className="py-1">Item</th>
             <th className="py-1">Size</th>
             <th className="py-1">Colour</th>
@@ -91,7 +91,7 @@ export function InvoiceSheet({ order, business = PRINT_BUSINESS_FALLBACK }) {
           {order.items.map((i, idx) => (
             <tr key={`${i.sku}-${idx}`} className="border-b border-black/10">
               <td className="py-1">{idx + 1}</td>
-              <td className="py-1">{i.sku}</td>
+              <td className="py-1">{i.productCode || i.sku}</td>
               <td className="py-1">{i.name}</td>
               <td className="py-1">{i.size || '—'}</td>
               <td className="py-1">{i.color || '—'}</td>

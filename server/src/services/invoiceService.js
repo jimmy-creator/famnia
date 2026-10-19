@@ -199,6 +199,7 @@ export function generateInvoice(order) {
             .map(([k, v]) => `${k}: ${v}`);
           if (variantParts.length) itemName += ` (${variantParts.join(', ')})`;
         }
+        if (item.productCode) itemName += ` · Code ${item.productCode}`;
         doc.text(itemName, 80, y + 8, { width: 250 });
 
         doc.fontSize(9).fill(dark);

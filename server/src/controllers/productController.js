@@ -1,11 +1,11 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import { Product, syncProductStockFromForm } from '../models/index.js';
-import { priceFromMargin, PUBLIC_PRODUCT_ATTRIBUTES, publicProduct } from '../utils/pricing.js';
+import { priceFromMargin, PUBLIC_PRODUCT_ATTRIBUTES, publicProduct, STOREFRONT_WHERE } from '../utils/pricing.js';
 
-// Storefront visibility: active AND not flagged POS-only. Applied to every
-// public-facing product query so a `hideOnline` product never leaks out.
-export const STOREFRONT_WHERE = { active: true, hideOnline: false };
+// Storefront visibility (active, not POS-only, in stock). Applied to every
+// public-facing product query so a hidden product never leaks out.
+export { STOREFRONT_WHERE };
 
 // A reused SKU or barcode would otherwise surface as a bare "Validation error".
 function duplicateCodeMessage(error) {
@@ -28,6 +28,7 @@ export const getProducts = async (req, res) => {
       sort = 'createdAt',
       order = 'DESC',
       featured,
+      ids,
     } = req.query;
 
     const where = { ...STOREFRONT_WHERE };
@@ -45,6 +46,8 @@ export const getProducts = async (req, res) => {
       });
     }
     if (featured) where.featured = true;
+    // The cart re-checks its products by id (sold out → dropped from the cart).
+    if (ids) where.id = { [Op.in]: String(ids).split(',').map((n) => parseInt(n, 10)).filter(Boolean) };
     if (search) {
       and.push({
         [Op.or]: [
@@ -70,7 +73,7 @@ export const getProducts = async (req, res) => {
     });
 
     res.json({
-      products: rows.map(publicProduct),
+      products: rows.map(publicProduct).filter(Boolean),
       totalPages: Math.ceil(count / limit),
       currentPage: parseInt(page),
       total: count,
@@ -87,11 +90,12 @@ export const getProduct = async (req, res) => {
       attributes: PUBLIC_PRODUCT_ATTRIBUTES,
     });
 
-    if (!product) {
+    const json = product && publicProduct(product);
+    if (!json) {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    res.json(publicProduct(product));
+    res.json(json);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
