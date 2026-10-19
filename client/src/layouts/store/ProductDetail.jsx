@@ -93,7 +93,7 @@ export default function ProductDetail() {
     return (
       <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
         <div className="grid gap-10 lg:grid-cols-2">
-          <Skeleton className="aspect-square w-full rounded-lg" />
+          <Skeleton className="aspect-[3/4] w-full rounded-lg" />
           <div className="flex flex-col gap-4">
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-8 w-3/4" />
@@ -412,7 +412,7 @@ function Gallery({ images, product, activeImage, setActiveImage, discount, inWis
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <div
-        className="relative aspect-square overflow-hidden rounded-lg border border-border bg-muted"
+        className="relative aspect-[3/4] overflow-hidden rounded-lg border border-border bg-muted"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
