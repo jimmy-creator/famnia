@@ -349,7 +349,9 @@ const DOC_TYPES = [
   ['other', 'Other'],
 ];
 const docTypeLabel = (t) => DOC_TYPES.find(([k]) => k === t)?.[1] ?? 'Other';
-const DOC_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.xlsx,.xls,.csv,.docx,.doc';
+// What the server sends inline (a browser can show it); everything else downloads.
+const VIEWABLE_DOCS = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
+const DOC_ACCEPT ='.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.xlsx,.xls,.csv,.docx,.doc';
 const fmtSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
 /** Document type + "choose files" button; hands the chosen files and type to onPick. */
@@ -439,6 +441,13 @@ function PoDocuments({ po, isAdmin, userId }) {
                   {d.notes ? ` · ${d.notes}` : ''}
                 </span>
               </div>
+              {VIEWABLE_DOCS.has(d.mimeType) && (
+                <Button size="sm" variant="ghost" className="h-8" asChild>
+                  <a href={poDocumentUrl(po.id, d.id)} target="_blank" rel="noopener noreferrer" aria-label={`View ${d.fileName}`}>
+                    <Eye className="mr-1 size-4" /> View
+                  </a>
+                </Button>
+              )}
               <Button size="sm" variant="ghost" className="h-8" asChild>
                 <a href={`${poDocumentUrl(po.id, d.id)}?download=1`} aria-label={`Download ${d.fileName}`}>
                   <Download className="size-4" />
