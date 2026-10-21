@@ -43,11 +43,18 @@ const emptyForm = () => ({
   wholesaler: '',
 });
 
-/** `onSaved(keys, stockIn)` — stockIn = the user asked to continue straight into Stock In. */
-export function ProductCreateDialog({ open, onClose, onSaved }) {
+/**
+ * `onSaved(keys, stockIn, saved)` — stockIn = the user asked to continue straight
+ * into Stock In; saved = { name, variants } as submitted, in the order of `keys`.
+ *
+ * `forPurchase` ({ supplier }) opens it from a purchase order: no opening stock
+ * and no opening batch, because the units arrive (with the PO's batch) when the
+ * PO is received.
+ */
+export function ProductCreateDialog({ open, onClose, onSaved, forPurchase }) {
   const queryClient = useQueryClient();
   const suppliers = useQuery({ ...suppliersQuery, enabled: open });
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(() => ({ ...emptyForm(), supplier: forPurchase?.supplier ?? '' }));
   const [sf, setSf] = useState(emptyStorefront);
   const [variants, setVariants] = useState([emptyVariant()]);
   const [saving, setSaving] = useState(false);
@@ -91,12 +98,13 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
         category: sf.categories[0] ?? '',
         imageUrl: null,
         ...storefront,
-        variants,
+        variants: forPurchase ? variants.map((v) => ({ ...v, openingStock: 0 })) : variants,
       });
       await invalidateStock(queryClient);
       toast.success(`Product saved — ${result.skus.length} SKU variant(s) created.`);
+      const saved = { name: form.name, variants };
       reset();
-      onSaved?.(result.keys, thenStockIn);
+      onSaved?.(result.keys, thenStockIn, saved);
       onClose();
     } catch (error) {
       toast.error(error.message);
@@ -109,7 +117,7 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="z-[70] max-h-[92vh] w-[calc(100vw-1.5rem)] max-w-3xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add New Product</DialogTitle>
+          <DialogTitle>{forPurchase ? 'New product for this purchase order' : 'Add New Product'}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-5">
@@ -178,6 +186,7 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
             <StorefrontFields value={sf} onChange={setSf} />
           </section>
 
+          {!forPurchase && (
           <section className="space-y-3">
             <h3 className="text-sm font-semibold text-foreground">Batch details (optional)</h3>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -217,6 +226,7 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
               one SKU can hold several batches such as “Batch 1 UAE” and “Batch 2 CHN”.
             </p>
           </section>
+          )}
 
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -302,16 +312,18 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
                   <Field label="Colour / Variant">
                     <Input value={variant.color} onChange={(e) => setVariant(index, { color: e.target.value })} className="h-11" />
                   </Field>
-                  <Field label="Opening Stock">
-                    <Input
-                      type="number"
-                      min={0}
-                      value={variant.openingStock}
-                      onChange={(e) => setVariant(index, { openingStock: Math.max(0, Number(e.target.value) || 0) })}
-                      className="h-11"
-                    />
-                  </Field>
-                  <Field label="Cost Price (QAR)">
+                  {!forPurchase && (
+                    <Field label="Opening Stock">
+                      <Input
+                        type="number"
+                        min={0}
+                        value={variant.openingStock}
+                        onChange={(e) => setVariant(index, { openingStock: Math.max(0, Number(e.target.value) || 0) })}
+                        className="h-11"
+                      />
+                    </Field>
+                  )}
+                  <Field label={forPurchase ? 'Unit cost on this PO (QAR)' : 'Cost Price (QAR)'}>
                     <Input
                       type="number"
                       min={0}
@@ -346,8 +358,9 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
             ))}
 
             <p className="rounded-2xl bg-secondary/50 p-3 text-xs text-muted-foreground">
-              Opening Stock is only for units physically in hand now. If the shipment arrives later, leave it at 0 and record
-              the arrival through Stock In — the same units must never be counted twice.
+              {forPurchase
+                ? 'The product starts with no stock. Each variant is added to the purchase order as a line; its stock arrives — tagged with the PO’s batch — when the PO is received. Quantities are set on the PO.'
+                : 'Opening Stock is only for units physically in hand now. If the shipment arrives later, leave it at 0 and record the arrival through Stock In — the same units must never be counted twice.'}
             </p>
           </section>
         </div>
@@ -356,11 +369,13 @@ export function ProductCreateDialog({ open, onClose, onSaved }) {
           <Button variant="outline" className="h-11" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button variant="outline" className="h-11" onClick={() => save(true)} disabled={saving}>
-            Save Product &amp; Open Stock In
-          </Button>
+          {!forPurchase && (
+            <Button variant="outline" className="h-11" onClick={() => save(true)} disabled={saving}>
+              Save Product &amp; Open Stock In
+            </Button>
+          )}
           <Button className="h-11" onClick={() => save(false)} disabled={saving}>
-            {saving ? 'Saving…' : 'Save Product'}
+            {saving ? 'Saving…' : forPurchase ? 'Save & add to PO' : 'Save Product'}
           </Button>
         </div>
       </DialogContent>

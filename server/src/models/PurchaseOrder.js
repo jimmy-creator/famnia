@@ -61,6 +61,20 @@ const PurchaseOrder = sequelize.define('PurchaseOrder', {
   dispatchDate: { type: DataTypes.DATEONLY, allowNull: true },
   transportNotes: { type: DataTypes.TEXT, allowNull: true },
 
+  // Shipment batch (e.g. "Batch 7", "UAE"): stamped on every stock-in movement
+  // this PO's receipts write, so the hub's batch views and labels see it.
+  batchNumber: { type: DataTypes.STRING(80), allowNull: true },
+  sourceCountry: { type: DataTypes.STRING(80), allowNull: true },
+
+  // Supplier invoice in another currency (e.g. AED). null = the store's own
+  // currency. Line costs and the discount are entered in this currency
+  // (items[].foreignUnitCost, foreignDiscount) and converted at exchangeRate
+  // (store currency per 1 unit); every other money column stays in the
+  // store's currency, so payments, landed cost and reports never see it.
+  currency: { type: DataTypes.STRING(3), allowNull: true },
+  exchangeRate: { type: DataTypes.DECIMAL(14, 6), allowNull: true },
+  foreignDiscount: { type: DataTypes.DECIMAL(12, 3), allowNull: true },
+
   createdBy: { type: DataTypes.INTEGER, allowNull: false },
 }, {
   indexes: [

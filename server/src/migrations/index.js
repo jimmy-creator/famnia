@@ -120,6 +120,12 @@ const STEPS = [
   ['PurchaseOrders.otherCharges', () => addColumnIfMissing('PurchaseOrders', 'otherCharges', {
     type: DataTypes.DECIMAL(12, 3), allowNull: false, defaultValue: 0,
   })],
+  // Purchase orders: shipment batch carried onto received stock.
+  ...[['batchNumber', DataTypes.STRING(80)], ['sourceCountry', DataTypes.STRING(80)]]
+    .map(([col, type]) => [`PurchaseOrders.${col}`, () => addColumnIfMissing('PurchaseOrders', col, { type, allowNull: true })]),
+  // Purchase orders: supplier invoice in a foreign currency.
+  ...[['currency', DataTypes.STRING(3)], ['exchangeRate', DataTypes.DECIMAL(14, 6)], ['foreignDiscount', DataTypes.DECIMAL(12, 3)]]
+    .map(([col, type]) => [`PurchaseOrders.${col}`, () => addColumnIfMissing('PurchaseOrders', col, { type, allowNull: true })]),
 ];
 
 export async function runMigrations({ log = console.log } = {}) {

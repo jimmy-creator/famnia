@@ -10,6 +10,9 @@
  *   POST   /api/purchase-orders/:id/cancel      cancel (only if nothing received)
  *   POST   /api/purchase-orders/:id/receive     create a GRN, increment stock
  *   POST   /api/purchase-orders/:id/pay         record a SupplierPayment
+ *   POST   /api/purchase-orders/:id/documents   attach files (invoice, packing list, AWB, customs…)
+ *   GET    /api/purchase-orders/:id/documents/:docId   view / download one
+ *   DELETE /api/purchase-orders/:id/documents/:docId   remove one
  *
  * Receive flow:
  *   Body: { items: [{ productId, variantIndex, quantity }], notes? }
@@ -26,16 +29,24 @@
  */
 import { Router } from 'express';
 import { Op } from 'sequelize';
+import multer from 'multer';
+import path from 'node:path';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
 import sequelize from '../config/database.js';
 import {
   PurchaseOrder, PurchaseReceipt, SupplierPayment, ProductStock,
-  Supplier, Location, User, Product, CashAccount,
+  Supplier, Location, User, Product, CashAccount, PurchaseDocument,
   recomputeProductStock, writeCashTxn,
 } from '../models/index.js';
+import { PO_DOC_TYPES } from '../models/PurchaseDocument.js';
+import { uploadsDir } from '../config/uploadsDir.js';
+import { withStockContext } from '../services/stockLedger.js';
 import { protect, admin } from '../middleware/auth.js';
 import { rangeStart, rangeEnd } from '../utils/dates.js';
 import { generatePurchaseOrderPdf } from '../services/purchaseDocs.js';
 import { priceFromMargin } from '../utils/pricing.js';
+import { roundMoney } from '../utils/money.js';
 import { hasPermission } from '../hub/permissions.js';
 import { skuFields } from '../hub/catalog.js';
 import { companyProfile } from '../hub/settings.js';
@@ -89,7 +100,13 @@ router.get('/:id', protect, async (req, res) => {
         { model: User, as: 'creator', attributes: ['id', 'name'] },
         { model: PurchaseReceipt, include: [{ model: User, as: 'receiver', attributes: ['id', 'name'] }] },
         { model: SupplierPayment, include: [{ model: User, as: 'payer', attributes: ['id', 'name'] }] },
+        {
+          model: PurchaseDocument,
+          attributes: { exclude: ['storedName'] },
+          include: [{ model: User, as: 'uploader', attributes: ['id', 'name'] }],
+        },
       ],
+      order: [[PurchaseDocument, 'createdAt', 'ASC']],
     });
     if (!po) return res.status(404).json({ message: 'PO not found' });
     const out = po.toJSON();
@@ -131,8 +148,40 @@ router.get('/:id/pdf', protect, async (req, res) => {
   }
 });
 
+// ─── Supplier currency ─────────────────────────────────────────────
+const baseCurrency = () => (process.env.CURRENCY_CODE || 'QAR').toUpperCase();
+const BASE_FX = { currency: null, rate: 1 };
+
+/**
+ * The PO's invoice currency and rate from the body, falling back to what the
+ * PO already has. The store's own currency is stored as null (rate 1).
+ */
+function resolveCurrency(body, po = null) {
+  const raw = body.currency !== undefined ? body.currency : po?.currency;
+  const code = String(raw || '').trim().toUpperCase();
+  if (!code || code === baseCurrency()) return BASE_FX;
+  if (!/^[A-Z]{3}$/.test(code)) throw new Error('Currency must be a 3-letter code such as AED');
+  const rate = parseFloat(body.exchangeRate !== undefined ? body.exchangeRate : po?.exchangeRate);
+  if (!(rate > 0)) throw new Error(`Enter the exchange rate: how many ${baseCurrency()} for 1 ${code}`);
+  return { currency: code, rate: +rate.toFixed(6) };
+}
+
+/** Discount in the store's currency, plus the invoice-currency figure it came from. */
+function discountOf(body, fx, po = null) {
+  if (!fx.currency) {
+    const discount = parseFloat(body.discount !== undefined ? body.discount : po?.discount) || 0;
+    return { discount, foreignDiscount: null };
+  }
+  const raw = body.foreignDiscount !== undefined ? body.foreignDiscount : po?.foreignDiscount;
+  const foreignDiscount = parseFloat(raw) || 0;
+  return { discount: +(foreignDiscount * fx.rate).toFixed(3), foreignDiscount };
+}
+
 // ─── Helpers for items shape ───────────────────────────────────────
-function normalizeItems(items) {
+// With a foreign-currency PO each line's cost arrives as foreignUnitCost and
+// unitCost becomes its store-currency value, so everything downstream (tax,
+// landed cost, costPrice on receive) keeps working in the store's currency.
+function normalizeItems(items, fx = BASE_FX) {
   if (!Array.isArray(items)) throw new Error('items[] required');
   if (items.length === 0) throw new Error('At least one item is required');
   return items.map((it) => {
@@ -140,7 +189,8 @@ function normalizeItems(items) {
     if (!productId) throw new Error('Each item needs productId');
     const orderedQty = parseInt(it.orderedQty ?? it.quantity, 10);
     if (!orderedQty || orderedQty < 1) throw new Error('Quantity must be > 0');
-    const unitCost = parseFloat(it.unitCost) || 0;
+    const foreignUnitCost = fx.currency ? parseFloat(it.foreignUnitCost) || 0 : null;
+    const unitCost = fx.currency ? +(foreignUnitCost * fx.rate).toFixed(6) : parseFloat(it.unitCost) || 0;
     const taxRate = parseFloat(it.taxRate) || 0;
     const lineSubtotal = unitCost * orderedQty;
     const lineTax = +(lineSubtotal * (taxRate / 100)).toFixed(3);
@@ -152,6 +202,7 @@ function normalizeItems(items) {
       orderedQty,
       receivedQty: parseInt(it.receivedQty, 10) || 0,
       unitCost,
+      ...(fx.currency && { foreignUnitCost }),
       taxRate,
       lineTotal: +(lineSubtotal + lineTax).toFixed(3),
     };
@@ -191,6 +242,16 @@ function detailUpdates(body) {
   return out;
 }
 
+// Shipment batch — set while the PO is editable, then frozen: receipts stamp it
+// onto their stock movements, so changing it afterwards would split the batch.
+function batchUpdates(body) {
+  const out = {};
+  for (const field of ['batchNumber', 'sourceCountry']) {
+    if (body[field] !== undefined) out[field] = String(body[field] ?? '').trim().slice(0, 80) || null;
+  }
+  return out;
+}
+
 function computeTotals(items, shippingCost = 0, discount = 0, otherCharges = 0) {
   const subtotal = items.reduce((s, i) => s + (i.unitCost * i.orderedQty), 0);
   const taxAmount = items.reduce((s, i) => s + (i.unitCost * i.orderedQty * (i.taxRate / 100)), 0);
@@ -198,24 +259,31 @@ function computeTotals(items, shippingCost = 0, discount = 0, otherCharges = 0) 
   return {
     subtotal: +subtotal.toFixed(3),
     taxAmount: +taxAmount.toFixed(3),
-    totalAmount: +totalAmount.toFixed(3),
+    // Payable amount at the currency's precision: a 3dp total (e.g. 26.154)
+    // left 0.004 "outstanding" after paying the 26.15 shown, and receiving
+    // refuses anything not paid in full.
+    totalAmount: roundMoney(totalAmount),
   };
 }
 
-// Allocate shipping cost across lines by line value (qty × unitCost) and
-// add it to each line's per-line tax to produce a landed unit cost. The
-// landed unit cost is what hits Product.costPrice on receive so cost-of-
-// goods reports reflect the true price paid per unit.
-function applyLandedCost(items, shippingCost = 0) {
+// Allocate shipping cost and the supplier's discount across lines by line
+// value (qty × unitCost) and add them to each line's per-line tax to produce
+// a landed unit cost. The landed unit cost is what hits Product.costPrice on
+// receive so cost-of-goods reports reflect the true price paid per unit —
+// without the discount share, a discounted order overstated every cost.
+function applyLandedCost(items, shippingCost = 0, discount = 0) {
   const shipping = parseFloat(shippingCost) || 0;
+  const disc = parseFloat(discount) || 0;
   const subtotal = items.reduce((s, i) => s + (i.unitCost * i.orderedQty), 0);
   for (const it of items) {
     const lineValue = it.unitCost * it.orderedQty;
     const lineTax = lineValue * (it.taxRate / 100);
     const lineShipping = subtotal > 0 ? (shipping * lineValue / subtotal) : 0;
-    const landedTotal = lineValue + lineTax + lineShipping;
+    const lineDiscount = subtotal > 0 ? (disc * lineValue / subtotal) : 0;
+    const landedTotal = Math.max(0, lineValue + lineTax + lineShipping - lineDiscount);
     const qty = it.orderedQty > 0 ? it.orderedQty : 1;
     it.shippingShare = +lineShipping.toFixed(3);
+    it.discountShare = +lineDiscount.toFixed(3);
     it.landedLineTotal = +landedTotal.toFixed(3);
     // 6dp to match Product.costPrice DECIMAL(12,6): raw materials are costed
     // per gram, and rounding their landed cost to 3dp zeroed it.
@@ -230,14 +298,16 @@ router.post('/', protect, async (req, res) => {
     if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
-    const { supplierId, locationId, items, status, notes, expectedDate, shippingCost = 0, discount = 0, otherCharges = 0 } = req.body;
+    const { supplierId, locationId, items, status, notes, expectedDate, shippingCost = 0, otherCharges = 0 } = req.body;
     if (!supplierId || !locationId) {
       return res.status(400).json({ message: 'supplierId and locationId required' });
     }
     if ((parseFloat(otherCharges) || 0) < 0) return res.status(400).json({ message: 'Other charges cannot be negative' });
-    const normalized = normalizeItems(items);
+    const fx = resolveCurrency(req.body);
+    const { discount, foreignDiscount } = discountOf(req.body, fx);
+    const normalized = normalizeItems(items, fx);
     const totals = computeTotals(normalized, shippingCost, discount, otherCharges);
-    applyLandedCost(normalized, (parseFloat(shippingCost) || 0) + (parseFloat(otherCharges) || 0));
+    applyLandedCost(normalized, (parseFloat(shippingCost) || 0) + (parseFloat(otherCharges) || 0), discount);
 
     // Enrich names from Product table if not supplied.
     const productIds = [...new Set(normalized.map((i) => i.productId))];
@@ -258,12 +328,16 @@ router.post('/', protect, async (req, res) => {
       ...totals,
       shippingCost: parseFloat(shippingCost) || 0,
       otherCharges: parseFloat(otherCharges) || 0,
-      discount: parseFloat(discount) || 0,
+      discount,
+      currency: fx.currency,
+      exchangeRate: fx.currency ? fx.rate : null,
+      foreignDiscount,
       status: status === 'sent' ? 'sent' : 'draft',
       paymentStatus: 'unpaid',
       expectedDate: expectedDate || null,
       notes: notes?.trim() || null,
       ...detailUpdates(req.body),
+      ...batchUpdates(req.body),
       createdBy: req.user.id,
     });
     res.status(201).json(po);
@@ -286,19 +360,34 @@ router.put('/:id', protect, async (req, res) => {
     }
     const {
       items, supplierId, locationId, notes, expectedDate,
-      shippingCost = po.shippingCost, discount = po.discount, otherCharges = po.otherCharges,
+      shippingCost = po.shippingCost, otherCharges = po.otherCharges,
     } = req.body;
     if ((parseFloat(otherCharges) || 0) < 0) return res.status(400).json({ message: 'Other charges cannot be negative' });
+    const fx = resolveCurrency(req.body, po);
+    const fxChanged = fx.currency !== (po.currency || null)
+      || (fx.currency && fx.rate !== parseFloat(po.exchangeRate));
+    // Line costs are entered in the invoice currency, so a currency or rate
+    // change has to come with the lines it applies to.
+    if (fxChanged && !items) {
+      return res.status(400).json({ message: 'Send the order lines along with a currency or exchange-rate change' });
+    }
+    const { discount, foreignDiscount } = discountOf(req.body, fx, po);
     const landedExtras = (parseFloat(shippingCost) || 0) + (parseFloat(otherCharges) || 0);
-    const updates = { ...detailUpdates(req.body) };
+    const updates = {
+      ...detailUpdates(req.body),
+      ...batchUpdates(req.body),
+      currency: fx.currency,
+      exchangeRate: fx.currency ? fx.rate : null,
+      foreignDiscount,
+    };
     if (items) {
-      const normalized = normalizeItems(items);
+      const normalized = normalizeItems(items, fx);
       const ids = [...new Set(normalized.map((i) => i.productId))];
       if (await Product.count({ where: { id: ids } }) !== ids.length) {
         return res.status(400).json({ message: 'One or more products on this PO do not exist' });
       }
       const totals = computeTotals(normalized, shippingCost, discount, otherCharges);
-      applyLandedCost(normalized, landedExtras);
+      applyLandedCost(normalized, landedExtras, discount);
       Object.assign(updates, { items: normalized, ...totals });
     } else if (
       // Compare as numbers: Sequelize hands DECIMAL back as a string, so
@@ -313,7 +402,7 @@ router.put('/:id', protect, async (req, res) => {
       // lines were re-landed, so totalAmount kept the old shipping.
       const existing = [...(po.items || [])];
       const totals = computeTotals(existing, shippingCost, discount, otherCharges);
-      applyLandedCost(existing, landedExtras);
+      applyLandedCost(existing, landedExtras, discount);
       Object.assign(updates, { items: existing, ...totals });
     }
     if (supplierId) updates.supplierId = parseInt(supplierId, 10);
@@ -322,7 +411,7 @@ router.put('/:id', protect, async (req, res) => {
     if (expectedDate !== undefined) updates.expectedDate = expectedDate || null;
     if (shippingCost !== undefined) updates.shippingCost = parseFloat(shippingCost) || 0;
     if (otherCharges !== undefined) updates.otherCharges = parseFloat(otherCharges) || 0;
-    if (discount !== undefined) updates.discount = parseFloat(discount) || 0;
+    updates.discount = discount;
     // "Save & send" from the editor sends a draft; a sent PO never goes back to draft.
     if (req.body.status === 'sent' && po.status === 'draft') updates.status = 'sent';
     // Payments may already exist against a draft/sent PO — keep them consistent.
@@ -393,7 +482,9 @@ router.post('/:id/receive', protect, async (req, res) => {
   }
   const t = await sequelize.transaction();
   try {
-    const po = await PurchaseOrder.findByPk(req.params.id, { transaction: t });
+    const po = await PurchaseOrder.findByPk(req.params.id, {
+      include: [{ model: Supplier, attributes: ['name'] }], transaction: t,
+    });
     if (!po) { await t.rollback(); return res.status(404).json({ message: 'PO not found' }); }
     if (po.status === 'cancelled' || po.status === 'received') {
       await t.rollback();
@@ -464,16 +555,31 @@ router.post('/:id/receive', protect, async (req, res) => {
         where: { productId: g.productId, variantIndex: g.variantIndex, locationId: po.locationId },
         transaction: t,
       });
-      if (existing) {
-        await existing.update({ quantity: existing.quantity + g.quantity }, { transaction: t });
-      } else {
-        await ProductStock.create({
-          productId: g.productId,
-          variantIndex: g.variantIndex,
-          locationId: po.locationId,
-          quantity: g.quantity,
-        }, { transaction: t });
-      }
+      // The stock-in movement carries the PO's supplier, invoice and batch,
+      // so the hub's Stock In list and batch views show where it came from.
+      await withStockContext({
+        kind: 'stock_in',
+        reference: `${po.poNumber} receipt`.slice(0, 80),
+        unitCost: parseFloat(g.landedUnitCost ?? g.unitCost) || null,
+        supplier: po.Supplier?.name || null,
+        invoiceRef: po.supplierInvoiceNo || null,
+        receivedBy: req.user.name || null,
+        notes: notes?.trim() || null,
+        batchNumber: po.batchNumber || null,
+        sourceCountry: po.sourceCountry || null,
+        createdBy: req.user.id,
+      }, async () => {
+        if (existing) {
+          await existing.update({ quantity: existing.quantity + g.quantity }, { transaction: t });
+        } else {
+          await ProductStock.create({
+            productId: g.productId,
+            variantIndex: g.variantIndex,
+            locationId: po.locationId,
+            quantity: g.quantity,
+          }, { transaction: t });
+        }
+      });
       // Use landed unit cost (unit cost + per-line tax + proportional
       // share of PO shipping) so costPrice reflects the true landed
       // price per unit.
@@ -590,6 +696,116 @@ router.post('/:id/pay', protect, admin, async (req, res) => {
     if (!t.finished) await t.rollback().catch(() => {});
     console.error('[po/pay]', err);
     res.status(400).json({ message: err.message });
+  }
+});
+
+// ─── Documents (supplier invoice, packing list, AWB / B/L, customs…) ──
+// Kept out of the public /uploads folder: invoices are business records, so
+// they are only ever served through the authenticated route below.
+const docsDir = path.join(path.dirname(uploadsDir), 'private-docs', 'purchase-orders');
+try { fs.mkdirSync(docsDir, { recursive: true }); } catch { /* ignore */ }
+
+const DOC_TYPES = {
+  'application/pdf': '.pdf',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/heic': '.heic',
+  'image/heif': '.heif',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'application/vnd.ms-excel': '.xls',
+  'text/csv': '.csv',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/msword': '.doc',
+};
+const INLINE_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
+
+const docUpload = multer({
+  storage: multer.diskStorage({
+    destination: docsDir,
+    filename: (req, file, cb) => cb(null, crypto.randomBytes(16).toString('hex') + DOC_TYPES[file.mimetype]),
+  }),
+  fileFilter: (req, file, cb) => {
+    if (DOC_TYPES[file.mimetype]) cb(null, true);
+    else cb(new Error(`"${file.originalname}" is not a PDF, image, Excel, CSV or Word file`));
+  },
+  limits: { fileSize: 15 * 1024 * 1024, files: 10 },
+});
+
+const canSeePurchasing = (user) => user.role === 'admin' || hasPermission(user, 'products');
+
+router.post('/:id/documents', protect, (req, res) => {
+  if (!canSeePurchasing(req.user)) return res.status(403).json({ message: 'Forbidden' });
+  docUpload.array('files', 10)(req, res, async (uploadErr) => {
+    const files = req.files || [];
+    const discard = () => files.forEach((f) => fs.unlink(f.path, () => {}));
+    try {
+      if (uploadErr) {
+        discard();
+        const message = uploadErr.code === 'LIMIT_FILE_SIZE' ? 'Each file must be 15 MB or smaller'
+          : uploadErr.code === 'LIMIT_FILE_COUNT' ? 'Attach at most 10 files at a time'
+            : uploadErr.message;
+        return res.status(400).json({ message });
+      }
+      if (!files.length) return res.status(400).json({ message: 'Choose at least one file' });
+      const po = await PurchaseOrder.findByPk(req.params.id, { attributes: ['id'] });
+      if (!po) { discard(); return res.status(404).json({ message: 'PO not found' }); }
+      const docType = PO_DOC_TYPES.includes(req.body.docType) ? req.body.docType : 'other';
+      const notes = String(req.body.notes || '').trim().slice(0, 200) || null;
+      const docs = await PurchaseDocument.bulkCreate(files.map((f) => ({
+        purchaseOrderId: po.id,
+        docType,
+        // multer hands the name over as latin1; Arabic / accented names need this.
+        fileName: Buffer.from(f.originalname, 'latin1').toString('utf8').slice(0, 255),
+        storedName: f.filename,
+        mimeType: f.mimetype,
+        size: f.size,
+        notes,
+        uploadedBy: req.user.id,
+      })));
+      res.status(201).json(docs.map((d) => ({ ...d.toJSON(), storedName: undefined })));
+    } catch (err) {
+      discard();
+      console.error('[po/documents]', err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+});
+
+router.get('/:id/documents/:docId', protect, async (req, res) => {
+  try {
+    if (!canSeePurchasing(req.user)) return res.status(403).json({ message: 'Forbidden' });
+    const doc = await PurchaseDocument.findOne({ where: { id: req.params.docId, purchaseOrderId: req.params.id } });
+    if (!doc) return res.status(404).json({ message: 'Document not found' });
+    const file = path.join(docsDir, path.basename(doc.storedName));
+    if (!fs.existsSync(file)) return res.status(404).json({ message: 'The file is missing on the server' });
+    const inline = !req.query.download && INLINE_TYPES.has(doc.mimeType);
+    res.set({
+      'Content-Type': doc.mimeType,
+      'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(doc.fileName)}`,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, no-store',
+    });
+    res.sendFile(file);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.delete('/:id/documents/:docId', protect, async (req, res) => {
+  try {
+    if (!canSeePurchasing(req.user)) return res.status(403).json({ message: 'Forbidden' });
+    const doc = await PurchaseDocument.findOne({ where: { id: req.params.docId, purchaseOrderId: req.params.id } });
+    if (!doc) return res.status(404).json({ message: 'Document not found' });
+    // Staff can take back their own upload; anything else is the admin's call.
+    if (req.user.role !== 'admin' && doc.uploadedBy !== req.user.id) {
+      return res.status(403).json({ message: 'Only an admin can remove a document someone else attached' });
+    }
+    await doc.destroy();
+    fs.unlink(path.join(docsDir, path.basename(doc.storedName)), () => {});
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 

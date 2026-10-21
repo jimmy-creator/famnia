@@ -9,6 +9,8 @@ uploads/*
 !uploads/.gitkeep
 server/uploads/*
 !server/uploads/.gitkeep
+# Purchase-order invoices / cargo papers (served only through the API)
+server/private-docs/
 
 # Proposals
 PROPOSAL.md

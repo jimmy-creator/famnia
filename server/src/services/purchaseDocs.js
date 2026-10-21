@@ -251,6 +251,12 @@ export function generatePurchaseOrderPdf(po, company = {}) {
 
     const items = po.items || [];
     const anyReceived = items.some((l) => (l.receivedQty || 0) > 0);
+    // A foreign-currency PO shows the supplier their own prices; our landed
+    // charges and the payable total follow in the store's currency.
+    const fx = po.currency ? { code: po.currency, rate: parseFloat(po.exchangeRate) || 0 } : null;
+    const lineCost = (l) => (fx ? parseFloat(l.foreignUnitCost) || 0 : parseFloat(l.unitCost) || 0);
+    const fxMoney = (v) => `${fx.code} ${(parseFloat(v) || 0).toFixed(2)}`;
+    const lineMoney = fx ? fxMoney : s.money;
     const cols = [
       { label: '#', width: 22 },
       { label: 'ITEM', width: anyReceived ? 178 : 238 },
@@ -261,7 +267,7 @@ export function generatePurchaseOrderPdf(po, company = {}) {
     ];
     y = table(doc, y, cols, items.map((l, i) => {
       const qty = parseInt(l.orderedQty, 10) || 0;
-      const amount = (parseFloat(l.unitCost) || 0) * qty * (1 + (parseFloat(l.taxRate) || 0) / 100);
+      const amount = lineCost(l) * qty * (1 + (parseFloat(l.taxRate) || 0) / 100);
       const sub = [
         l.productCode && `Code ${l.productCode}`,
         l.sku && `SKU ${l.sku}`,
@@ -270,7 +276,7 @@ export function generatePurchaseOrderPdf(po, company = {}) {
         parseFloat(l.taxRate) ? `tax ${parseFloat(l.taxRate)}%` : null,
       ].filter(Boolean).join(' · ');
       return {
-        cells: [i + 1, l.name, qty, ...(anyReceived ? [l.receivedQty || 0] : []), s.money(l.unitCost), s.money(amount)],
+        cells: [i + 1, l.name, qty, ...(anyReceived ? [l.receivedQty || 0] : []), lineMoney(lineCost(l)), lineMoney(amount)],
         sub: sub || null,
       };
     }));
@@ -280,9 +286,23 @@ export function generatePurchaseOrderPdf(po, company = {}) {
     const other = parseFloat(po.otherCharges) || 0;
     const discount = parseFloat(po.discount) || 0;
     const totalQty = items.reduce((a, l) => a + (parseInt(l.orderedQty, 10) || 0), 0);
+    let invoiceLines = [];
+    if (fx) {
+      const fSub = items.reduce((a, l) => a + lineCost(l) * (parseInt(l.orderedQty, 10) || 0), 0);
+      const fTax = items.reduce((a, l) => a + lineCost(l) * (parseInt(l.orderedQty, 10) || 0) * ((parseFloat(l.taxRate) || 0) / 100), 0);
+      const fDisc = parseFloat(po.foreignDiscount) || 0;
+      invoiceLines = [
+        { label: `${fx.code} subtotal`, value: fxMoney(fSub) },
+        ...(fTax ? [{ label: `${fx.code} tax`, value: fxMoney(fTax) }] : []),
+        ...(fDisc ? [{ label: `${fx.code} discount`, value: `-${fxMoney(fDisc)}` }] : []),
+        { label: `${fx.code} total`, value: fxMoney(fSub + fTax - fDisc) },
+        { label: 'Rate', value: `1 ${fx.code} = ${fx.rate} ${s.money(0).split(' ')[0]}` },
+      ];
+    }
     y = totals(doc, y, [
       { label: 'Total qty', value: `${totalQty} (${items.length} items)` },
-      { label: 'Subtotal', value: s.money(po.subtotal) },
+      ...invoiceLines,
+      { label: fx ? 'Goods (converted)' : 'Subtotal', value: s.money(po.subtotal) },
       ...(tax ? [{ label: 'Tax', value: s.money(tax) }] : []),
       ...(shipping ? [{ label: 'Shipping', value: s.money(shipping) }] : []),
       ...(other ? [{ label: 'Customs / other', value: s.money(other) }] : []),

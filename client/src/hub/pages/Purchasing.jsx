@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Eye, Link2, PackageCheck, Plus, Printer, Trash2, Wallet } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Download, Eye, FileText, Link2, PackageCheck, Paperclip, Plus, Printer, Trash2, Wallet } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -17,11 +17,13 @@ import {
   cancelPurchaseReturn,
   cashAccountsQuery,
   createPurchaseReturn,
+  deletePoDocument,
   deleteSupplier,
   linkSupplierProducts,
   locationsQuery,
   payPurchaseOrder,
   pk,
+  poDocumentUrl,
   poPdfUrl,
   printPdf,
   purchaseOrderQuery,
@@ -37,8 +39,11 @@ import {
   sendPurchaseOrder,
   supplierProductsQuery,
   supplierStatementQuery,
+  uploadPoDocuments,
 } from '@/hub/lib/apiPurchasing';
-import { QAR, downloadFile, toCsv, today } from '@/hub/lib/format';
+import { CURRENCY, QAR, batchLabel, downloadFile, toCsv, today } from '@/hub/lib/format';
+import { can } from '@/hub/lib/permissions';
+import { ProductCreateDialog } from '@/hub/components/ProductCreateDialog';
 import { useHubTitle } from '@/hub/lib/useHubTitle';
 import { cn } from '@/lib/utils';
 import { PRICE_STEP } from '@/utils/currency';
@@ -190,14 +195,25 @@ function poTotals(lines, shipping, discount, other = 0) {
   const tax = lines.reduce((s, l) => s + num(l.unitCost) * num(l.orderedQty) * (num(l.taxRate) / 100), 0);
   return { subtotal, tax, total: subtotal + tax + num(shipping) + num(other) - num(discount) };
 }
+/** "AED 1,234.00" — an amount in a supplier's invoice currency. */
+const money = (code, value) =>
+  code === CURRENCY ? QAR(value) : `${code} ${Number(value ?? 0).toLocaleString('en-QA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Common supplier currencies. The rate is the store currency for 1 unit; the
+// suggestions are the fixed USD pegs (QAR 3.64) — only offered when the store
+// runs on QAR, and always meant to be replaced by the rate actually paid.
+const PO_CURRENCIES = ['AED', 'SAR', 'OMR', 'BHD', 'KWD', 'USD', 'EUR', 'GBP', 'CNY', 'INR', 'TRY', 'PKR', 'BDT'];
+const PEG_RATES = CURRENCY === 'QAR' ? { AED: 0.9912, SAR: 0.9707, OMR: 9.4668, BHD: 9.6809, USD: 3.64 } : {};
+
 // `shipping` here is everything landed into unit cost: shipping plus customs / other charges.
-function landedUnit(line, subtotal, shipping) {
+// The discount is shared out the same way (by line value), as the server does.
+function landedUnit(line, subtotal, shipping, discount = 0) {
   const qty = num(line.orderedQty);
   if (!qty) return 0;
   const value = num(line.unitCost) * qty;
   const lineTotal = value * (1 + num(line.taxRate) / 100);
   const shipShare = subtotal > 0 ? (num(shipping) * value) / subtotal : 0;
-  return (lineTotal + shipShare) / qty;
+  const discShare = subtotal > 0 ? (num(discount) * value) / subtotal : 0;
+  return Math.max(0, lineTotal + shipShare - discShare) / qty;
 }
 
 /** The supplier's products (bought before or linked), with one-tap and below-reorder bulk add. */
@@ -323,6 +339,145 @@ function PoDetailsFields({ value, onChange }) {
   );
 }
 
+// Files attached to a PO: supplier invoice, packing list, cargo papers, customs…
+const DOC_TYPES = [
+  ['invoice', 'Supplier invoice'],
+  ['packing_list', 'Packing list'],
+  ['cargo', 'Cargo / AWB / B/L'],
+  ['customs', 'Customs / clearance'],
+  ['payment_proof', 'Payment proof'],
+  ['other', 'Other'],
+];
+const docTypeLabel = (t) => DOC_TYPES.find(([k]) => k === t)?.[1] ?? 'Other';
+const DOC_ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif,.xlsx,.xls,.csv,.docx,.doc';
+const fmtSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
+/** Document type + "choose files" button; hands the chosen files and type to onPick. */
+function DocPicker({ onPick, disabled, label = 'Attach files' }) {
+  const input = useRef(null);
+  const [docType, setDocType] = useState('invoice');
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <select className={cn(SELECT, 'h-10 w-auto')} value={docType} onChange={(e) => setDocType(e.target.value)} aria-label="Document type">
+        {DOC_TYPES.map(([k, l]) => (
+          <option key={k} value={k}>
+            {l}
+          </option>
+        ))}
+      </select>
+      <Button type="button" variant="outline" className="h-10" disabled={disabled} onClick={() => input.current?.click()}>
+        <Paperclip className="mr-2 size-4" /> {label}
+      </Button>
+      <input
+        ref={input}
+        type="file"
+        multiple
+        accept={DOC_ACCEPT}
+        className="hidden"
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          e.target.value = '';
+          if (files.length) onPick(files, docType);
+        }}
+      />
+      <span className="text-xs text-muted-foreground">PDF, photo, Excel or Word · up to 15 MB each</span>
+    </div>
+  );
+}
+
+/** Uploads files picked in the editor once the PO exists, one request per document type. */
+async function uploadPending(poId, pending) {
+  const byType = new Map();
+  for (const p of pending) byType.set(p.docType, [...(byType.get(p.docType) ?? []), p.file]);
+  for (const [docType, files] of byType) await uploadPoDocuments(poId, files, docType);
+}
+
+/** The PO's attached documents: view, download, remove, attach more. */
+function PoDocuments({ po, isAdmin, userId }) {
+  const client = useQueryClient();
+  const docs = po.PurchaseDocuments ?? [];
+  const [removing, setRemoving] = useState(null);
+  const upload = useMutation({
+    mutationFn: ({ files, docType }) => uploadPoDocuments(po.id, files, docType),
+    onSuccess: async (saved) => {
+      toast.success(`${saved.length} document${saved.length === 1 ? '' : 's'} attached.`);
+      await client.invalidateQueries({ queryKey: pk.order(po.id) });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const remove = useMutation({
+    mutationFn: (doc) => deletePoDocument(po.id, doc.id),
+    onSuccess: async () => {
+      toast.success('Document removed.');
+      setRemoving(null);
+      await client.invalidateQueries({ queryKey: pk.order(po.id) });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  return (
+    <section className="grid gap-2">
+      <h3 className="text-sm font-semibold">
+        Documents <span className="font-normal text-muted-foreground">({docs.length})</span>
+      </h3>
+      {docs.length > 0 && (
+        <ul className="divide-y divide-border rounded-xl border border-border text-sm">
+          {docs.map((d) => (
+            <li key={d.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
+              <FileText className="size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <a
+                  href={poDocumentUrl(po.id, d.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block truncate font-medium text-primary hover:underline"
+                >
+                  {d.fileName}
+                </a>
+                <span className="block text-xs text-muted-foreground">
+                  {docTypeLabel(d.docType)} · {fmtSize(d.size)} · {fmtDate(d.createdAt)}
+                  {d.uploader?.name ? ` · ${d.uploader.name}` : ''}
+                  {d.notes ? ` · ${d.notes}` : ''}
+                </span>
+              </div>
+              <Button size="sm" variant="ghost" className="h-8" asChild>
+                <a href={`${poDocumentUrl(po.id, d.id)}?download=1`} aria-label={`Download ${d.fileName}`}>
+                  <Download className="size-4" />
+                </a>
+              </Button>
+              {(isAdmin || d.uploadedBy === userId) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 text-muted-foreground hover:text-destructive"
+                  aria-label={`Remove ${d.fileName}`}
+                  onClick={() => setRemoving(d)}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <DocPicker
+        disabled={upload.isPending}
+        label={upload.isPending ? 'Uploading…' : 'Attach files'}
+        onPick={(files, docType) => upload.mutate({ files, docType })}
+      />
+      <ConfirmDialog
+        open={Boolean(removing)}
+        title={`Remove ${removing?.fileName ?? 'document'}?`}
+        body="The file is deleted from the server. The purchase order itself is not changed."
+        confirmLabel="Remove"
+        destructive
+        busy={remove.isPending}
+        onConfirm={() => remove.mutate(removing)}
+        onClose={() => setRemoving(null)}
+      />
+    </section>
+  );
+}
+
 /** Create or edit a PO. Mounted with a key so the form starts from the PO it edits. */
 function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
   const client = useQueryClient();
@@ -331,23 +486,39 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
   const [expectedDate, setExpectedDate] = useState(po?.expectedDate ? String(po.expectedDate).slice(0, 10) : '');
   const [shipping, setShipping] = useState(po ? num(po.shippingCost) : 0);
   const [otherCharges, setOtherCharges] = useState(po ? num(po.otherCharges) : 0);
-  const [discount, setDiscount] = useState(po ? num(po.discount) : 0);
+  // Line costs and the discount are held in the invoice currency; shipping and
+  // customs are always in the store's currency (they're paid locally).
+  const [currency, setCurrency] = useState(po?.currency || CURRENCY);
+  const [rate, setRate] = useState(po?.exchangeRate ? num(po.exchangeRate) : '');
+  const foreign = currency !== CURRENCY;
+  const [discount, setDiscount] = useState(po ? num(po.currency ? po.foreignDiscount : po.discount) : 0);
   const [notes, setNotes] = useState(po?.notes ?? '');
   const [details, setDetails] = useState(() => detailsOf(po));
+  const [batchNumber, setBatchNumber] = useState(po?.batchNumber ?? '');
+  const [sourceCountry, setSourceCountry] = useState(po?.sourceCountry ?? '');
+  const [pending, setPending] = useState([]); // [{ file, docType }] — uploaded once the PO is saved
+  const [creatingProduct, setCreatingProduct] = useState(false);
+  const canAddProduct = can(useQuery(accessQuery).data ?? null, 'products.add');
   const [lines, setLines] = useState(() =>
     (po?.items ?? []).map((it) => ({
       productId: it.productId,
       variantIndex: it.variantIndex ?? null,
       name: it.name,
       orderedQty: it.orderedQty,
-      unitCost: num(it.unitCost),
+      unitCost: num(po.currency ? it.foreignUnitCost : it.unitCost),
       taxRate: num(it.taxRate),
     })),
   );
+  const toBase = (v) => (foreign ? num(v) * num(rate) : num(v));
+  // Catalogue costs are in the store's currency; a foreign PO starts its lines at the converted figure.
+  const fromBase = (v) => (foreign && num(rate) > 0 ? +(num(v) / num(rate)).toFixed(2) : num(v));
   const existing = useMemo(() => new Set(lines.map((l) => lineKey(l.productId, l.variantIndex))), [lines]);
-  const totals = poTotals(lines, shipping, discount, otherCharges);
+  const baseLines = lines.map((l) => ({ ...l, unitCost: toBase(l.unitCost) }));
+  const totals = poTotals(baseLines, shipping, toBase(discount), otherCharges);
+  const invoice = poTotals(lines, 0, discount, 0); // in the invoice currency
   const landedExtras = num(shipping) + num(otherCharges);
   const editingSent = po?.status === 'sent';
+  const supplierName = suppliers.find((s) => String(s.id) === supplierId)?.name ?? '';
 
   const addLines = (next) =>
     setLines((cur) => {
@@ -371,19 +542,31 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
           variantIndex: l.variantIndex,
           name: l.name,
           orderedQty: parseInt(l.orderedQty, 10),
-          unitCost: num(l.unitCost),
+          ...(foreign ? { foreignUnitCost: num(l.unitCost) } : { unitCost: num(l.unitCost) }),
           taxRate: num(l.taxRate),
         })),
         shippingCost: num(shipping),
         otherCharges: num(otherCharges),
-        discount: num(discount),
+        currency,
+        ...(foreign ? { exchangeRate: num(rate), foreignDiscount: num(discount) } : { discount: num(discount) }),
         expectedDate: expectedDate || null,
         notes,
         ...details,
+        batchNumber,
+        sourceCountry,
         status,
       }),
     onSuccess: async (saved, status) => {
       toast.success(`${saved?.poNumber ?? 'Purchase order'} ${po ? 'updated' : status === 'sent' ? 'saved and sent' : 'saved as draft'}.`);
+      if (pending.length && saved?.id) {
+        try {
+          await uploadPending(saved.id, pending);
+          toast.success(`${pending.length} document${pending.length === 1 ? '' : 's'} attached.`);
+        } catch (e) {
+          // The PO is saved either way; the detail view opens next, where they can retry.
+          toast.error(`Purchase order saved, but the documents did not upload: ${e.message}`);
+        }
+      }
       await client.invalidateQueries({ queryKey: pk.all });
       onSaved(saved);
     },
@@ -393,6 +576,8 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
   const invalid =
     !supplierId ? 'Choose a supplier.'
     : !locationId ? 'Choose the receiving location.'
+    : !/^[A-Z]{3}$/.test(currency) ? 'Currency must be a 3-letter code such as AED.'
+    : foreign && !(num(rate) > 0) ? `Enter the exchange rate: how many ${CURRENCY} for 1 ${currency}.`
     : lines.length === 0 ? 'Add at least one line.'
     : lines.some((l) => !(parseInt(l.orderedQty, 10) > 0)) ? 'Every line needs a quantity of 1 or more.'
     : lines.some((l) => num(l.unitCost) < 0) ? 'Unit costs cannot be negative.'
@@ -414,7 +599,16 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
 
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Supplier *">
-            <select className={SELECT} value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+            <select
+              className={SELECT}
+              value={supplierId}
+              onChange={(e) => {
+                setSupplierId(e.target.value);
+                // Goods usually come from the supplier's country — prefill it, still editable.
+                const country = suppliers.find((s) => String(s.id) === e.target.value)?.country;
+                if (country && !sourceCountry) setSourceCountry(country);
+              }}
+            >
               <option value="">Choose supplier…</option>
               {supplierOptions.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -436,17 +630,94 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
           <Field label="Expected date">
             <Input className="h-11" type="date" value={expectedDate} min={today()} onChange={(e) => setExpectedDate(e.target.value)} />
           </Field>
+          <Field label="Batch" hint="Every unit received on this PO is tagged with it (labels, batch filters).">
+            <Input className="h-11" value={batchNumber} maxLength={80} onChange={(e) => setBatchNumber(e.target.value)} placeholder="e.g. Batch 7" />
+          </Field>
+          <Field label="Source country" className="content-start">
+            <Input className="h-11" value={sourceCountry} maxLength={80} onChange={(e) => setSourceCountry(e.target.value)} placeholder="e.g. UAE" />
+          </Field>
+          <Field
+            label="Invoice currency"
+            className="content-start"
+            hint={foreign ? `Line costs and discount in ${currency}; shipping and customs in ${CURRENCY}.` : undefined}
+          >
+            <Input
+              className="h-11 uppercase"
+              list="po-currencies"
+              maxLength={3}
+              value={currency}
+              onChange={(e) => {
+                const code = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
+                setCurrency(code);
+                if (PEG_RATES[code] && !num(rate)) setRate(PEG_RATES[code]);
+              }}
+            />
+            <datalist id="po-currencies">
+              {[CURRENCY, ...PO_CURRENCIES.filter((c) => c !== CURRENCY)].map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </Field>
+          {foreign && (
+            <Field
+              label={`Exchange rate · 1 ${currency || '…'} = ? ${CURRENCY} *`}
+              className="sm:col-span-2 content-start"
+              hint={
+                PEG_RATES[currency]
+                  ? `Suggested from the fixed USD peg (${PEG_RATES[currency]}). Use the rate you actually paid at.`
+                  : 'Use the rate you actually paid at (bank or exchange receipt).'
+              }
+            >
+              <Input className="h-11" type="number" min="0" step="0.0001" value={rate} onChange={(e) => setRate(e.target.value)} />
+            </Field>
+          )}
         </div>
 
         {supplierId && (
-          <SupplierQuickAdd key={supplierId} supplierId={supplierId} locationId={locationId} existing={existing} onAdd={addLines} />
+          <SupplierQuickAdd
+            key={supplierId}
+            supplierId={supplierId}
+            locationId={locationId}
+            existing={existing}
+            onAdd={(next) => addLines(next.map((l) => ({ ...l, unitCost: fromBase(l.unitCost) })))}
+          />
         )}
 
-        <SkuSearch
-          onPick={(s) =>
-            addLines([{ ...fromSku(s), name: skuName(s), orderedQty: 1, unitCost: num(s.costPrice), taxRate: 0 }])
-          }
-        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+          <div className="min-w-0 flex-1">
+            <SkuSearch
+              onPick={(s) =>
+                addLines([{ ...fromSku(s), name: skuName(s), orderedQty: 1, unitCost: fromBase(s.costPrice), taxRate: 0 }])
+              }
+            />
+          </div>
+          {canAddProduct && (
+            <Button type="button" variant="outline" className="h-11 shrink-0" onClick={() => setCreatingProduct(true)}>
+              <Plus className="mr-2 size-4" /> New product
+            </Button>
+          )}
+        </div>
+        {creatingProduct && (
+          <ProductCreateDialog
+            open
+            forPurchase={{ supplier: supplierName }}
+            onClose={() => setCreatingProduct(false)}
+            onSaved={(keys, _stockIn, saved) =>
+              addLines(
+                keys.map((key, i) => {
+                  const v = saved.variants[i] ?? {};
+                  return {
+                    ...fromSku({ key }),
+                    name: [saved.name, v.size, v.color].filter(Boolean).join(' · '),
+                    orderedQty: 1,
+                    unitCost: fromBase(v.costPrice),
+                    taxRate: 0,
+                  };
+                }),
+              )
+            }
+          />
+        )}
 
         {lines.length === 0 ? (
           <EmptyState title="No lines yet" hint="Search above, or open this supplier's products." />
@@ -465,11 +736,11 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
                     <Trash2 className="size-4" />
                   </button>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                <div className="mt-2 grid grid-cols-2 items-start gap-2 sm:grid-cols-5">
                   <Field label="Qty *">
                     <Input className="h-10" type="number" min="1" step="1" value={l.orderedQty} onChange={(e) => setLine(i, { orderedQty: e.target.value })} />
                   </Field>
-                  <Field label="Unit cost">
+                  <Field label={foreign ? `Unit cost (${currency})` : 'Unit cost'} hint={foreign ? `≈ ${QAR(toBase(l.unitCost))}` : undefined}>
                     <Input className="h-10" type="number" min="0" step={PRICE_STEP} value={l.unitCost} onChange={(e) => setLine(i, { unitCost: e.target.value })} />
                   </Field>
                   <Field label="Tax %">
@@ -478,13 +749,13 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
                   <div className="grid gap-1.5 text-sm">
                     <span className="text-xs font-medium text-muted-foreground">Line total</span>
                     <span className="flex h-10 items-center font-medium">
-                      {QAR(num(l.unitCost) * num(l.orderedQty) * (1 + num(l.taxRate) / 100))}
+                      {money(currency, num(l.unitCost) * num(l.orderedQty) * (1 + num(l.taxRate) / 100))}
                     </span>
                   </div>
                   <div className="grid gap-1.5 text-sm">
                     <span className="text-xs font-medium text-muted-foreground">Landed / unit</span>
                     <span className="flex h-10 items-center font-semibold text-primary">
-                      {QAR(landedUnit(l, totals.subtotal, landedExtras))}
+                      {QAR(landedUnit(baseLines[i], totals.subtotal, landedExtras, toBase(discount)))}
                     </span>
                   </div>
                 </div>
@@ -495,13 +766,13 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Shipping / freight">
+            <Field label={foreign ? `Shipping / freight (${CURRENCY})` : 'Shipping / freight'}>
               <Input className="h-11" type="number" min="0" step={PRICE_STEP} value={shipping} onChange={(e) => setShipping(e.target.value)} />
             </Field>
-            <Field label="Customs / other">
+            <Field label={foreign ? `Customs / other (${CURRENCY})` : 'Customs / other'}>
               <Input className="h-11" type="number" min="0" step={PRICE_STEP} value={otherCharges} onChange={(e) => setOtherCharges(e.target.value)} />
             </Field>
-            <Field label="Discount">
+            <Field label={foreign ? `Discount (${currency})` : 'Discount'}>
               <Input className="h-11" type="number" min="0" step={PRICE_STEP} value={discount} onChange={(e) => setDiscount(e.target.value)} />
             </Field>
             <Field label="Notes" className="col-span-2">
@@ -509,12 +780,25 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
             </Field>
           </div>
           <dl className="grid content-start gap-1.5 rounded-2xl border border-border bg-secondary/30 p-4 text-sm">
+            {foreign && (
+              <div className="mb-1 flex justify-between border-b border-border pb-2 font-medium">
+                <dt>Supplier invoice</dt>
+                <dd className="text-right">
+                  {money(currency, invoice.total)}
+                  {num(rate) > 0 && (
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      × {num(rate)} = {QAR(invoice.total * num(rate))}
+                    </span>
+                  )}
+                </dd>
+              </div>
+            )}
             {[
               ['Subtotal', totals.subtotal],
               ['Tax', totals.tax],
               ['Shipping', num(shipping)],
               ['Customs / other', num(otherCharges)],
-              ['Discount', -num(discount)],
+              ['Discount', -toBase(discount)],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between">
                 <dt className="text-muted-foreground">{k}</dt>
@@ -533,6 +817,39 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
             References, terms &amp; transport <span className="font-normal text-muted-foreground">(optional)</span>
           </h3>
           <PoDetailsFields value={details} onChange={setDetails} />
+        </section>
+
+        <section className="grid gap-2 rounded-2xl border border-border p-4">
+          <h3 className="text-sm font-semibold">
+            Documents <span className="font-normal text-muted-foreground">(optional · invoice, packing list, cargo papers…)</span>
+          </h3>
+          {po && (po.PurchaseDocuments ?? []).length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {po.PurchaseDocuments.length} already attached — manage them from the purchase order view.
+            </p>
+          )}
+          {pending.length > 0 && (
+            <ul className="divide-y divide-border rounded-xl border border-border text-sm">
+              {pending.map((p, i) => (
+                <li key={`${p.file.name}-${i}`} className="flex items-center gap-2 px-3 py-2">
+                  <FileText className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{p.file.name}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {docTypeLabel(p.docType)} · {fmtSize(p.file.size)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${p.file.name}`}
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => setPending(pending.filter((_, j) => j !== i))}
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <DocPicker onPick={(files, docType) => setPending((cur) => [...cur, ...files.map((file) => ({ file, docType }))])} />
         </section>
 
         {invalid && <p className="text-xs text-muted-foreground">{invalid}</p>}
@@ -585,6 +902,11 @@ function ReceivePanel({ po, onDone, onCancel }) {
   return (
     <div className="grid gap-3 rounded-2xl border border-primary/30 bg-primary/5 p-4">
       <p className="text-sm font-semibold">Receive stock at {po.Location?.name}</p>
+      <p className="-mt-2 text-xs text-muted-foreground">
+        {po.batchNumber || po.sourceCountry
+          ? `Tagged as batch "${batchLabel(po.batchNumber, po.sourceCountry)}".`
+          : 'No batch set on this PO — received stock carries no batch.'}
+      </p>
       {items.map((it, i) => {
         const left = Math.max(0, num(it.orderedQty) - num(it.receivedQty));
         return (
@@ -746,6 +1068,9 @@ function DetailsPanel({ po, onDone, onCancel }) {
 }
 
 const DETAIL_LABELS = [
+  ['batchNumber', 'Batch'],
+  ['sourceCountry', 'Source country'],
+  ['currency', 'Invoice currency'],
   ['supplierReference', 'Supplier ref.'],
   ['supplierInvoiceNo', 'Supplier invoice'],
   ['paymentTerms', 'Payment terms'],
@@ -759,6 +1084,7 @@ const DETAIL_LABELS = [
 function PoDetail({ id, isAdmin, onClose, onEdit }) {
   const client = useQueryClient();
   const q = useQuery(purchaseOrderQuery(id));
+  const userId = useQuery(accessQuery).data?.id;
   const [panel, setPanel] = useState(null); // 'receive' | 'pay' | 'cancel' | 'details'
   const refresh = () => client.invalidateQueries({ queryKey: pk.all });
   const printing = useMutation({
@@ -830,7 +1156,13 @@ function PoDetail({ id, isAdmin, onClose, onEdit }) {
                 {DETAIL_LABELS.filter(([k]) => po[k]).map(([k, label]) => (
                   <div key={k} className={cn('min-w-0', k === 'transportNotes' && 'col-span-2 sm:col-span-4')}>
                     <dt className="text-xs text-muted-foreground">{label}</dt>
-                    <dd className="break-words font-medium">{k === 'dispatchDate' ? fmtDate(po[k]) : po[k]}</dd>
+                    <dd className="break-words font-medium">
+                      {k === 'dispatchDate'
+                        ? fmtDate(po[k])
+                        : k === 'currency'
+                          ? `${po.currency} · 1 = ${num(po.exchangeRate)} ${CURRENCY}`
+                          : po[k]}
+                    </dd>
                   </div>
                 ))}
               </dl>
@@ -865,12 +1197,21 @@ function PoDetail({ id, isAdmin, onClose, onEdit }) {
                       <td className={cn('px-3 py-2 text-right', num(it.receivedQty) >= num(it.orderedQty) && 'text-emerald-700')}>
                         {num(it.receivedQty)}
                       </td>
-                      <td className="px-3 py-2 text-right">{QAR(it.unitCost)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {po.currency ? (
+                          <>
+                            {money(po.currency, it.foreignUnitCost)}
+                            <span className="block text-xs text-muted-foreground">{QAR(it.unitCost)}</span>
+                          </>
+                        ) : (
+                          QAR(it.unitCost)
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right">{num(it.taxRate)}%</td>
                       <td className="px-3 py-2 text-right font-medium">
                         {it.landedUnitCost != null
                           ? QAR(it.landedUnitCost)
-                          : QAR(landedUnit(it, num(po.subtotal), num(po.shippingCost) + num(po.otherCharges)))}
+                          : QAR(landedUnit(it, num(po.subtotal), num(po.shippingCost) + num(po.otherCharges), num(po.discount)))}
                       </td>
                     </tr>
                   ))}
@@ -879,6 +1220,17 @@ function PoDetail({ id, isAdmin, onClose, onEdit }) {
             </div>
 
             <dl className="ml-auto grid w-full max-w-xs gap-1 text-sm">
+              {po.currency && (
+                <div className="flex justify-between border-b border-border pb-1 font-medium">
+                  <dt>Supplier invoice</dt>
+                  <dd>
+                    {money(
+                      po.currency,
+                      poTotals(items.map((it) => ({ ...it, unitCost: it.foreignUnitCost })), 0, po.foreignDiscount).total,
+                    )}
+                  </dd>
+                </div>
+              )}
               {[
                 ['Subtotal', po.subtotal],
                 ['Tax', po.taxAmount],
@@ -894,6 +1246,8 @@ function PoDetail({ id, isAdmin, onClose, onEdit }) {
               ))}
             </dl>
             {po.notes && <p className="text-sm text-muted-foreground">Notes: {po.notes}</p>}
+
+            <PoDocuments po={po} isAdmin={isAdmin} userId={userId} />
 
             {panel === 'receive' && (
               <ReceivePanel key={`r-${po.updatedAt}`} po={po} onCancel={() => setPanel(null)} onDone={() => setPanel(null)} />

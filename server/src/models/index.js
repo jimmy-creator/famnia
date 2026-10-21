@@ -17,6 +17,7 @@ import Supplier from './Supplier.js';
 import PurchaseOrder from './PurchaseOrder.js';
 import PurchaseReceipt from './PurchaseReceipt.js';
 import PurchaseReturn from './PurchaseReturn.js';
+import PurchaseDocument from './PurchaseDocument.js';
 import SupplierPayment from './SupplierPayment.js';
 import CashAccount from './CashAccount.js';
 import CashTransaction from './CashTransaction.js';
@@ -146,6 +147,10 @@ SupplierPayment.belongsTo(Supplier, { foreignKey: 'supplierId' });
 PurchaseOrder.hasMany(SupplierPayment, { foreignKey: 'purchaseOrderId' });
 SupplierPayment.belongsTo(PurchaseOrder, { foreignKey: 'purchaseOrderId' });
 SupplierPayment.belongsTo(User, { as: 'payer', foreignKey: 'paidBy' });
+
+PurchaseOrder.hasMany(PurchaseDocument, { foreignKey: 'purchaseOrderId' });
+PurchaseDocument.belongsTo(PurchaseOrder, { foreignKey: 'purchaseOrderId' });
+PurchaseDocument.belongsTo(User, { as: 'uploader', foreignKey: 'uploadedBy' });
 
 // ── Finance (Cash Accounts, Transactions, Expenses, Transfers) ──
 Location.hasMany(CashAccount, { foreignKey: 'locationId' });
@@ -488,7 +493,7 @@ export {
   Pincode, AbandonedCart, PriceRequest,
   Location, ProductStock, StockTransfer, CashierSession,
   SalesReturn,
-  Supplier, PurchaseOrder, PurchaseReceipt, PurchaseReturn, SupplierPayment,
+  Supplier, PurchaseOrder, PurchaseReceipt, PurchaseReturn, SupplierPayment, PurchaseDocument,
   CashAccount, CashTransaction, ExpenseCategory, Expense, CashTransfer,
   ActivityLog,
   StockCount, StockCountLine,

@@ -70,6 +70,15 @@ export const savePurchaseOrderDetails = (id, body) => send('patch', `/purchase-o
 export const cancelPurchaseOrder = (id) => send('post', `/purchase-orders/${id}/cancel`);
 export const receivePurchaseOrder = (id, body) => send('post', `/purchase-orders/${id}/receive`, body);
 export const payPurchaseOrder = (id, body) => send('post', `/purchase-orders/${id}/pay`, body);
+/** Attach files (invoice, packing list, AWB, customs…) to a PO — one document type per upload. */
+export function uploadPoDocuments(id, files, docType, notes) {
+  const form = new FormData();
+  for (const f of files) form.append('files', f);
+  form.append('docType', docType);
+  if (notes) form.append('notes', notes);
+  return send('post', `/purchase-orders/${id}/documents`, form);
+}
+export const deletePoDocument = (id, docId) => send('delete', `/purchase-orders/${id}/documents/${docId}`);
 
 export const purchaseReturnsQuery = (filters) => ({
   queryKey: pk.returns(filters),
@@ -86,6 +95,7 @@ export const cancelPurchaseReturn = (id) => send('post', `/purchase-returns/${id
 const API = import.meta.env.VITE_API_URL || '/api';
 export const poPdfUrl = (id) => `${API}/purchase-orders/${id}/pdf`;
 export const returnPdfUrl = (id) => `${API}/purchase-returns/${id}/pdf`;
+export const poDocumentUrl = (id, docId) => `${API}/purchase-orders/${id}/documents/${docId}`;
 
 /** Prints a PDF from the API without leaving the page: loads it in a hidden frame and opens the print dialog. */
 export async function printPdf(url) {
