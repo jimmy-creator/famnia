@@ -24,6 +24,7 @@ import {
   adjustStock,
   deleteProduct,
   productLockQuery,
+  productsQuery,
   setProductActive,
   suppliersQuery,
   updateProduct,
@@ -119,6 +120,14 @@ function ProductEditDialogForm({ product, open, onClose }) {
   }, [product, productCode, name, rack, shelf, supplier, price, cost, canEditCost, reorder, notes, size, color, isActive, imagePath, pendingFile, video, isVariant, sfDirty, stockDirty]);
 
   const variantLocked = lock.data?.hasHistory ?? true;
+  // An admin may rename a size/colour SKU's colour even after it has history
+  // (the server keeps the old name so past orders still match); size stays locked.
+  const colorEditable = isAdmin && (isVariant || !variantLocked);
+  const skus = useQuery({ ...productsQuery, enabled: open && colorEditable });
+  const colorOptions = useMemo(
+    () => [...new Set((skus.data ?? []).map((s) => s.color).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [skus.data],
+  );
 
   const save = useMutation({
     mutationFn: async () => {
@@ -139,7 +148,9 @@ function ProductEditDialogForm({ product, open, onClose }) {
         imageUrl: nextImage,
         ...(isVariant && video.trim() !== (product.videoUrl ?? '') ? { videoUrl: video.trim() || null } : {}),
         // A single-SKU product given a size / colour becomes a one-size product (new key).
-        ...(variantLocked ? {} : { size: size || null, color: color || null }),
+        ...(variantLocked
+          ? colorEditable && color.trim() !== (product.color ?? '') ? { color: color.trim() || null } : {}
+          : { size: size || null, color: color || null }),
       });
       let changes = result.changes || 0;
       if (sfDirty) {
@@ -314,16 +325,24 @@ function ProductEditDialogForm({ product, open, onClose }) {
                   <Input
                     value={color}
                     onChange={(event) => setColor(event.target.value)}
-                    disabled={variantLocked || !isAdmin}
+                    disabled={!colorEditable}
+                    list="hub-colour-options"
+                    placeholder={colorEditable ? 'Pick or type a colour' : undefined}
                     className="h-11"
                   />
+                  <datalist id="hub-colour-options">
+                    {colorOptions.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
                 </Labelled>
               </div>
               {variantLocked && (
                 <p className="mt-3 flex items-start gap-2 text-xs text-muted-foreground">
                   <Lock className="mt-0.5 size-3.5 shrink-0" />
-                  This product has transaction history. Create a new SKU for a different size or colour — historical records
-                  must be preserved.
+                  {colorEditable
+                    ? 'This product has transaction history, so its size is locked. You can still rename its colour — past orders and invoices keep the colour they were sold with.'
+                    : 'This product has transaction history. Create a new SKU for a different size or colour — historical records must be preserved.'}
                 </p>
               )}
             </section>

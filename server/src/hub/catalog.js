@@ -1,7 +1,7 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import {
-  Category, Product, ProductStock, Location, Order, Supplier, StockMovement, recomputeProductStock,
+  Category, Product, ProductStock, Location, Order, Supplier, StockMovement, recomputeProductStock, variantMatches,
 } from '../models/index.js';
 import { withStockContext } from '../services/stockLedger.js';
 import { loadAppSettings } from './settings.js';
@@ -354,9 +354,7 @@ export async function ordersWithSku(product, variantIndex) {
       if (Number(it.productId) !== product.id) return false;
       if (variantIndex == null) return true;
       if (it.variantIndex !== undefined && it.variantIndex !== null) return Number(it.variantIndex) === variantIndex;
-      const sel = it.variant || it.selectedVariant;
-      const opts = product.variants?.[variantIndex]?.options || {};
-      return sel && Object.entries(opts).every(([k, val]) => sel[k] === val);
+      return variantMatches(product.variants?.[variantIndex], it.variant || it.selectedVariant);
     });
     if (hit) count += 1;
   }

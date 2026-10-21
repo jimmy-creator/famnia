@@ -689,14 +689,22 @@ router.put('/skus/:key', need('products.edit'), wrap(async (req, res) => {
       }
     }
 
-    // Size / colour — admin only, and only while the SKU has no history.
+    // Size / colour — admin only. Size stays locked once the SKU has history;
+    // the colour is only a name, so an admin may rename it at any time.
     if (v && isAdmin && (b.size !== undefined || b.color !== undefined)) {
       const size = b.size !== undefined ? clean(b.size) : before.size;
       const color = b.color !== undefined ? clean(b.color) : before.color;
-      if ((size !== before.size || color !== before.color) && lock.hasHistory) {
-        throw bad('This product has transaction history. Create a new SKU for a different size or colour.');
+      if (size !== before.size && lock.hasHistory) {
+        throw bad('This product has transaction history. Create a new SKU for a different size.');
       }
       if (size !== before.size || color !== before.color) {
+        // Web order lines identify the variant by its option values; keep the
+        // old set so past orders still find this SKU (stock restores, history).
+        const old = v.options || {};
+        if (Object.keys(old).length) {
+          const former = Array.isArray(v.formerOptions) ? v.formerOptions : [];
+          if (!former.some((o) => JSON.stringify(o) === JSON.stringify(old))) v.formerOptions = [...former, old];
+        }
         const options = { ...(v.options || {}) };
         for (const k of Object.keys(options)) if (SIZE_KEYS.includes(k.toLowerCase()) || COLOR_KEYS.includes(k.toLowerCase())) delete options[k];
         if (size) options.Size = size;

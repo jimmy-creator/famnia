@@ -384,6 +384,26 @@ export async function getOnlineLocationId() {
   }
 }
 
+// A stored order line's chosen options match a variant on its current options,
+// or on one it had before an admin renamed its colour (`formerOptions`) — web
+// lines carry only the option values, so a rename must not orphan them.
+const sameOptions = (opts, selected) => Boolean(opts) && Object.entries(opts).every(([k, val]) => selected[k] === val);
+
+export function variantMatches(variant, selected) {
+  if (!variant || !selected) return false;
+  return sameOptions(variant.options, selected)
+    || (Array.isArray(variant.formerOptions) && variant.formerOptions.some((o) => sameOptions(o, selected)));
+}
+
+// Index in variants[] for the chosen options: current options win over former
+// ones, and archived variants (kept so indexes stay stable) never match.
+export function findVariantIndex(variants, selected) {
+  if (!selected || !Array.isArray(variants)) return -1;
+  const live = variants.findIndex((v) => v && !v.archived && sameOptions(v.options, selected));
+  if (live >= 0) return live;
+  return variants.findIndex((v) => v && !v.archived && variantMatches(v, selected));
+}
+
 // Map an order item back to its index in product.variants[] by matching
 // the stored selected-options against each variant's options (the same
 // matching the legacy reduceStock does). Returns null for a base product.
@@ -394,11 +414,7 @@ function variantIndexForItem(product, item) {
   if (!selected || !Array.isArray(product?.variants) || !product.variants.length) {
     return null;
   }
-  // Archived variants (removed in the staff hub) keep their slot so indexes
-  // stay stable, but must never match a new order line.
-  const idx = product.variants.findIndex(
-    (v) => v && !v.archived && v.options && Object.entries(v.options).every(([k, val]) => selected[k] === val)
-  );
+  const idx = findVariantIndex(product.variants, selected);
   return idx >= 0 ? idx : null;
 }
 

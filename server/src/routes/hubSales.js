@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
-import { Counter, Order, OrderAuditLog, OrderReturn, Product, ProductStock, User } from '../models/index.js';
+import { Counter, Order, OrderAuditLog, OrderReturn, Product, ProductStock, User, findVariantIndex } from '../models/index.js';
 import { protect } from '../middleware/auth.js';
 import { bad, can, hubLog, need, wrap as wrapAs } from '../hub/http.js';
 import { HUB_ROLES } from '../hub/permissions.js';
@@ -100,8 +100,7 @@ function lineVariantIndex(product, item) {
   if (!hasVariants(product)) return null;
   const sel = item.variant || item.selectedVariant;
   if (!sel) return null;
-  const idx = product.variants.findIndex((v) => v && !v.archived && v.options
-    && Object.entries(v.options).every(([k, val]) => sel[k] === val));
+  const idx = findVariantIndex(product.variants, sel);
   return idx >= 0 ? idx : null;
 }
 
