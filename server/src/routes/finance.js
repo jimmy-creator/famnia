@@ -886,7 +886,7 @@ export async function computeStockValue({ locationId = null } = {}) {
     const stocks = await ProductStock.findAll({
       where,
       include: [
-        { model: Product, attributes: ['id', 'name', 'code', 'category', 'costPrice', 'price', 'variants'] },
+        { model: Product, attributes: ['id', 'name', 'code', 'barcode', 'category', 'costPrice', 'price', 'variants'] },
         { model: Location, attributes: ['id', 'name', 'code'] },
       ],
     });
@@ -901,8 +901,12 @@ export async function computeStockValue({ locationId = null } = {}) {
       let cost = parseFloat(p.costPrice || 0);
       let retail = parseFloat(p.price || 0);
       let name = p.name;
+      let variantSku = null;
+      let productCode = p.barcode || null;
       if (s.variantIndex != null && Array.isArray(p.variants) && p.variants[s.variantIndex]) {
         const v = p.variants[s.variantIndex];
+        variantSku = v.sku || null;
+        productCode = v.barcode || null;
         if (v.costPrice != null) cost = parseFloat(v.costPrice);
         if (v.price != null) retail = parseFloat(v.price);
         name = `${p.name} (${Object.values(v.options || {}).join('/')})`;
@@ -912,7 +916,7 @@ export async function computeStockValue({ locationId = null } = {}) {
       const retailVal = retail * qty;
       rows.push({
         productId: p.id, variantIndex: s.variantIndex,
-        name, sku: p.code,
+        name, sku: p.code, variantSku, productCode,
         category: p.category,
         location: s.Location ? { id: s.Location.id, name: s.Location.name } : null,
         quantity: qty,

@@ -834,14 +834,14 @@ export function StockValueReport() {
       <FilterBar actions={<CsvButton disabled={!q.data?.rows?.length} onClick={exportCsv} />}>
         <LocationSelect value={locationId} onChange={setLocationId} />
         <Field label="Search">
-          <Input className="h-10 w-56" placeholder="Product or SKU" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input className="h-10 w-56" placeholder="Product, category, SKU or code" value={search} onChange={(e) => setSearch(e.target.value)} />
         </Field>
       </FilterBar>
       <Loadable q={q} section="stock value">
         {(sv) => {
           const needle = search.trim().toLowerCase();
           const rows = needle
-            ? sv.rows.filter((r) => `${r.name} ${r.sku ?? ''}`.toLowerCase().includes(needle))
+            ? sv.rows.filter((r) => `${r.name} ${r.sku ?? ''} ${r.variantSku ?? ''} ${r.productCode ?? ''} ${r.category ?? ''}`.toLowerCase().includes(needle))
             : sv.rows;
           return (
             <>

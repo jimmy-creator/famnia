@@ -308,7 +308,7 @@ function OrderBody({ data }) {
     const term = pSearch.trim().toLowerCase();
     if (!term) return [];
     return (catalogue.data ?? [])
-      .filter((s) => s.isActive && [s.productCode ?? '', s.sku, s.name, s.color ?? '', s.size ?? ''].some((v) => v.toLowerCase().includes(term)))
+      .filter((s) => s.isActive && [s.productCode ?? '', s.sku, s.name, s.category ?? '', s.color ?? '', s.size ?? ''].some((v) => v.toLowerCase().includes(term)))
       .slice(0, 8);
   }, [catalogue.data, pSearch]);
 
@@ -1059,7 +1059,7 @@ function OrderBody({ data }) {
                 <Input
                   value={pSearch}
                   onChange={(e) => setPSearch(e.target.value)}
-                  placeholder="Search name, Product Code, SKU, size or colour"
+                  placeholder="Search name, category, Product Code, SKU, size or colour"
                   className="h-11 pl-9"
                 />
               </div>

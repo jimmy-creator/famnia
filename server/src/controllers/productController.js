@@ -7,6 +7,28 @@ import { priceFromMargin, PUBLIC_PRODUCT_ATTRIBUTES, publicProduct, STOREFRONT_W
 // public-facing product query so a hidden product never leaks out.
 export { STOREFRONT_WHERE };
 
+// Storefront text search: name, category (primary or any in `categories`),
+// brand, SKU (`code` / variant sku) and product code (`barcode` / variant barcode).
+export function productSearchWhere(term, { description = false } = {}) {
+  const like = `%${term}%`;
+  const inJson = (col, path) => sequelize.literal(
+    `JSON_SEARCH(${col}, 'one', ${sequelize.escape(like)}, NULL${path ? `, '${path}'` : ''}) IS NOT NULL`,
+  );
+  return {
+    [Op.or]: [
+      { name: { [Op.like]: like } },
+      ...(description ? [{ description: { [Op.like]: like } }] : []),
+      { category: { [Op.like]: like } },
+      inJson('categories'),
+      { brand: { [Op.like]: like } },
+      { code: { [Op.like]: like } },
+      { barcode: { [Op.like]: like } },
+      inJson('variants', '$[*].sku'),
+      inJson('variants', '$[*].barcode'),
+    ],
+  };
+}
+
 // A reused SKU or barcode would otherwise surface as a bare "Validation error".
 function duplicateCodeMessage(error) {
   if (error.name !== 'SequelizeUniqueConstraintError') return null;
@@ -49,12 +71,7 @@ export const getProducts = async (req, res) => {
     // The cart re-checks its products by id (sold out → dropped from the cart).
     if (ids) where.id = { [Op.in]: String(ids).split(',').map((n) => parseInt(n, 10)).filter(Boolean) };
     if (search) {
-      and.push({
-        [Op.or]: [
-          { name: { [Op.like]: `%${search}%` } },
-          { description: { [Op.like]: `%${search}%` } },
-        ],
-      });
+      and.push(productSearchWhere(search, { description: true }));
     }
     if (minPrice || maxPrice) {
       where.price = {};

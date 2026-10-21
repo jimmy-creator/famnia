@@ -81,16 +81,16 @@ async function namesById(ids) {
   return new Map(users.map((u) => [u.id, u.name || u.email || null]));
 }
 
-/** SKU details (name, category, size, colour, sku) for movement rows. */
+/** SKU details (name, category, size, colour, sku, product code) for movement rows. */
 async function skuDetails(rows) {
   const ids = [...new Set(rows.map((r) => r.productId))];
   const products = ids.length ? await Product.findAll({ where: { id: ids } }) : [];
   const byId = new Map(products.map((p) => [p.id, p]));
   return (productId, variantIndex) => {
     const p = byId.get(productId);
-    if (!p) return { key: skuKey(productId, variantIndex), sku: `P${productId}`, name: `Product #${productId}`, category: null, size: null, color: null };
+    if (!p) return { key: skuKey(productId, variantIndex), sku: `P${productId}`, productCode: null, name: `Product #${productId}`, category: null, size: null, color: null };
     const f = skuFields(p, variantIndex);
-    return { key: skuKey(productId, variantIndex), sku: f.sku, name: p.name, category: p.category || null, size: f.size, color: f.color };
+    return { key: skuKey(productId, variantIndex), sku: f.sku, productCode: f.productCode, name: p.name, category: p.category || null, size: f.size, color: f.color };
   };
 }
 

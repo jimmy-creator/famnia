@@ -25,6 +25,7 @@ import {
 const DISCOUNT_PCT_THRESHOLD = 15;     // percent
 const REFUND_AMOUNT_THRESHOLD = 50;    // currency units (KWD)
 import { protectCashier } from '../middleware/auth.js';
+import { productSearchWhere } from '../controllers/productController.js';
 import { refundValuer } from '../utils/refund.js';
 import { nextInvoiceNumber } from '../services/invoiceSequence.js';
 import { mergeLines, parseVariantIndex } from '../utils/lines.js';
@@ -215,15 +216,16 @@ router.get('/products', protectCashier, async (req, res) => {
       }
     }
 
-    // 3. Name search — fuzzy
+    // 3. Typed search — name, category, SKU or product code, anywhere in
+    //    the text. While a category is open on the till, only that category.
+    const inCategory = category
+      ? [{ [Op.or]: [{ category }, sequelize.literal(`JSON_CONTAINS(categories, ${sequelize.escape(JSON.stringify(category))})`)] }]
+      : [];
     const nameHits = (exact.length === 0 && variantHits.length === 0)
       ? await Product.findAll({
           where: {
             active: true,
-            [Op.or]: [
-              { name: { [Op.like]: `%${q}%` } },
-              { code: { [Op.like]: `${q}%` } },
-            ],
+            [Op.and]: [productSearchWhere(q), ...inCategory],
           },
           limit: 15,
           order: [['name', 'ASC']],

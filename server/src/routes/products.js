@@ -7,6 +7,7 @@ import {
   updateProduct,
   deleteProduct,
   STOREFRONT_WHERE,
+  productSearchWhere,
 } from '../controllers/productController.js';
 import { protect, admin, requirePermission } from '../middleware/auth.js';
 
@@ -51,21 +52,26 @@ router.patch('/:id/toggle-active', protect, admin, requirePermission('products')
 router.get('/categories', getCategories);
 router.get('/search-suggestions', async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q, category } = req.query;
     if (!q || q.length < 2) return res.json([]);
 
     const { Product } = await import('../models/index.js');
     const { Op } = await import('sequelize');
+    const { default: sequelize } = await import('../config/database.js');
+
+    // Inside a chosen category, suggest only that category's products.
+    const and = [productSearchWhere(q)];
+    if (category) {
+      and.push({
+        [Op.or]: [
+          { category },
+          sequelize.literal(`JSON_CONTAINS(categories, ${sequelize.escape(JSON.stringify(category))})`),
+        ],
+      });
+    }
 
     const products = await Product.findAll({
-      where: {
-        ...STOREFRONT_WHERE,
-        [Op.or]: [
-          { name: { [Op.like]: `%${q}%` } },
-          { category: { [Op.like]: `%${q}%` } },
-          { brand: { [Op.like]: `%${q}%` } },
-        ],
-      },
+      where: { ...STOREFRONT_WHERE, [Op.and]: and },
       attributes: ['id', 'name', 'slug', 'price', 'category', 'images'],
       limit: 6,
       order: [['featured', 'DESC'], ['ratings', 'DESC']],

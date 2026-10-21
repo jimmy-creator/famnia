@@ -26,7 +26,7 @@ export function StockSkuPicker({ products, value, onSelect }) {
   return (
     <div className="space-y-2">
       <Input
-        placeholder="Search Product Code, SKU code or product name…"
+        placeholder="Search Product Code, SKU, name or category…"
         value={term}
         onChange={(event) => setTerm(event.target.value)}
         className="h-11"

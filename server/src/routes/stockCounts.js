@@ -24,6 +24,7 @@ import {
   recomputeProductStock, logActivity, verifyManagerPin,
 } from '../models/index.js';
 import { protect, admin } from '../middleware/auth.js';
+import { productSearchWhere } from '../controllers/productController.js';
 import { rangeStart, rangeEnd } from '../utils/dates.js';
 
 const router = Router();
@@ -81,16 +82,10 @@ router.get('/lookup', protect, admin, async (req, res) => {
       }
     }
 
-    // 3. Name search
+    // 3. Typed search — name, category, SKU or product code
     const nameHits = (exact.length === 0 && variantHits.length === 0)
       ? await Product.findAll({
-          where: {
-            active: true,
-            [Op.or]: [
-              { name: { [Op.like]: `%${q}%` } },
-              { code: { [Op.like]: `${q}%` } },
-            ],
-          },
+          where: { active: true, ...productSearchWhere(q) },
           attributes: ['id', 'name', 'code', 'price', 'costPrice', 'images', 'variants'],
           limit: 15,
         })

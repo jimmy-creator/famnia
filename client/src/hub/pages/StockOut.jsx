@@ -34,7 +34,7 @@ export default function StockOutPage() {
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return rows.filter((row) => {
-      if (term && !`${row.sku} ${row.name} ${row.reference}`.toLowerCase().includes(term)) return false;
+      if (term && !`${row.productCode ?? ''} ${row.sku} ${row.name} ${row.category ?? ''} ${row.reference}`.toLowerCase().includes(term)) return false;
       if (reason !== ALL && row.reason !== reason) return false;
       if (from && row.date < from) return false;
       if (to && row.date > to) return false;
@@ -73,7 +73,7 @@ export default function StockOutPage() {
 
       <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Input
-          placeholder="Search SKU, product or reference…"
+          placeholder="Search name, category, SKU, Product Code or reference…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="h-11 lg:col-span-2"

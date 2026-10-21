@@ -69,7 +69,7 @@ export default function Products() {
     localStorage.setItem('product-view', mode);
   };
 
-  const title = search ? `"${search}"` : category || t('products.allProducts');
+  const title = search ? `"${search}"${category ? ` · ${category}` : ''}` : category || t('products.allProducts');
 
   const gridClass =
     viewMode === 'two-col'

@@ -697,8 +697,8 @@ export default function ReportsPage() {
               <div className="no-print card-surface mb-4 grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-4">
                 <Input
                   className="h-10"
-                  placeholder="Search product name or SKU"
-                  aria-label="Search product name or SKU"
+                  placeholder="Search name, category, SKU or Product Code"
+                  aria-label="Search name, category, SKU or Product Code"
                   value={psSearch}
                   onChange={(e) => setPsSearch(e.target.value)}
                 />

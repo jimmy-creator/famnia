@@ -117,7 +117,7 @@ function ConfirmDialog({ open, title, body, confirmLabel, destructive, busy, onC
 }
 
 /** Search the SKU list by code, SKU or name; Enter on an exact code/SKU adds it straight away. */
-function SkuSearch({ onPick, placeholder = 'Scan or search Product Code, SKU or name…' }) {
+function SkuSearch({ onPick, placeholder = 'Scan or search Product Code, SKU, name or category…' }) {
   const skus = useQuery(productsQuery);
   const [term, setTerm] = useState('');
   const matches = useMemo(() => {
@@ -125,7 +125,7 @@ function SkuSearch({ onPick, placeholder = 'Scan or search Product Code, SKU or 
     if (!q) return [];
     return (skus.data ?? [])
       .filter((s) => s.isActive !== false)
-      .filter((s) => `${s.productCode ?? ''} ${s.sku} ${s.name} ${s.size ?? ''} ${s.color ?? ''}`.toLowerCase().includes(q))
+      .filter((s) => `${s.productCode ?? ''} ${s.sku} ${s.name} ${s.category ?? ''} ${s.size ?? ''} ${s.color ?? ''}`.toLowerCase().includes(q))
       .slice(0, 30);
   }, [skus.data, term]);
   const pick = (s) => {

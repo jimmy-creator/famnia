@@ -143,7 +143,12 @@ export function buildProductSalesReport(orders, products, costs, range, options 
 
   const search = (options.search ?? '').trim().toLowerCase();
   if (search) {
-    rows = rows.filter((r) => r.name.toLowerCase().includes(search) || r.skus.some((s) => s.toLowerCase().includes(search)));
+    rows = rows.filter(
+      (r) =>
+        r.name.toLowerCase().includes(search) ||
+        (r.category ?? '').toLowerCase().includes(search) ||
+        r.skus.some((s) => `${s} ${productBySku.get(s)?.productCode ?? ''}`.toLowerCase().includes(search)),
+    );
   }
   if (options.category && options.category !== 'All') {
     rows = rows.filter((r) => r.category === options.category);

@@ -146,7 +146,7 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
         (!sizeFilter || product.size === sizeFilter) &&
         (!colorFilter || product.color === colorFilter) &&
         (!term ||
-          [product.productCode ?? '', product.sku, product.name, product.color ?? ''].some((value) =>
+          [product.productCode ?? '', product.sku, product.name, product.category ?? '', product.color ?? ''].some((value) =>
             value.toLowerCase().includes(term),
           )),
     );
@@ -349,7 +349,7 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search product name, Product Code or SKU"
+                placeholder="Search name, category, Product Code or SKU"
                 aria-label="Search product name, Product Code or SKU"
                 className="h-11 pl-9"
               />

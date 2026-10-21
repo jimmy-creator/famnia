@@ -505,12 +505,12 @@ export default function Checkout() {
     }
     // Staff send order updates on WhatsApp, so the Qatar number must be a real one.
     if (form.phone.length !== 8) {
-      toast.error('Enter your 8-digit Qatar mobile number (WhatsApp).', toastStyle);
+      toast.error('Enter your 8-digit Qatar mobile number.', toastStyle);
       return;
     }
     const altDigits = form.altPhone.replace(/\D/g, '');
     if (altDigits && (altDigits.length < 7 || altDigits.length > 15)) {
-      toast.error('Mobile number 2 is not valid — include the country code, e.g. +91 98765 43210.', toastStyle);
+      toast.error('Alternative / WhatsApp number is not valid — include the country code, e.g. +91 98765 43210.', toastStyle);
       return;
     }
 
@@ -650,7 +650,7 @@ export default function Checkout() {
                 </datalist>
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="phone">Mobile number 1 (WhatsApp) *</Label>
+                <Label htmlFor="phone">Qatar mobile number *</Label>
                 <div className="flex">
                   <span className="inline-flex items-center rounded-l-md border border-r-0 border-input bg-secondary px-3 text-sm text-muted-foreground">+974</span>
                   <Input
@@ -668,10 +668,10 @@ export default function Checkout() {
                     required
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">We send your order updates to this number on WhatsApp.</p>
+                <p className="text-xs text-muted-foreground">We contact you on this number about your order.</p>
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="altPhone">Mobile number 2 (optional)</Label>
+                <Label htmlFor="altPhone">Alternative / WhatsApp number (optional)</Label>
                 <Input
                   id="altPhone"
                   name="altPhone"

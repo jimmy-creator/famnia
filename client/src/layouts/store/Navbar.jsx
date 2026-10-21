@@ -77,6 +77,11 @@ export default function Navbar() {
     return () => document.removeEventListener('mousedown', onClick);
   }, []);
 
+  // A search made while browsing a category stays inside that category.
+  const activeCategory = location.pathname.endsWith('/products')
+    ? new URLSearchParams(location.search).get('category') || ''
+    : '';
+
   // Search autocomplete (debounced)
   useEffect(() => {
     if (query.length < 2) {
@@ -87,7 +92,8 @@ export default function Navbar() {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const { data } = await api.get(`/products/search-suggestions?q=${encodeURIComponent(query)}`);
+        const cat = activeCategory ? `&category=${encodeURIComponent(activeCategory)}` : '';
+        const { data } = await api.get(`/products/search-suggestions?q=${encodeURIComponent(query)}${cat}`);
         setSuggestions(data);
         setShowSuggestions(data.length > 0);
         setActiveIndex(-1);
@@ -96,7 +102,7 @@ export default function Navbar() {
       }
     }, 250);
     return () => clearTimeout(debounceRef.current);
-  }, [query]);
+  }, [query, activeCategory]);
 
   const pickSuggestion = (product) => {
     setShowSuggestions(false);
@@ -134,6 +140,7 @@ export default function Navbar() {
   const handleSearch = (e) => {
     e?.preventDefault?.();
     const params = new URLSearchParams();
+    if (activeCategory) params.set('category', activeCategory);
     if (query.trim()) params.set('search', query.trim());
     navigate(`/products?${params.toString()}`);
     setShowSuggestions(false);

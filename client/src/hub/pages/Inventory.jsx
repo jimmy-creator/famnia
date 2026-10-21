@@ -90,7 +90,7 @@ function StockTab({ tabBar }) {
     const term = search.trim().toLowerCase();
     return products
       .filter((p) => {
-        if (term && !`${p.productCode ?? ''} ${p.sku} ${p.name}`.toLowerCase().includes(term)) return false;
+        if (term && !`${p.productCode ?? ''} ${p.sku} ${p.name} ${p.category ?? ''}`.toLowerCase().includes(term)) return false;
         if (category !== ALL && p.category !== category) return false;
         if (status !== ALL && p.stockStatus !== status) return false;
         return true;
@@ -172,7 +172,7 @@ function StockTab({ tabBar }) {
       </div>
 
       <div className="no-print mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Input placeholder="Search SKU or name…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-11" />
+        <Input placeholder="Search name, category, SKU or Product Code…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-11" />
         <Select value={category} onValueChange={setCategory}>
           <SelectTrigger className="h-11">
             <SelectValue placeholder="Category" />
@@ -335,7 +335,7 @@ function ByLocationTab({ tabBar }) {
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase();
     return (skus.data ?? []).filter((p) => {
-      if (term && !`${p.productCode ?? ''} ${p.sku} ${p.name} ${p.size ?? ''} ${p.color ?? ''}`.toLowerCase().includes(term))
+      if (term && !`${p.productCode ?? ''} ${p.sku} ${p.name} ${p.category ?? ''} ${p.size ?? ''} ${p.color ?? ''}`.toLowerCase().includes(term))
         return false;
       if (onlyStocked && !columns.some((l) => (qty.get(cellKey(p.key, l.id)) ?? 0) > 0)) return false;
       return true;
@@ -402,7 +402,7 @@ function ByLocationTab({ tabBar }) {
       {tabBar}
 
       <div className="no-print mb-4 grid gap-2 sm:grid-cols-3">
-        <Input placeholder="Search SKU, name, size…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-11" />
+        <Input placeholder="Search name, category, SKU, Product Code, size…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-11" />
         <Select value={locationId} onValueChange={setLocationId}>
           <SelectTrigger className="h-11">
             <SelectValue placeholder="Location" />

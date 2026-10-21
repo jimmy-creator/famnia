@@ -51,7 +51,7 @@ export default function StockInPage() {
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return rows.filter((row) => {
-      if (term && !`${row.sku} ${row.name} ${row.reference}`.toLowerCase().includes(term)) return false;
+      if (term && !`${row.productCode ?? ''} ${row.sku} ${row.name} ${row.category ?? ''} ${row.reference}`.toLowerCase().includes(term)) return false;
       if (category !== ALL && row.category !== category) return false;
       if (supplier !== ALL && (row.supplier ?? '') !== supplier) return false;
       if (batch !== ALL && [row.batchNumber, row.sourceCountry].filter(Boolean).join(' ') !== batch) return false;
@@ -139,7 +139,7 @@ export default function StockInPage() {
 
       <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
         <Input
-          placeholder="Search SKU, product or reference…"
+          placeholder="Search name, category, SKU, Product Code or reference…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="h-11 lg:col-span-2"

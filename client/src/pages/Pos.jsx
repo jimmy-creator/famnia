@@ -193,7 +193,8 @@ export default function Pos() {
     if (!q.trim()) { setResults([]); return []; }
     setSearching(true);
     try {
-      const { data } = await api.get('/pos/products', { params: { q } });
+      // Typing with a category open searches inside that category.
+      const { data } = await api.get('/pos/products', { params: { q, category: browseCat?.name } });
       // Drop responses for a query that has since been replaced.
       if (latestQueryRef.current !== q) return null;
       setResults(data);
@@ -204,7 +205,7 @@ export default function Pos() {
     } finally {
       setSearching(false);
     }
-  }, []);
+  }, [browseCat]);
 
   // Debounced typed search (250ms) — barcode scanner triggers immediate on Enter.
   useEffect(() => {
@@ -674,8 +675,8 @@ export default function Pos() {
           {query.trim() && (
             <div className="results-meta">
               {searching && 'Searching…'}
-              {!searching && results.length > 0 && `${results.length} result${results.length === 1 ? '' : 's'} · ↑↓ to navigate`}
-              {!searching && results.length === 0 && 'No matches'}
+              {!searching && results.length > 0 && `${results.length} result${results.length === 1 ? '' : 's'}${browseCat ? ` in ${browseCat.name}` : ''} · ↑↓ to navigate`}
+              {!searching && results.length === 0 && `No matches${browseCat ? ` in ${browseCat.name}` : ''}`}
             </div>
           )}
 
