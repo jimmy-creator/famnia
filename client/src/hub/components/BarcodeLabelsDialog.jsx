@@ -26,9 +26,13 @@ import {
 } from '@/lib/thermalPrinter';
 import { CURRENCY } from '@/hub/lib/format';
 import {
+  A4_LABEL,
+  A4_LABEL_CSS,
+  A4_LABEL_SHEET,
   DEFAULT_SHEET,
   FOUR_BY_SIX_LABEL,
   STICKER_CSS,
+  a4LabelSheetHtml,
   printBarcodeLabels,
   printSingleTestLabel,
   sheetGrid,
@@ -37,7 +41,10 @@ import {
 import { QAR } from '@/hub/lib/format';
 
 const PRINT_SETTINGS_KEY = 'femnia-barcode-label-presets-v1';
-const FORMATS = ['thermal-30x20', 'thermal-4x6', 'a4', 'custom', 'shop'];
+const FORMATS = ['thermal-30x20', 'a4-label', 'thermal-4x6', 'a4', 'custom', 'shop'];
+// The A4 sheet preview is drawn at true size in mm, then scaled down to fit the dialog.
+const A4_PREVIEW_SCALE = 0.45;
+const distinct = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 const labelExtrasQuery = { queryKey: ['femnia', 'label-extras'], queryFn: () => get('/hub/label-extras'), staleTime: 60_000 };
 const round3 = (n) => Math.round((parseFloat(n) || 0) * 1000) / 1000;
 const availableStock = (product) => Math.max(0, Math.round(product.currentStock ?? 0));
@@ -73,6 +80,10 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
   const [thermalSmallShiftYMm, setThermalSmallShiftYMm] = useState(
     inRange(saved?.thermalSmallShiftYMm, -3, 3) ? Number(saved.thermalSmallShiftYMm) : 0,
   );
+  const [a4ShiftXMm, setA4ShiftXMm] = useState(inRange(saved?.a4ShiftXMm, -3, 3) ? Number(saved.a4ShiftXMm) : 0);
+  const [a4ShiftYMm, setA4ShiftYMm] = useState(inRange(saved?.a4ShiftYMm, -3, 3) ? Number(saved.a4ShiftYMm) : 0);
+  const [sizeFilter, setSizeFilter] = useState('');
+  const [colorFilter, setColorFilter] = useState('');
   const [batch, setBatch] = useState('__all__');
   const batchIndex = useQuery({ ...batchIndexQuery, enabled: open });
   // Shop label (the classic label designer's layout).
@@ -107,13 +118,13 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
         JSON.stringify({
           format, showPrice, customWidthMm, customHeightMm,
           thermalSmallWidthMm, thermalSmallHeightMm, thermalSmallShiftXMm, thermalSmallShiftYMm,
-          shopSizeId, shopLayout, shopShow,
+          a4ShiftXMm, a4ShiftYMm, shopSizeId, shopLayout, shopShow,
         }),
       );
     } catch {
       /* storage unavailable — settings last for this session only */
     }
-  }, [format, showPrice, customWidthMm, customHeightMm, thermalSmallWidthMm, thermalSmallHeightMm, thermalSmallShiftXMm, thermalSmallShiftYMm, shopSizeId, shopLayout, shopShow]);
+  }, [format, showPrice, customWidthMm, customHeightMm, thermalSmallWidthMm, thermalSmallHeightMm, thermalSmallShiftXMm, thermalSmallShiftYMm, a4ShiftXMm, a4ShiftYMm, shopSizeId, shopLayout, shopShow]);
 
   const batchNumbers = useMemo(() => batchIndex.data?.numbers ?? {}, [batchIndex.data]);
   const printable = useMemo(() => products.filter((product) => product.isActive && product.productCode), [products]);
@@ -125,18 +136,21 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
     () => printable.filter((product) => batch === '__all__' || (batchNumbers[product.key] ?? []).includes(batch)),
     [printable, batch, batchNumbers],
   );
+  const sizeOptions = useMemo(() => distinct(printable.map((product) => product.size)), [printable]);
+  const colorOptions = useMemo(() => distinct(printable.map((product) => product.color)), [printable]);
+  // Every filter narrows the list; an empty filter matches everything.
   const results = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return productsInBatch
-      .filter((product) =>
-        term
-          ? [product.productCode ?? '', product.sku, product.name, product.color ?? ''].some((value) =>
-              value.toLowerCase().includes(term),
-            )
-          : true,
-      )
-      .slice(0, 60);
-  }, [productsInBatch, search]);
+    return productsInBatch.filter(
+      (product) =>
+        (!sizeFilter || product.size === sizeFilter) &&
+        (!colorFilter || product.color === colorFilter) &&
+        (!term ||
+          [product.productCode ?? '', product.sku, product.name, product.color ?? ''].some((value) =>
+            value.toLowerCase().includes(term),
+          )),
+    );
+  }, [productsInBatch, search, sizeFilter, colorFilter]);
 
   const chosen = printable.filter((product) => selected[product.key]);
   const fresh = (product) => ({ quantity: availableStock(product) });
@@ -181,6 +195,7 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
       sku: product.sku,
       productCode: product.productCode ?? '',
       name: product.name,
+      size: product.size ?? '',
       variant: product.color ?? '',
       batch: '',
       price: showPrice ? QAR(product.sellingPriceQar) : '',
@@ -195,9 +210,21 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
   const labelSize =
     format === 'thermal-4x6' ? FOUR_BY_SIX_LABEL : format === 'a4' || format === 'custom' ? customSize : thermalSmallSize;
   const grid = sheetGrid(labelSize, DEFAULT_SHEET);
+  const a4Label = format === 'a4-label';
+  const a4Shift = { xMm: a4ShiftXMm, yMm: a4ShiftYMm };
   const pageCount =
-    format === 'a4' ? Math.max(1, Math.ceil(stickers.length / grid.perPage)) : Math.max(1, stickers.length);
+    format === 'a4'
+      ? Math.max(1, Math.ceil(stickers.length / grid.perPage))
+      : a4Label
+        ? Math.max(1, Math.ceil(stickers.length / A4_LABEL_SHEET.perPage))
+        : Math.max(1, stickers.length);
   const preview = stickers[0];
+  // First sheet as it will print; rebuilt only when its labels or the shift change.
+  const firstSheetKey = a4Label ? JSON.stringify(stickers.slice(0, A4_LABEL_SHEET.perPage)) : '';
+  const a4PreviewHtml = useMemo(
+    () => (firstSheetKey ? a4LabelSheetHtml(JSON.parse(firstSheetKey), { xMm: a4ShiftXMm, yMm: a4ShiftYMm }, true) : ''),
+    [firstSheetKey, a4ShiftXMm, a4ShiftYMm],
+  );
   const previewScale = Math.min(360 / labelSize.widthMm, 400 / labelSize.heightMm);
   const previewWidth = format === 'thermal-4x6' ? 'min(100%, 267px)' : `${labelSize.widthMm * previewScale}px`;
   const previewHeight = format === 'thermal-4x6' ? '400px' : `${labelSize.heightMm * previewScale}px`;
@@ -250,7 +277,7 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
         printShopLabels(shopItems, shopSize, shopLayout, shopShow, CURRENCY);
         return;
       }
-      printBarcodeLabels(stickers, format, customSize, thermalSmallSize, thermalSmallShift);
+      printBarcodeLabels(stickers, format, customSize, thermalSmallSize, thermalSmallShift, a4Shift);
     } catch (error) {
       toast.error(error.message);
     }
@@ -263,7 +290,7 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
         return;
       }
       if (!preview) return;
-      printSingleTestLabel(preview, format, customSize, thermalSmallSize, thermalSmallShift);
+      printSingleTestLabel(preview, format, customSize, thermalSmallSize, thermalSmallShift, a4Shift);
     } catch (error) {
       toast.error(error.message);
     }
@@ -316,79 +343,127 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
         </DialogHeader>
 
         <div className="min-w-0 space-y-5">
-          <div>
-            <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">
-              Find products by Product Code, SKU, name or colour
-            </Label>
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_auto]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="0001, SKU, name or colour"
-                  className="h-11 pl-9"
-                />
-              </div>
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search product name, Product Code or SKU"
+                aria-label="Search product name, Product Code or SKU"
+                className="h-11 pl-9"
+              />
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <select
+                value={sizeFilter}
+                onChange={(event) => setSizeFilter(event.target.value)}
+                aria-label="Filter by size"
+                className="h-11 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">All sizes</option>
+                {sizeOptions.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={colorFilter}
+                onChange={(event) => setColorFilter(event.target.value)}
+                aria-label="Filter by colour"
+                className="h-11 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">All colours</option>
+                {colorOptions.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
               <select
                 value={batch}
                 onChange={(event) => setBatch(event.target.value)}
-                aria-label="Filter products by batch"
+                aria-label="Filter by batch"
                 className="h-11 min-w-0 rounded-md border border-input bg-background px-3 text-sm"
               >
-                <option value="__all__">All recorded batches</option>
+                <option value="__all__">All batches</option>
                 {batchOptions.map((label) => (
                   <option key={label} value={label}>
                     {label}
                   </option>
                 ))}
               </select>
-              <Button type="button" variant="outline" className="h-11" disabled={batch === '__all__'} onClick={selectAllInBatch}>
-                Select all in batch
-              </Button>
             </div>
           </div>
 
           <div>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">{results.length} product(s) listed</p>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" size="sm" className="h-9" onClick={selectAll}>
+                <Button type="button" variant="outline" size="sm" className="h-9" disabled={results.length === 0} onClick={selectAll}>
                   Select all listed
+                </Button>
+                <Button type="button" variant="outline" size="sm" className="h-9" disabled={batch === '__all__'} onClick={selectAllInBatch}>
+                  Select all in batch
                 </Button>
                 <Button type="button" variant="outline" size="sm" className="h-9" disabled={chosen.length === 0} onClick={resetToStock}>
                   Reset to available stock
                 </Button>
-                <Button type="button" variant="ghost" size="sm" className="h-9" onClick={() => setSelected({})}>
-                  Clear
+                <Button type="button" variant="ghost" size="sm" className="h-9" disabled={chosen.length === 0} onClick={() => setSelected({})}>
+                  Clear selection
                 </Button>
               </div>
+              <p className="text-xs font-medium text-muted-foreground">
+                Selected: <span className="text-foreground">{chosen.length}</span> | Results:{' '}
+                <span className="text-foreground">{results.length}</span>
+              </p>
             </div>
-            <div className="max-h-56 space-y-1 overflow-y-auto rounded-xl border border-border p-2">
-              {results.length === 0 && (
+            <div className="max-h-72 overflow-auto rounded-xl border border-border">
+              {results.length === 0 ? (
                 <p className="p-3 text-sm text-muted-foreground">No active product with a Product Code matches.</p>
+              ) : (
+                <table className="w-full min-w-[36rem] text-left text-sm">
+                  <thead className="sticky top-0 bg-background text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="px-3 py-2 font-medium">Code</th>
+                      <th className="px-3 py-2 font-medium">Product</th>
+                      <th className="px-3 py-2 font-medium">SKU</th>
+                      <th className="px-3 py-2 font-medium">Size</th>
+                      <th className="px-3 py-2 font-medium">Colour</th>
+                      <th className="px-3 py-2 text-right font-medium">Stock</th>
+                      <th className="px-3 py-2 text-center font-medium">
+                        <span className="sr-only">Select</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.map((product) => (
+                      <tr
+                        key={product.key}
+                        onClick={() => toggle(product.key)}
+                        className="cursor-pointer border-b border-border/60 last:border-0 hover:bg-secondary/60"
+                      >
+                        <td className="px-3 py-2 font-mono text-xs text-primary">{product.productCode}</td>
+                        <td className="max-w-[14rem] truncate px-3 py-2">{product.name}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">{product.sku}</td>
+                        <td className="px-3 py-2 text-xs">{product.size || '—'}</td>
+                        <td className="max-w-[9rem] truncate px-3 py-2 text-xs">{product.color || '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{availableStock(product)}</td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(selected[product.key])}
+                            onChange={() => toggle(product.key)}
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label={`Select ${product.productCode} ${product.name}`}
+                            className="size-4"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
-              {results.map((product) => (
-                <label
-                  key={product.key}
-                  className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-secondary/60"
-                >
-                  <input
-                    type="checkbox"
-                    checked={Boolean(selected[product.key])}
-                    onChange={() => toggle(product.key)}
-                    className="size-4"
-                  />
-                  <span className="font-mono text-xs text-primary">{product.productCode}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate">{product.name}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      Stock {availableStock(product)} · {product.sku}
-                      {product.color ? ` · ${product.color}` : ''}
-                    </span>
-                  </span>
-                </label>
-              ))}
             </div>
           </div>
 
@@ -431,6 +506,7 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
                   className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
                 >
                   <option value="thermal-30x20">Thermal 30×20 mm (Default)</option>
+                  <option value="a4-label">A4 Label – 38.1 × 21.2 mm (65 per sheet)</option>
                   <option value="thermal-4x6">Thermal 4×6 in (100×150 mm)</option>
                   <option value="a4">A4 — 30×20 mm grid</option>
                   <option value="custom">Custom size</option>
@@ -543,6 +619,27 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
                 </Button>
               </div>
             )}
+            {a4Label && (
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Shift left/right (mm)
+                    </Label>
+                    {numberInput(a4ShiftXMm, setA4ShiftXMm, -3, 3, 0.25, 0)}
+                  </div>
+                  <div>
+                    <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Shift up/down (mm)
+                    </Label>
+                    {numberInput(a4ShiftYMm, setA4ShiftYMm, -3, 3, 0.25, 0)}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Leave at 0 unless a test print on plain paper sits off the label outlines — then nudge the whole sheet.
+                </p>
+              </div>
+            )}
             {(format === 'custom' || format === 'a4') && (
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <div>
@@ -560,16 +657,30 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
                 ? `${shopItems.length} label${shopItems.length === 1 ? '' : 's'} at ${shopSize.label}, ${shopLayout === 'roll' ? 'one per page' : 'on A4 sheets'}.`
                 : format === 'a4'
                   ? `${grid.columns} × ${grid.rows} = ${grid.perPage} labels per A4 page. ${stickers.length} total across ${pageCount} page${pageCount === 1 ? '' : 's'}.`
-                  : `One label per page. ${stickers.length} total across ${pageCount} page${pageCount === 1 ? '' : 's'}.`}
+                  : a4Label
+                    ? `${A4_LABEL_SHEET.columns} × ${A4_LABEL_SHEET.rows} = ${A4_LABEL_SHEET.perPage} labels of ${A4_LABEL.widthMm} × ${A4_LABEL.heightMm} mm per A4 sheet. ${stickers.length} total across ${pageCount} sheet${pageCount === 1 ? '' : 's'}.`
+                    : `One label per page. ${stickers.length} total across ${pageCount} page${pageCount === 1 ? '' : 's'}.`}
             </p>
             <p className="mt-2 text-xs font-medium text-foreground">In the print dialog, set margins to None and scale to 100%.</p>
           </div>
 
           <div className="rounded-xl border border-border p-4">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Live label preview</p>
-            <style>{shop ? SHOP_LABEL_CSS : STICKER_CSS(labelSize)}</style>
+            <style>{shop ? SHOP_LABEL_CSS : a4Label ? A4_LABEL_CSS : STICKER_CSS(labelSize)}</style>
             <div className="flex min-h-44 items-center justify-center overflow-hidden rounded-md bg-secondary/50 p-4">
-              {shop ? (
+              {a4Label ? (
+                preview ? (
+                  <div style={{ width: `${210 * A4_PREVIEW_SCALE}mm`, height: `${297 * A4_PREVIEW_SCALE}mm` }}>
+                    <div
+                      className="a4l-guides border border-foreground/40 bg-white shadow-sm"
+                      style={{ width: '210mm', height: '297mm', transform: `scale(${A4_PREVIEW_SCALE})`, transformOrigin: 'top left' }}
+                      dangerouslySetInnerHTML={{ __html: a4PreviewHtml }}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Select a product to preview the sheet.</p>
+                )
+              ) : shop ? (
                 shopItems[0] ? (
                   <div
                     style={{
@@ -603,7 +714,9 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
               )}
             </div>
             <p className="mt-3 text-xs text-muted-foreground">
-              Preview enlarged on screen. Printing uses exact physical dimensions and never changes inventory.
+              {a4Label
+                ? `First sheet at true proportions — dashed outlines mark the ${A4_LABEL_SHEET.perPage} labels and are not printed. Printing never changes inventory.`
+                : 'Preview enlarged on screen. Printing uses exact physical dimensions and never changes inventory.'}
             </p>
           </div>
 
@@ -646,6 +759,7 @@ function SelectedRow({ product, quantity, onChange, price, onPriceChange }) {
         </p>
         <p className="truncate text-xs text-muted-foreground">
           Current stock {availableStock(product)} · {product.sku}
+          {product.size ? ` · ${product.size}` : ''}
           {product.color ? ` · ${product.color}` : ''}
         </p>
       </div>
