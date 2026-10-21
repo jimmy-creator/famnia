@@ -572,79 +572,174 @@ router.patch('/orders/:number/contact', need('orders.update_delivery'), wrap(asy
   res.json({ ok: true, changes: changes.length, customerUpdated });
 }));
 
-/** Prices, discounts and delivery charge on a confirmed order. Quantities and stock never change. */
+/**
+ * Edit a confirmed order: quantities, removed lines, added products, prices,
+ * discounts and the delivery charge. `items` is the full new line list —
+ * existing lines by `id` (omitted = removed), new ones by SKU `key`. When the
+ * order's stock is out, each SKU's difference moves stock once (added units
+ * are rechecked against live stock); payment is left for staff to settle.
+ */
 router.post('/orders/:number/correct-prices', need('orders.edit_prices'), wrap(async (req, res) => {
-  if (req.user.role !== 'admin') throw bad('Only an Admin can correct order prices.', 403);
+  if (req.user.role !== 'admin') throw bad('Only an Admin can edit a confirmed order.', 403);
   const b = req.body || {};
-  const order = await findOrder(req.params.number);
-  if (order.channel === 'pos') throw bad('Till sales are managed at the till.');
-  const before = await view(order);
-  if (before.status === 'Draft') throw bad('Edit the draft in New Sales Order instead.');
-  if (before.status === 'Cancelled') throw bad('Cancelled orders cannot be corrected.');
-  if (before.items.some((i) => i.returnedQty > 0)) throw bad('This order has returned items. Prices can no longer be corrected.');
   const reason = clean(b.reason, 200);
-  if (!reason) throw bad('A reason is required for a price correction.');
-  if (round2(b.expectedGrandTotal) !== round2(before.grandTotal)) {
-    throw bad('This order changed while the form was open. Reopen it and enter the correction again.', 409);
-  }
-  adoptLegacy(order, before);
-
+  if (!reason) throw bad('A reason is required to edit an order.');
   const patches = Array.isArray(b.items) ? b.items : [];
-  const lines = before.items.map((item) => {
-    const p = patches.find((x) => String(x.id) === String(item.id));
-    const unitPrice = round2(Math.max(p ? Number(p.unitPrice) || 0 : item.unitPrice, 0));
-    const itemDiscount = round2(Math.max(p ? Number(p.discount) || 0 : item.discount, 0));
-    const gross = round2(item.quantity * unitPrice);
-    if (itemDiscount > gross) throw bad(`${item.name}: the item discount cannot be more than QAR ${gross.toFixed(2)}.`);
-    return { item, unitPrice, itemDiscount, gross, net: round2(gross - itemDiscount) };
-  });
-  const netSubtotal = round2(lines.reduce((s, l) => s + l.net, 0));
-  const value = Math.max(Number(b.orderDiscountValue) || 0, 0);
-  const percent = b.orderDiscountType === 'percent';
-  if (percent && value > 100) throw bad('An order discount percentage cannot be more than 100%.');
-  const orderDiscount = percent ? round2((netSubtotal * value) / 100) : round2(value);
-  if (orderDiscount > netSubtotal) throw bad('The order discount cannot be more than the item subtotal.');
-
-  let allocated = 0;
-  const finalLines = lines.map((l, index) => {
-    const share = index === lines.length - 1
-      ? round2(orderDiscount - allocated)
-      : netSubtotal > 0 ? round2((orderDiscount * l.net) / netSubtotal) : 0;
-    allocated = round2(allocated + share);
-    const discount = round2(l.itemDiscount + Math.max(share, 0));
-    return { ...l, discount, lineTotal: round2(Math.max(l.gross - discount, 0)) };
-  });
-  const subtotal = round2(finalLines.reduce((s, l) => s + l.lineTotal, 0));
-  const deliveryCharge = before.fulfilmentMethod === 'Customer Pickup' ? 0 : round2(Math.max(Number(b.deliveryCharge) || 0, 0));
-  // Web orders keep a coupon / bill discount on the header (hub orders store 0 there).
-  const headerDiscount = round2(Math.max(parseFloat(order.discount) || 0, 0));
-  const grandTotal = round2(Math.max(subtotal + deliveryCharge - headerDiscount, 0));
-
-  order.items = order.items.map((it, idx) => {
-    const l = finalLines[idx];
-    return { ...it, price: l.unitPrice, unitPrice: l.unitPrice, discount: l.discount, lineTotal: l.lineTotal };
-  });
-  order.changed('items', true);
-  order.shippingCharge = deliveryCharge;
-  order.totalAmount = grandTotal;
-  await order.save();
-
+  const t = await sequelize.transaction();
+  let order;
+  let before;
   const changes = [];
-  if (deliveryCharge !== before.deliveryCharge) changes.push({ field: 'Delivery charge', oldValue: String(before.deliveryCharge), newValue: String(deliveryCharge) });
-  if (grandTotal !== before.grandTotal) changes.push({ field: 'Grand total', oldValue: String(before.grandTotal), newValue: String(grandTotal) });
-  for (const l of finalLines) {
-    if (l.unitPrice !== l.item.unitPrice) changes.push({ field: `Unit price · ${l.item.sku}`, oldValue: String(l.item.unitPrice), newValue: String(l.unitPrice) });
-    if (l.discount !== l.item.discount) changes.push({ field: `Discount · ${l.item.sku}`, oldValue: String(l.item.discount), newValue: String(l.discount) });
+  const touched = new Set();
+  let result;
+  try {
+    order = await findOrder(req.params.number, { transaction: t, lock: t.LOCK.UPDATE });
+    if (order.channel === 'pos') throw bad('Till sales are managed at the till.');
+    before = toSalesOrder(order);
+    if (before.status === 'Draft') throw bad('Edit the draft in New Sales Order instead.');
+    if (before.status === 'Cancelled') throw bad('Cancelled orders cannot be edited.');
+    if (before.items.some((i) => i.returnedQty > 0)) throw bad('This order has returned items, so it can no longer be edited.');
+    if (round2(b.expectedGrandTotal) !== round2(before.grandTotal)) {
+      throw bad('This order changed while the form was open. Reopen it and enter the change again.', 409);
+    }
+    adoptLegacy(order, before);
+    const stockOut = order.stockState === 'deducted';
+
+    // Existing lines: the edit keeps, re-prices, re-quantifies or drops each one.
+    const kept = [];
+    const deltas = new Map();   // SKU → units the order now holds beyond what it held
+    const addDelta = (productId, variantIndex, sku, qty) => {
+      const k = `${productId}:${variantIndex ?? 'base'}`;
+      const d = deltas.get(k) || { productId, variantIndex, sku, qty: 0 };
+      d.qty += qty;
+      deltas.set(k, d);
+    };
+    for (const item of before.items) {
+      const raw = order.items[item.lineIndex];
+      const p = patches.find((x) => x && x.id !== undefined && x.id !== null && x.id !== '' && String(x.id) === item.id);
+      const quantity = p ? (p.quantity === undefined ? item.quantity : parseInt(p.quantity, 10)) : 0;
+      if (p && (!Number.isInteger(quantity) || quantity < 1)) throw bad(`${item.sku}: quantity must be at least 1 — remove the line instead.`);
+      let variantIndex = null;
+      if (stockOut && quantity !== item.quantity) {
+        // A quantity change moves stock, so the line must resolve to a SKU.
+        const product = raw.productId ? await Product.findByPk(raw.productId, { transaction: t }) : null;
+        if (!product) throw bad(`${item.name} no longer matches a product, so its quantity cannot be changed.`);
+        variantIndex = lineVariantIndex(product, raw);
+        if (hasVariants(product) && variantIndex === null) throw bad(`${item.name}: its size / colour no longer matches a SKU, so its quantity cannot be changed.`);
+        addDelta(product.id, variantIndex, item.sku, quantity - item.quantity);
+      }
+      if (!p) {
+        changes.push({ field: `Item removed · ${item.sku}`, oldValue: `${item.quantity} × ${item.unitPrice}`, newValue: null });
+        continue;
+      }
+      if (quantity !== item.quantity) changes.push({ field: `Quantity · ${item.sku}`, oldValue: String(item.quantity), newValue: String(quantity) });
+      kept.push({
+        raw: variantIndex !== null ? { ...raw, variantIndex } : raw,
+        sku: item.sku, name: item.name, quantity,
+        oldUnitPrice: item.unitPrice, oldDiscount: item.discount,
+        unitPrice: round2(Math.max(p.unitPrice === undefined ? item.unitPrice : Number(p.unitPrice) || 0, 0)),
+        itemDiscount: round2(Math.max(p.discount === undefined ? item.discount : Number(p.discount) || 0, 0)),
+      });
+    }
+
+    // New lines, resolved against the live catalogue like New Sales Order.
+    const additions = patches.filter((x) => x && x.key && (x.id === undefined || x.id === null || x.id === ''));
+    const built = additions.length ? await buildLines(additions, t) : [];
+    const inactive = built.find((l) => l.isActive === false);
+    if (inactive) throw bad(`${inactive.sku} is inactive and cannot be sold. Reactivate it first.`);
+    for (const l of built) {
+      addDelta(l.productId, l.variantIndex, l.sku, l.quantity);
+      changes.push({ field: `Item added · ${l.sku}`, oldValue: null, newValue: `${l.quantity} × ${l.unitPrice}` });
+    }
+    const lines = [
+      ...kept,
+      ...built.map((l) => ({ raw: null, built: l, sku: l.sku, name: l.name, quantity: l.quantity, unitPrice: l.unitPrice, itemDiscount: l.discount })),
+    ];
+    if (!lines.length) throw bad('An order needs at least one product. Cancel the order instead.');
+
+    for (const l of lines) {
+      l.gross = round2(l.quantity * l.unitPrice);
+      if (l.itemDiscount > l.gross) throw bad(`${l.name}: the item discount cannot be more than QAR ${l.gross.toFixed(2)}.`);
+      l.net = round2(l.gross - l.itemDiscount);
+    }
+    const netSubtotal = round2(lines.reduce((s, l) => s + l.net, 0));
+    const value = Math.max(Number(b.orderDiscountValue) || 0, 0);
+    const percent = b.orderDiscountType === 'percent';
+    if (percent && value > 100) throw bad('An order discount percentage cannot be more than 100%.');
+    const orderDiscount = percent ? round2((netSubtotal * value) / 100) : round2(value);
+    if (orderDiscount > netSubtotal) throw bad('The order discount cannot be more than the item subtotal.');
+
+    let allocated = 0;
+    lines.forEach((l, index) => {
+      const share = index === lines.length - 1
+        ? round2(orderDiscount - allocated)
+        : netSubtotal > 0 ? round2((orderDiscount * l.net) / netSubtotal) : 0;
+      allocated = round2(allocated + share);
+      l.discount = round2(l.itemDiscount + Math.max(share, 0));
+      l.lineTotal = round2(Math.max(l.gross - l.discount, 0));
+    });
+    const subtotal = round2(lines.reduce((s, l) => s + l.lineTotal, 0));
+    const deliveryCharge = before.fulfilmentMethod === 'Customer Pickup' ? 0 : round2(Math.max(Number(b.deliveryCharge) || 0, 0));
+    // Web orders keep a coupon / bill discount on the header (hub orders store 0 there).
+    const headerDiscount = round2(Math.max(parseFloat(order.discount) || 0, 0));
+    const grandTotal = round2(Math.max(subtotal + deliveryCharge - headerDiscount, 0));
+
+    // Stock: only when this order's goods are out. Units taken are rechecked first.
+    const moves = [...deltas.values()].filter((d) => d.qty !== 0);
+    if (stockOut && moves.length) {
+      const locationId = await stockLocationId();
+      for (const d of moves.filter((m) => m.qty > 0)) {
+        const row = await ProductStock.findOne({
+          where: { productId: d.productId, variantIndex: d.variantIndex ?? { [Op.is]: null }, locationId },
+          transaction: t,
+          lock: t.LOCK.UPDATE,
+        });
+        const total = await skuStock(d.productId, d.variantIndex, t);
+        const available = Math.min(total, row ? row.quantity : 0);
+        if (d.qty > available) throw bad(`Insufficient stock for ${d.sku}. Needed ${d.qty} more, available ${available}.`);
+      }
+      for (const d of moves) {
+        await applyStockDelta({
+          productId: d.productId, variantIndex: d.variantIndex, delta: -d.qty, transaction: t, locationId,
+          ctx: d.qty > 0
+            ? { kind: 'sale', reference: order.orderNumber, orderId: order.id, createdBy: req.user.id, notes: `Order edited · ${reason}` }
+            : { kind: 'cancel_restock', reference: `EDIT-${order.orderNumber}-${d.sku}`, orderId: order.id, reason, createdBy: req.user.id },
+        });
+        touched.add(d.productId);
+      }
+    }
+
+    order.items = lines.map((l) => (l.raw
+      ? { ...l.raw, quantity: l.quantity, price: l.unitPrice, unitPrice: l.unitPrice, discount: l.discount, lineTotal: l.lineTotal }
+      : storedLine({ ...l.built, discount: l.discount, lineTotal: l.lineTotal })));
+    order.changed('items', true);
+    order.shippingCharge = deliveryCharge;
+    order.totalAmount = grandTotal;
+    await order.save({ transaction: t });
+
+    if (deliveryCharge !== before.deliveryCharge) changes.push({ field: 'Delivery charge', oldValue: String(before.deliveryCharge), newValue: String(deliveryCharge) });
+    if (grandTotal !== before.grandTotal) changes.push({ field: 'Grand total', oldValue: String(before.grandTotal), newValue: String(grandTotal) });
+    for (const l of kept) {
+      if (l.unitPrice !== l.oldUnitPrice) changes.push({ field: `Unit price · ${l.sku}`, oldValue: String(l.oldUnitPrice), newValue: String(l.unitPrice) });
+      if (l.discount !== l.oldDiscount) changes.push({ field: `Discount · ${l.sku}`, oldValue: String(l.oldDiscount), newValue: String(l.discount) });
+    }
+    if (orderDiscount > 0) {
+      changes.push({ field: 'Order discount applied', oldValue: null, newValue: percent ? `${value}% (QAR ${orderDiscount})` : `QAR ${orderDiscount}` });
+    }
+    const overpaid = round2(Math.max(before.amountReceived - grandTotal, 0));
+    const balanceDue = round2(Math.max(grandTotal - before.amountReceived, 0));
+    if (overpaid > 0) changes.push({ field: 'Overpayment flagged', oldValue: null, newValue: `QAR ${overpaid} received above the new total` });
+    if (balanceDue > 0 && before.amountReceived > 0) changes.push({ field: 'Balance due', oldValue: null, newValue: `QAR ${balanceDue} still to collect` });
+    changes.push({ field: 'Order edit reason', oldValue: null, newValue: reason });
+    await auditOrder(req, order.id, changes, t);
+    await t.commit();
+    result = { ok: true, changes: changes.length, grandTotal, subtotal, orderDiscount, overpaid, balanceDue };
+  } catch (err) {
+    if (!t.finished) await t.rollback();
+    throw err;
   }
-  if (orderDiscount > 0) {
-    changes.push({ field: 'Order discount applied', oldValue: null, newValue: percent ? `${value}% (QAR ${orderDiscount})` : `QAR ${orderDiscount}` });
-  }
-  const overpaid = round2(Math.max(before.amountReceived - grandTotal, 0));
-  if (overpaid > 0) changes.push({ field: 'Overpayment flagged', oldValue: null, newValue: `QAR ${overpaid} received above the new total` });
-  changes.push({ field: 'Price correction reason', oldValue: null, newValue: reason });
-  await auditOrder(req, order.id, changes);
-  await hubLog(req, 'Order prices corrected', 'Sales Orders', order.orderNumber, `${reason} · new total QAR ${grandTotal}`);
-  res.json({ ok: true, changes: changes.length, grandTotal, subtotal, orderDiscount, overpaid });
+  await recomputeAfter([...touched]);
+  await hubLog(req, 'Order edited', 'Sales Orders', order.orderNumber, `${reason} · new total QAR ${result.grandTotal}`);
+  res.json(result);
 }));
 
 /** Returns: restock only lines marked so, never more than was sold. */

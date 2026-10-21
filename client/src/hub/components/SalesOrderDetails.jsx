@@ -4,7 +4,7 @@
  * except an explicit return restock or an explicit cancellation restock.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Eye, Loader2, Pencil, Printer, Tag } from 'lucide-react';
+import { Download, Eye, Loader2, Pencil, Printer, Search, Tag, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -25,6 +25,7 @@ import {
   correctOrderPricing,
   orderAuditQuery,
   processOrderReturn,
+  productsQuery,
   recordInvoicePrint,
   recordLabelPrint,
   salesOrderQuery,
@@ -300,7 +301,7 @@ function OrderBody({ data }) {
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Could not save these details.'),
   });
 
-  /* ---------------- audited price & discount correction ---------------- */
+  /* ---------------- audited order edit: items, quantities, prices, discounts ---------------- */
   const canCorrectPrices = can(access.data, 'orders.edit_prices') && isAdmin;
   const [priceOpen, setPriceOpen] = useState(false);
   const [priceLines, setPriceLines] = useState([]);
@@ -308,13 +309,24 @@ function OrderBody({ data }) {
   const [pDiscountValue, setPDiscountValue] = useState('0');
   const [pDelivery, setPDelivery] = useState('0');
   const [pReason, setPReason] = useState('');
+  const [pSearch, setPSearch] = useState('');
+  const catalogue = useQuery({ ...productsQuery, enabled: priceOpen });
+  const addable = useMemo(() => {
+    const term = pSearch.trim().toLowerCase();
+    if (!term) return [];
+    return (catalogue.data ?? [])
+      .filter((s) => s.isActive && [s.productCode ?? '', s.sku, s.name, s.color ?? '', s.size ?? ''].some((v) => v.toLowerCase().includes(term)))
+      .slice(0, 8);
+  }, [catalogue.data, pSearch]);
 
   const openPriceEdit = () => {
     setPriceLines(
       data.items.map((item) => ({
         id: item.id ?? '',
+        sku: item.sku,
         name: item.name,
-        quantity: item.quantity,
+        detail: [item.size, item.color].filter(Boolean).join(' · '),
+        quantity: String(item.quantity),
         unitPrice: String(item.unitPrice),
         discount: String(item.discount),
       })),
@@ -323,12 +335,33 @@ function OrderBody({ data }) {
     setPDiscountValue('0');
     setPDelivery(String(data.deliveryCharge));
     setPReason('');
+    setPSearch('');
     setPriceOpen(true);
   };
 
+  const addLine = (s) => {
+    setPriceLines((prev) => [
+      ...prev,
+      {
+        id: '',
+        key: s.key,
+        sku: s.sku,
+        name: s.name,
+        detail: [s.productCode, s.size, s.color].filter(Boolean).join(' · '),
+        stock: s.currentStock,
+        quantity: '1',
+        unitPrice: String(s.sellingPriceQar ?? 0),
+        discount: '0',
+      },
+    ]);
+    setPSearch('');
+  };
+  const setLine = (index, patch) => setPriceLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  const badQuantity = priceLines.some((l) => !Number.isInteger(Number(l.quantity)) || Number(l.quantity) < 1);
+
   const priceTotals = useMemo(() => {
     const net = priceLines.reduce(
-      (sum, l) => sum + Math.max(l.quantity * (Number(l.unitPrice) || 0) - (Number(l.discount) || 0), 0),
+      (sum, l) => sum + Math.max((Number(l.quantity) || 0) * (Number(l.unitPrice) || 0) - (Number(l.discount) || 0), 0),
       0,
     );
     const value = Math.max(Number(pDiscountValue) || 0, 0);
@@ -343,7 +376,13 @@ function OrderBody({ data }) {
       correctOrderPricing({
         orderId: data.id,
         expectedGrandTotal: data.grandTotal,
-        items: priceLines.map((l) => ({ id: l.id, unitPrice: Number(l.unitPrice) || 0, discount: Number(l.discount) || 0 })),
+        // The full new line list: existing lines by id (left out = removed), new ones by SKU key.
+        items: priceLines.map((l) => ({
+          ...(l.id ? { id: l.id } : { key: l.key }),
+          quantity: Number(l.quantity),
+          unitPrice: Number(l.unitPrice) || 0,
+          discount: Number(l.discount) || 0,
+        })),
         orderDiscountType: pDiscountType,
         orderDiscountValue: Number(pDiscountValue) || 0,
         deliveryCharge: Number(pDelivery) || 0,
@@ -351,12 +390,18 @@ function OrderBody({ data }) {
       }),
     onSuccess: async (result) => {
       setPriceOpen(false);
-      toast.success(`Order corrected — new total ${money(result.grandTotal)}.`, {
-        description: result.overpaid > 0 ? `Customer has overpaid ${money(result.overpaid)}.` : undefined,
+      toast.success(`Order updated — new total ${money(result.grandTotal)}.`, {
+        description:
+          result.overpaid > 0
+            ? `Customer has overpaid ${money(result.overpaid)}.`
+            : result.balanceDue > 0 && data.amountReceived > 0
+              ? `${money(result.balanceDue)} still to collect — update the payment when received.`
+              : undefined,
       });
       await refresh();
+      await queryClient.invalidateQueries({ queryKey: productsQuery.queryKey });
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : 'Could not correct this order.'),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Could not update this order.'),
   });
 
   /**
@@ -792,9 +837,9 @@ function OrderBody({ data }) {
                 Cancel order
               </Button>
             )}
-            {canCorrectPrices && data.status !== 'Cancelled' && (
+            {canCorrectPrices && data.status !== 'Cancelled' && !data.items.some((i) => i.returnedQty > 0) && (
               <Button variant="outline" className="h-11" onClick={openPriceEdit}>
-                <Pencil className="mr-2 size-4" /> Correct prices
+                <Pencil className="mr-2 size-4" /> Edit order
               </Button>
             )}
           </div>
@@ -944,19 +989,50 @@ function OrderBody({ data }) {
       <Dialog open={priceOpen} onOpenChange={setPriceOpen}>
         <DialogContent className="z-[70] max-h-[85vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Correct prices &amp; discounts</DialogTitle>
+            <DialogTitle>Edit order</DialogTitle>
             <DialogDescription>
-              Corrects unit prices, item discounts, the order discount and the delivery charge on this confirmed order.
-              Sold quantities, SKUs, recorded costs and stock never change, and every correction is audited.
+              Add or remove products, change quantities, prices and discounts, or the delivery charge. Stock follows the
+              change (added units are checked against live stock), and every edit is audited. Payment is not changed —
+              update it afterwards if the customer pays more or is owed money.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {priceLines.map((line, index) => (
-              <div key={line.id} className="rounded-2xl border border-border p-3">
-                <p className="mb-2 text-sm font-medium text-foreground">
-                  {line.name} <span className="text-xs text-muted-foreground">× {line.quantity}</span>
-                </p>
-                <div className="grid gap-2 sm:grid-cols-2">
+              <div key={line.id || `new-${line.key}-${index}`} className="rounded-2xl border border-border p-3">
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <p className="min-w-0 text-sm font-medium text-foreground">
+                    {line.name}
+                    {!line.id && <span className="ml-2 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase text-primary">New</span>}
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      {line.sku}
+                      {line.detail ? ` · ${line.detail}` : ''}
+                      {!line.id && line.stock !== undefined ? ` · ${line.stock} in stock` : ''}
+                    </span>
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-9 shrink-0 text-destructive"
+                    disabled={priceLines.length === 1}
+                    aria-label={`Remove ${line.name}`}
+                    onClick={() => setPriceLines((prev) => prev.filter((_, i) => i !== index))}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Quantity</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={line.quantity}
+                      onChange={(e) => setLine(index, { quantity: e.target.value })}
+                      className="mt-1 h-11"
+                    />
+                  </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Unit price (QAR)</Label>
                     <Input
@@ -964,9 +1040,7 @@ function OrderBody({ data }) {
                       min={0}
                       step="0.01"
                       value={line.unitPrice}
-                      onChange={(e) =>
-                        setPriceLines((prev) => prev.map((l, i) => (i === index ? { ...l, unitPrice: e.target.value } : l)))
-                      }
+                      onChange={(e) => setLine(index, { unitPrice: e.target.value })}
                       className="mt-1 h-11"
                     />
                   </div>
@@ -977,15 +1051,52 @@ function OrderBody({ data }) {
                       min={0}
                       step="0.01"
                       value={line.discount}
-                      onChange={(e) =>
-                        setPriceLines((prev) => prev.map((l, i) => (i === index ? { ...l, discount: e.target.value } : l)))
-                      }
+                      onChange={(e) => setLine(index, { discount: e.target.value })}
                       className="mt-1 h-11"
                     />
                   </div>
                 </div>
               </div>
             ))}
+
+            <div className="rounded-2xl border border-dashed border-border p-3">
+              <Label className="text-xs text-muted-foreground">Add a product</Label>
+              <div className="relative mt-1">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={pSearch}
+                  onChange={(e) => setPSearch(e.target.value)}
+                  placeholder="Search name, Product Code, SKU, size or colour"
+                  className="h-11 pl-9"
+                />
+              </div>
+              {pSearch.trim() && (
+                <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
+                  {catalogue.isPending && <p className="p-2 text-xs text-muted-foreground">Loading products…</p>}
+                  {!catalogue.isPending && addable.length === 0 && (
+                    <p className="p-2 text-xs text-muted-foreground">No active product matches.</p>
+                  )}
+                  {addable.map((s) => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => addLine(s)}
+                      className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-secondary/60"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate">
+                          <span className="font-mono text-xs text-primary">{s.productCode}</span> {s.name}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {[s.size, s.color].filter(Boolean).join(' · ') || s.sku} · {s.currentStock} in stock
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-xs font-medium">{money(s.sellingPriceQar)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="grid gap-2 sm:grid-cols-3">
               <div>
@@ -1033,16 +1144,27 @@ function OrderBody({ data }) {
             </div>
 
             <div>
-              <Label className="text-xs text-muted-foreground">Reason for this correction *</Label>
-              <Textarea value={pReason} onChange={(e) => setPReason(e.target.value)} rows={2} className="mt-1" />
+              <Label className="text-xs text-muted-foreground">Reason for this edit *</Label>
+              <Textarea
+                value={pReason}
+                onChange={(e) => setPReason(e.target.value)}
+                rows={2}
+                placeholder="e.g. Customer added a second size by phone"
+                className="mt-1"
+              />
             </div>
+            {badQuantity && <p className="text-xs text-destructive">Every quantity must be a whole number of at least 1.</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" className="h-11" onClick={() => setPriceOpen(false)}>
               Cancel
             </Button>
-            <Button className="h-11" onClick={() => savePrices.mutate()} disabled={savePrices.isPending || !pReason.trim()}>
-              {savePrices.isPending ? 'Saving…' : 'Save correction'}
+            <Button
+              className="h-11"
+              onClick={() => savePrices.mutate()}
+              disabled={savePrices.isPending || !pReason.trim() || badQuantity || !priceLines.length}
+            >
+              {savePrices.isPending ? 'Saving…' : 'Save changes'}
             </Button>
           </DialogFooter>
         </DialogContent>
