@@ -5,19 +5,12 @@
  * or reprinting never changes any data — it only toggles CSS.
  */
 import { BUSINESS, FEMNIA_LOGO_URL } from '@/hub/components/Brand';
+import { printBusinessFrom } from '@/hub/lib/printBusiness';
 
 const dt = (v) =>
   v ? new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
-const PRINT_BUSINESS_FALLBACK = {
-  name: BUSINESS.name,
-  location: BUSINESS.location,
-  phone: BUSINESS.phone,
-  currency: BUSINESS.currency,
-  invoiceFooter: 'Thank you for shopping with FEMNIA.',
-  labelFooter: '',
-  logoUrl: '',
-};
+const PRINT_BUSINESS_FALLBACK = printBusinessFrom(null);
 
 export function InvoiceSheet({ order, business = PRINT_BUSINESS_FALLBACK }) {
   const pickup = order.fulfilmentMethod === 'Customer Pickup';
@@ -29,10 +22,12 @@ export function InvoiceSheet({ order, business = PRINT_BUSINESS_FALLBACK }) {
           <img src={business.logoUrl || FEMNIA_LOGO_URL} alt={business.name} className="h-16 w-16 object-contain" />
           <div>
             <p className="text-lg font-semibold tracking-[0.3em]">{business.name.toUpperCase()}</p>
+            {business.legalName && <p className="text-[10pt] font-semibold">{business.legalName}</p>}
             <p className="text-[9pt]">Women&apos;s &amp; Children&apos;s Clothing</p>
             <p className="text-[9pt]">
-              {business.location} · {business.phone}
+              {[business.crNumber && `CR No: ${business.crNumber}`, business.location].filter(Boolean).join(' · ')}
             </p>
+            <p className="text-[9pt]">{[business.phone, business.email].filter(Boolean).join(' · ')}</p>
           </div>
         </div>
         <div className="text-right">

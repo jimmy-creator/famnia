@@ -1,7 +1,9 @@
 import { useTranslation } from 'react-i18next';
 import StaticPage from './StaticPage';
+import { telHref, useCompany } from '@/lib/company';
 
 function EnglishBody() {
+  const c = useCompany();
   return (
     <>
       <p className="s2-static-date">Last updated: October 2026</p>
@@ -82,9 +84,9 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>9. Contact</h2>
         <p>
-          📞 / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          📞 / WhatsApp: <a href={telHref(c.phone)}>{c.phone}</a><br />
           📷 Instagram: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a><br />
-          📧 <a href="mailto:info@femnia.com">info@femnia.com</a>
+          📧 <a href={`mailto:${c.email}`}>{c.email}</a>
         </p>
       </section>
     </>
@@ -92,6 +94,7 @@ function EnglishBody() {
 }
 
 function ArabicBody() {
+  const c = useCompany();
   return (
     <>
       <p className="s2-static-date">آخر تحديث: أكتوبر 2026</p>
@@ -172,9 +175,9 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>9. التواصل</h2>
         <p>
-          📞 / واتساب: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          📞 / واتساب: <a href={telHref(c.phone)}>{c.phone}</a><br />
           📷 إنستغرام: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a><br />
-          📧 <a href="mailto:info@femnia.com">info@femnia.com</a>
+          📧 <a href={`mailto:${c.email}`}>{c.email}</a>
         </p>
       </section>
     </>
@@ -188,8 +191,8 @@ export default function ShippingPolicy() {
     <StaticPage
       title="Shipping Policy"
       titleAr="سياسة الشحن"
-      description="Femnia Fashion delivery across Qatar. Free on orders of QAR 100 and above (QAR 10 below), fast delivery to most areas."
-      descriptionAr="توصيل Femnia Fashion في جميع أنحاء قطر. توصيل مجاني للطلبات بقيمة 100 ريال فأكثر (10 ريالات لما دون ذلك)، وتوصيل سريع لمعظم المناطق."
+      description="FEMNIA delivery across Qatar. Free on orders of QAR 100 and above (QAR 10 below), fast delivery to most areas."
+      descriptionAr="توصيل FEMNIA في جميع أنحاء قطر. توصيل مجاني للطلبات بقيمة 100 ريال فأكثر (10 ريالات لما دون ذلك)، وتوصيل سريع لمعظم المناطق."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

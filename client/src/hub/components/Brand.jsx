@@ -4,8 +4,11 @@ export const FEMNIA_LOGO_URL = '/images/femnia-logo.webp';
 
 export const BUSINESS = {
   name: 'FEMNIA',
-  location: 'Al Thumama, Qatar',
-  phone: '66543343',
+  legalName: 'Femnia Online Trading WLL',
+  crNumber: '244701',
+  email: 'info@femnia.com',
+  location: 'Qatar',
+  phone: '+974 6654 3343',
   currency: import.meta.env.VITE_CURRENCY_CODE || 'QAR',
 };
 

@@ -8,9 +8,15 @@ import { Setting } from '../models/index.js';
  */
 export const SETTINGS_DEFAULTS = {
   businessName: 'FEMNIA',
+  // Company identity printed on invoices, bills, POs, the store footer and policies.
+  legalName: 'Femnia Online Trading WLL',
+  crNumber: '244701',
+  email: 'info@femnia.com',
+  whatsapp: '97466543343',
+  website: 'www.femniafashion.com',
   logoUrl: '',
-  location: 'Al Thumama, Qatar',
-  phone: '66543343',
+  location: 'Qatar',
+  phone: '+974 6654 3343',
   currency: 'QAR',
   invoicePrefix: 'FEM',
   customerPrefix: 'CUS',
@@ -36,6 +42,11 @@ export const SETTINGS_DEFAULTS = {
 
 export const SETTING_KEYS = {
   businessName: 'hub_business_name',
+  legalName: 'hub_legal_name',
+  crNumber: 'hub_cr_number',
+  email: 'hub_email',
+  whatsapp: 'hub_whatsapp',
+  website: 'hub_website',
   logoUrl: 'hub_logo_url',
   location: 'hub_location',
   phone: 'hub_phone',
@@ -91,5 +102,27 @@ export async function loadAppSettings() {
     }
   }
   out.labelSize = out.labelSize === '100x150' ? '100x150' : '100x130';
+  cachedCompany = companyFrom(out);
   return out;
 }
+
+/** The public company identity: what customers, suppliers and every document see. */
+const companyFrom = (s) => ({
+  brandName: s.businessName,
+  legalName: s.legalName,
+  crNumber: s.crNumber,
+  address: s.location,
+  phone: s.phone,
+  whatsapp: s.whatsapp,
+  email: s.email,
+  website: s.website,
+});
+
+let cachedCompany = companyFrom(SETTINGS_DEFAULTS);
+
+export async function companyProfile() {
+  return companyFrom(await loadAppSettings());
+}
+
+/** Last-loaded profile, for synchronous templates (emails); refreshed by every settings read. */
+export const cachedCompanyProfile = () => cachedCompany;

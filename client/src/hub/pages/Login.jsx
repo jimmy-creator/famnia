@@ -88,7 +88,7 @@ export default function LoginPage() {
           <FemniaLogo className="mx-auto size-20 rounded-2xl" />
           <h1 className="mt-3 text-lg font-medium text-foreground">FEMNIA Hub</h1>
 
-          <p className="mt-1 text-sm text-muted-foreground">Inventory &amp; Delivery Manager · Al Thumama, Qatar</p>
+          <p className="mt-1 text-sm text-muted-foreground">Inventory &amp; Delivery Manager · Qatar</p>
         </div>
 
         <form onSubmit={submit} className="mt-8 space-y-4">

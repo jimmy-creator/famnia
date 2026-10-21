@@ -32,10 +32,11 @@
  */
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import { CURRENCY_DECIMALS } from '../utils/currency';
+import { DEFAULT_COMPANY } from './company';
 
 const KINDS = ['receipt', 'barcode'];
 const DEFAULTS = { receipt: 48, barcode: 32 };
-const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
+const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'FEMNIA';
 
 const key = (kind, suffix) => `pos_${kind}_${suffix}`;
 
@@ -263,10 +264,12 @@ const fmt = (currency, n) => `${currency} ${(parseFloat(n) || 0).toFixed(CURRENC
 // that don't have them. Blank values are simply not printed.
 export const RECEIPT_STORE = {
   name: STORE_NAME,
+  legalName: DEFAULT_COMPANY.legalName,
+  cr: DEFAULT_COMPANY.crNumber,
   logo: LOGO_URL,
   address: '',
-  phone: '+974 6654 3343',
-  email: 'info@femnia.com',
+  phone: DEFAULT_COMPANY.phone,
+  email: DEFAULT_COMPANY.email,
 };
 
 // Logo + location + contacts, shared by sale/return receipts and X/Z reports.
@@ -275,6 +278,8 @@ async function printStoreHeader(enc, cols, location) {
   addLogo(enc, logo, cols);
   // The logo is a monogram, so the store name is always spelled out.
   enc.align('center').bold(true).size('normal').line(location?.name || RECEIPT_STORE.name).bold(false);
+  if (RECEIPT_STORE.legalName) enc.line(RECEIPT_STORE.legalName);
+  if (RECEIPT_STORE.cr) enc.line(`CR No: ${RECEIPT_STORE.cr}`);
   const address = location?.address || RECEIPT_STORE.address;
   const phone = location?.phone || RECEIPT_STORE.phone;
   if (address) enc.line(address);

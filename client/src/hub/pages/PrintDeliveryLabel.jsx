@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { DeliveryLabel } from '@/hub/components/DeliveryLabel';
+import { printBusinessFrom } from '@/hub/lib/printBusiness';
 import { accessQuery, appSettingsQuery, salesOrderQuery } from '@/hub/lib/api';
 import { useHubTitle } from '@/hub/lib/useHubTitle';
 
@@ -48,13 +49,8 @@ function LabelPrint() {
   const settings = useQuery(appSettingsQuery);
   const printed = useRef(false);
   const size = requested ?? settings.data?.labelSize ?? '100x130';
-  const business = {
-    name: settings.data?.businessName ?? 'FEMNIA',
-    location: settings.data?.location ?? 'Al Thumama, Qatar',
-    phone: settings.data?.phone ?? '66543343',
-    currency: settings.data?.currency ?? 'QAR',
-    footer: settings.data?.labelFooter ?? '',
-  };
+  const { name, location, phone, currency, labelFooter } = printBusinessFrom(settings.data);
+  const business = { name, location, phone, currency, footer: labelFooter };
   usePageSize(size);
 
   useEffect(() => {

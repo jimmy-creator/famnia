@@ -321,7 +321,8 @@ router.get('/activity/options', need('admin.view_audit'), wrap(async (req, res) 
 // Settings
 // ════════════════════════════════════════════════════════════════════
 const SETTING_LABELS = {
-  businessName: 'Business name', logoUrl: 'Logo URL', location: 'Location', phone: 'Phone', currency: 'Currency',
+  businessName: 'Business name', legalName: 'Company legal name', crNumber: 'CR number', email: 'Email',
+  whatsapp: 'WhatsApp', website: 'Website', logoUrl: 'Logo URL', location: 'Address', phone: 'Phone', currency: 'Currency',
   invoicePrefix: 'Order / invoice prefix', customerPrefix: 'Customer prefix', defaultOrderStatus: 'Default order status',
   defaultDeliveryCharge: 'Default delivery charge', courierNames: 'Courier names', labelSize: 'Default label size',
   defaultReorderLevel: 'Default reorder level', lowStockRule: 'Stock warning threshold',
@@ -351,7 +352,11 @@ function normaliseSettings(input, previous) {
     }
   }
   if (!next.businessName) errors.businessName = 'Business name is required.';
-  if (!next.location) errors.location = 'Location is required.';
+  if (!next.legalName) errors.legalName = 'Company legal name is required.';
+  if (!next.location) errors.location = 'Address is required.';
+  if (next.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next.email)) errors.email = 'Enter a valid email address.';
+  if (next.whatsapp && !/^[0-9]{8,15}$/.test(next.whatsapp)) errors.whatsapp = 'Digits only, with the country code (e.g. 97466543343).';
+  for (const f of ['legalName', 'crNumber', 'website']) if (next[f].length > 120) errors[f] = 'Keep this under 120 characters.';
   if (!/^[0-9+\-\s]{6,20}$/.test(next.phone)) errors.phone = 'Enter a valid phone number.';
   if (!/^[A-Z]{2,5}$/.test(next.currency)) errors.currency = 'Use a currency code such as QAR.';
   if (!PREFIX_RE.test(next.invoicePrefix)) errors.invoicePrefix = 'Use 2–8 capital letters or digits, starting with a letter.';

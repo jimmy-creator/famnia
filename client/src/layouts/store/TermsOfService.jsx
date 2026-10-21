@@ -1,7 +1,9 @@
 import { useTranslation } from 'react-i18next';
 import StaticPage from './StaticPage';
+import { telHref, useCompany } from '@/lib/company';
 
 function EnglishBody() {
+  const c = useCompany();
   return (
     <>
       <p className="s2-static-date">Last updated: May 2026</p>
@@ -14,7 +16,7 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>2. About Us</h2>
         <p>
-          The website and the brand <strong>Femnia Fashion</strong> are operated by <strong>Femnia Fashion</strong>. We are an online womenswear store selling clothing and accessories to customers across Qatar.
+          The website and the brand <strong>{c.brandName}</strong> are operated by <strong>{c.legalName}</strong>{c.crNumber ? ` (CR No: ${c.crNumber})` : ''}. We are an online womenswear store selling clothing and accessories to customers across Qatar.
         </p>
       </section>
 
@@ -41,7 +43,7 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>5. Authenticity</h2>
         <p>
-          Everything sold by Femnia Fashion is genuine own-label product or sourced through authorised channels. We do not deal in counterfeit or misrepresented goods. Fabric composition and care instructions are stated on each product page and on the garment label.
+          Everything sold by {c.legalName} is genuine own-label product or sourced through authorised channels. We do not deal in counterfeit or misrepresented goods. Fabric composition and care instructions are stated on each product page and on the garment label.
         </p>
       </section>
 
@@ -68,12 +70,12 @@ function EnglishBody() {
 
       <section className="s2-static-section">
         <h2>9. Intellectual Property</h2>
-        <p>All content on this website — including text, photography, logos, and design — is owned by Femnia Fashion or its licensors. Reproduction, redistribution, or commercial use without our written permission is prohibited. Third-party brand names and logos remain the property of their respective owners.</p>
+        <p>All content on this website — including text, photography, logos, and design — is owned by {c.legalName} or its licensors. Reproduction, redistribution, or commercial use without our written permission is prohibited. Third-party brand names and logos remain the property of their respective owners.</p>
       </section>
 
       <section className="s2-static-section">
         <h2>10. Limitation of Liability</h2>
-        <p>To the fullest extent permitted by applicable law, Femnia Fashion shall not be liable for any indirect, incidental, or consequential loss arising from the use of our website or products. Our total liability for any direct loss is limited to the amount paid for the affected order.</p>
+        <p>To the fullest extent permitted by applicable law, {c.legalName} shall not be liable for any indirect, incidental, or consequential loss arising from the use of our website or products. Our total liability for any direct loss is limited to the amount paid for the affected order.</p>
       </section>
 
       <section className="s2-static-section">
@@ -90,10 +92,11 @@ function EnglishBody() {
         <h2>13. Contact</h2>
         <p>For any questions regarding these terms or our services:</p>
         <p>
-          <strong>Femnia Fashion</strong><br />
-          📍 5C6J+JMG, Ar-Rayyan, Qatar<br />
-          📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
-          📞 / WhatsApp: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          <strong>{c.legalName}</strong><br />
+          {c.crNumber && <>CR No: {c.crNumber}<br /></>}
+          📍 {c.address}<br />
+          📧 <a href={`mailto:${c.email}`}>{c.email}</a><br />
+          📞 / WhatsApp: <a href={telHref(c.phone)}>{c.phone}</a><br />
           📷 Instagram: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a>
         </p>
       </section>
@@ -102,6 +105,7 @@ function EnglishBody() {
 }
 
 function ArabicBody() {
+  const c = useCompany();
   return (
     <>
       <p className="s2-static-date">آخر تحديث: مايو 2026</p>
@@ -114,7 +118,7 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>2. من نحن</h2>
         <p>
-          هذا الموقع وعلامة <strong>Femnia Fashion</strong> تديرهما <strong>Femnia Fashion</strong>. نحن متجر أزياء نسائية إلكتروني يبيع الملابس والإكسسوارات لعملائنا في دولة قطر.
+          هذا الموقع وعلامة <strong>{c.brandName}</strong> تديرهما <strong>{c.legalName}</strong>{c.crNumber ? ` (رقم السجل التجاري: ${c.crNumber})` : ''}. نحن متجر أزياء نسائية إلكتروني يبيع الملابس والإكسسوارات لعملائنا في دولة قطر.
         </p>
       </section>
 
@@ -141,7 +145,7 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>5. الأصالة</h2>
         <p>
-          كل ما تبيعه Femnia Fashion هو من إنتاج علامتنا أو من قنوات معتمدة وأصلي 100%. لا نتعامل في منتجات مقلَّدة أو مغلوطة الوصف. تركيبة القماش وتعليمات العناية مذكورة في صفحة كل منتج وعلى بطاقة القطعة.
+          كل ما تبيعه {c.legalName} هو من إنتاج علامتنا أو من قنوات معتمدة وأصلي 100%. لا نتعامل في منتجات مقلَّدة أو مغلوطة الوصف. تركيبة القماش وتعليمات العناية مذكورة في صفحة كل منتج وعلى بطاقة القطعة.
         </p>
       </section>
 
@@ -168,12 +172,12 @@ function ArabicBody() {
 
       <section className="s2-static-section">
         <h2>9. الملكية الفكرية</h2>
-        <p>جميع المحتويات على هذا الموقع — بما في ذلك النصوص والصور والشعارات والتصميم — مملوكة لـ Femnia Fashion أو الجهات المُرخِّصة لها. يُحظَر النسخ أو إعادة التوزيع أو الاستخدام التجاري دون إذن خطّي منّا. تبقى أسماء وشعارات العلامات التجارية لأطراف ثالثة ملكًا لأصحابها.</p>
+        <p>جميع المحتويات على هذا الموقع — بما في ذلك النصوص والصور والشعارات والتصميم — مملوكة لـ {c.legalName} أو الجهات المُرخِّصة لها. يُحظَر النسخ أو إعادة التوزيع أو الاستخدام التجاري دون إذن خطّي منّا. تبقى أسماء وشعارات العلامات التجارية لأطراف ثالثة ملكًا لأصحابها.</p>
       </section>
 
       <section className="s2-static-section">
         <h2>10. تحديد المسؤولية</h2>
-        <p>إلى أقصى حد يسمح به القانون المعمول به، لن تكون Femnia Fashion مسؤولة عن أي خسائر غير مباشرة أو عرضية أو تبعية ناتجة عن استخدام موقعنا أو منتجاتنا. مسؤوليتنا الإجمالية عن أي خسارة مباشرة تقتصر على المبلغ المدفوع للطلب المتأثّر.</p>
+        <p>إلى أقصى حد يسمح به القانون المعمول به، لن تكون {c.legalName} مسؤولة عن أي خسائر غير مباشرة أو عرضية أو تبعية ناتجة عن استخدام موقعنا أو منتجاتنا. مسؤوليتنا الإجمالية عن أي خسارة مباشرة تقتصر على المبلغ المدفوع للطلب المتأثّر.</p>
       </section>
 
       <section className="s2-static-section">
@@ -190,10 +194,11 @@ function ArabicBody() {
         <h2>13. التواصل</h2>
         <p>لأي استفسارات تتعلق بهذه الشروط أو خدماتنا:</p>
         <p>
-          <strong>Femnia Fashion</strong><br />
-          📍 5C6J+JMG، الريان، قطر<br />
-          📧 <a href="mailto:info@femnia.com">info@femnia.com</a><br />
-          📞 / واتساب: <a href="tel:+97466543343">+974 6654 3343</a><br />
+          <strong>{c.legalName}</strong><br />
+          {c.crNumber && <>رقم السجل التجاري: {c.crNumber}<br /></>}
+          📍 قطر<br />
+          📧 <a href={`mailto:${c.email}`}>{c.email}</a><br />
+          📞 / واتساب: <a href={telHref(c.phone)}>{c.phone}</a><br />
           📷 إنستغرام: <a href="https://www.instagram.com/femnia_online/" target="_blank" rel="noopener noreferrer">@femnia_online</a> · <a href="https://www.instagram.com/onlydailywears/" target="_blank" rel="noopener noreferrer">@onlydailywears</a>
         </p>
       </section>
@@ -208,8 +213,8 @@ export default function TermsOfService() {
     <StaticPage
       title="Terms of Service"
       titleAr="شروط الخدمة"
-      description="Terms and conditions for using the Femnia Fashion website and services."
-      descriptionAr="الشروط والأحكام لاستخدام موقع Femnia Fashion وخدماتنا."
+      description="Terms and conditions for using the FEMNIA website and services."
+      descriptionAr="الشروط والأحكام لاستخدام موقع FEMNIA وخدماتنا."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

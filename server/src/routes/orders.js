@@ -11,6 +11,7 @@ import {
 import { protect, admin, requirePermission, optionalAuth } from '../middleware/auth.js';
 import { Order } from '../models/index.js';
 import { generateInvoice } from '../services/invoiceService.js';
+import { companyProfile } from '../hub/settings.js';
 
 const router = Router();
 
@@ -38,7 +39,7 @@ router.get('/:id/invoice', optionalAuth, async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    const pdfBuffer = await generateInvoice(order.toJSON());
+    const pdfBuffer = await generateInvoice(order.toJSON(), await companyProfile());
 
     res.set({
       'Content-Type': 'application/pdf',

@@ -37,6 +37,8 @@ import { rangeStart, rangeEnd } from '../utils/dates.js';
 import { generatePurchaseOrderPdf } from '../services/purchaseDocs.js';
 import { priceFromMargin } from '../utils/pricing.js';
 import { hasPermission } from '../hub/permissions.js';
+import { skuFields } from '../hub/catalog.js';
+import { companyProfile } from '../hub/settings.js';
 
 const router = Router();
 
@@ -82,7 +84,7 @@ router.get('/:id', protect, async (req, res) => {
     }
     const po = await PurchaseOrder.findByPk(req.params.id, {
       include: [
-        { model: Supplier, attributes: ['id', 'name', 'code', 'phone', 'email'] },
+        { model: Supplier, attributes: ['id', 'name', 'code', 'phone', 'email', 'paymentTerms'] },
         { model: Location, attributes: ['id', 'name', 'code', 'address'] },
         { model: User, as: 'creator', attributes: ['id', 'name'] },
         { model: PurchaseReceipt, include: [{ model: User, as: 'receiver', attributes: ['id', 'name'] }] },
@@ -90,7 +92,9 @@ router.get('/:id', protect, async (req, res) => {
       ],
     });
     if (!po) return res.status(404).json({ message: 'PO not found' });
-    res.json(po);
+    const out = po.toJSON();
+    out.items = await withSkuDetails(out.items);
+    res.json(out);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -107,13 +111,18 @@ router.get('/:id/pdf', protect, async (req, res) => {
         { model: Supplier },
         { model: Location, attributes: ['id', 'name', 'code', 'address'] },
         { model: User, as: 'creator', attributes: ['id', 'name'] },
+        { model: SupplierPayment },
       ],
     });
     if (!po) return res.status(404).json({ message: 'PO not found' });
-    const pdf = await generatePurchaseOrderPdf(po.toJSON());
+    const data = po.toJSON();
+    data.items = await withSkuDetails(data.items);
+    const pdf = await generatePurchaseOrderPdf(data, await companyProfile());
+    // ?download=1 saves the file; otherwise it opens in the browser to view / print.
+    const disposition = req.query.download ? 'attachment' : 'inline';
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="${po.poNumber}.pdf"`,
+      'Content-Disposition': `${disposition}; filename="${po.poNumber}.pdf"`,
       'Content-Length': pdf.length,
     });
     res.send(pdf);
@@ -149,10 +158,43 @@ function normalizeItems(items) {
   });
 }
 
-function computeTotals(items, shippingCost = 0, discount = 0) {
+/** Product Code, size and colour for each line, read live (older POs never stored them). */
+async function withSkuDetails(items) {
+  const list = Array.isArray(items) ? items : [];
+  const ids = [...new Set(list.map((i) => i.productId).filter(Boolean))];
+  const products = ids.length ? await Product.findAll({ where: { id: ids } }) : [];
+  const byId = new Map(products.map((p) => [p.id, p]));
+  return list.map((it) => {
+    const p = byId.get(it.productId);
+    if (!p) return it;
+    const vi = it.variantIndex ?? null;
+    if (vi !== null && !p.variants?.[vi]) return it;
+    const f = skuFields(p, vi);
+    return { ...it, sku: it.sku || f.sku, productCode: f.productCode || null, size: f.size || null, color: f.color || null };
+  });
+}
+
+// Optional references, terms and transport details — never required.
+const DETAIL_FIELDS = {
+  supplierReference: 80, supplierInvoiceNo: 80, paymentTerms: 120,
+  transportMode: 40, carrier: 120, trackingNumber: 120, transportNotes: 2000,
+};
+function detailUpdates(body) {
+  const out = {};
+  for (const [field, max] of Object.entries(DETAIL_FIELDS)) {
+    if (body[field] !== undefined) out[field] = String(body[field] ?? '').trim().slice(0, max) || null;
+  }
+  if (body.dispatchDate !== undefined) {
+    const d = String(body.dispatchDate || '').slice(0, 10);
+    out.dispatchDate = /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+  }
+  return out;
+}
+
+function computeTotals(items, shippingCost = 0, discount = 0, otherCharges = 0) {
   const subtotal = items.reduce((s, i) => s + (i.unitCost * i.orderedQty), 0);
   const taxAmount = items.reduce((s, i) => s + (i.unitCost * i.orderedQty * (i.taxRate / 100)), 0);
-  const totalAmount = subtotal + taxAmount + parseFloat(shippingCost || 0) - parseFloat(discount || 0);
+  const totalAmount = subtotal + taxAmount + parseFloat(shippingCost || 0) + parseFloat(otherCharges || 0) - parseFloat(discount || 0);
   return {
     subtotal: +subtotal.toFixed(3),
     taxAmount: +taxAmount.toFixed(3),
@@ -188,13 +230,14 @@ router.post('/', protect, async (req, res) => {
     if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
       return res.status(403).json({ message: 'Forbidden' });
     }
-    const { supplierId, locationId, items, status, notes, expectedDate, shippingCost = 0, discount = 0 } = req.body;
+    const { supplierId, locationId, items, status, notes, expectedDate, shippingCost = 0, discount = 0, otherCharges = 0 } = req.body;
     if (!supplierId || !locationId) {
       return res.status(400).json({ message: 'supplierId and locationId required' });
     }
+    if ((parseFloat(otherCharges) || 0) < 0) return res.status(400).json({ message: 'Other charges cannot be negative' });
     const normalized = normalizeItems(items);
-    const totals = computeTotals(normalized, shippingCost, discount);
-    applyLandedCost(normalized, shippingCost);
+    const totals = computeTotals(normalized, shippingCost, discount, otherCharges);
+    applyLandedCost(normalized, (parseFloat(shippingCost) || 0) + (parseFloat(otherCharges) || 0));
 
     // Enrich names from Product table if not supplied.
     const productIds = [...new Set(normalized.map((i) => i.productId))];
@@ -214,11 +257,13 @@ router.post('/', protect, async (req, res) => {
       items: normalized,
       ...totals,
       shippingCost: parseFloat(shippingCost) || 0,
+      otherCharges: parseFloat(otherCharges) || 0,
       discount: parseFloat(discount) || 0,
       status: status === 'sent' ? 'sent' : 'draft',
       paymentStatus: 'unpaid',
       expectedDate: expectedDate || null,
       notes: notes?.trim() || null,
+      ...detailUpdates(req.body),
       createdBy: req.user.id,
     });
     res.status(201).json(po);
@@ -239,30 +284,36 @@ router.put('/:id', protect, async (req, res) => {
     if (!['draft', 'sent'].includes(po.status)) {
       return res.status(400).json({ message: 'Cannot edit a PO with received goods' });
     }
-    const { items, supplierId, locationId, notes, expectedDate, shippingCost = po.shippingCost, discount = po.discount } = req.body;
-    const updates = {};
+    const {
+      items, supplierId, locationId, notes, expectedDate,
+      shippingCost = po.shippingCost, discount = po.discount, otherCharges = po.otherCharges,
+    } = req.body;
+    if ((parseFloat(otherCharges) || 0) < 0) return res.status(400).json({ message: 'Other charges cannot be negative' });
+    const landedExtras = (parseFloat(shippingCost) || 0) + (parseFloat(otherCharges) || 0);
+    const updates = { ...detailUpdates(req.body) };
     if (items) {
       const normalized = normalizeItems(items);
       const ids = [...new Set(normalized.map((i) => i.productId))];
       if (await Product.count({ where: { id: ids } }) !== ids.length) {
         return res.status(400).json({ message: 'One or more products on this PO do not exist' });
       }
-      const totals = computeTotals(normalized, shippingCost, discount);
-      applyLandedCost(normalized, shippingCost);
+      const totals = computeTotals(normalized, shippingCost, discount, otherCharges);
+      applyLandedCost(normalized, landedExtras);
       Object.assign(updates, { items: normalized, ...totals });
     } else if (
       // Compare as numbers: Sequelize hands DECIMAL back as a string, so
       // `shippingCost !== po.shippingCost` was comparing 25 to "25.000"
       // and firing on virtually every edit.
       (parseFloat(shippingCost) || 0) !== (parseFloat(po.shippingCost) || 0)
+      || (parseFloat(otherCharges) || 0) !== (parseFloat(po.otherCharges) || 0)
       || (parseFloat(discount) || 0) !== (parseFloat(po.discount) || 0)
     ) {
       // Shipping/discount changed but items didn't — re-distribute the
       // existing lines AND recompute the header. Previously only the
       // lines were re-landed, so totalAmount kept the old shipping.
       const existing = [...(po.items || [])];
-      const totals = computeTotals(existing, shippingCost, discount);
-      applyLandedCost(existing, shippingCost);
+      const totals = computeTotals(existing, shippingCost, discount, otherCharges);
+      applyLandedCost(existing, landedExtras);
       Object.assign(updates, { items: existing, ...totals });
     }
     if (supplierId) updates.supplierId = parseInt(supplierId, 10);
@@ -270,6 +321,7 @@ router.put('/:id', protect, async (req, res) => {
     if (notes !== undefined) updates.notes = notes?.trim() || null;
     if (expectedDate !== undefined) updates.expectedDate = expectedDate || null;
     if (shippingCost !== undefined) updates.shippingCost = parseFloat(shippingCost) || 0;
+    if (otherCharges !== undefined) updates.otherCharges = parseFloat(otherCharges) || 0;
     if (discount !== undefined) updates.discount = parseFloat(discount) || 0;
     // "Save & send" from the editor sends a draft; a sent PO never goes back to draft.
     if (req.body.status === 'sent' && po.status === 'draft') updates.status = 'sent';
@@ -285,6 +337,25 @@ router.put('/:id', protect, async (req, res) => {
     res.json(po);
   } catch (err) {
     console.error('[po/update]', err);
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// ─── References & transport (any time but cancelled; never costs or stock) ──
+router.patch('/:id/details', protect, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin' && !hasPermission(req.user, 'products')) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+    const po = await PurchaseOrder.findByPk(req.params.id);
+    if (!po) return res.status(404).json({ message: 'PO not found' });
+    if (po.status === 'cancelled') return res.status(400).json({ message: 'A cancelled PO cannot be changed' });
+    const updates = detailUpdates(req.body || {});
+    if (req.body?.notes !== undefined) updates.notes = String(req.body.notes ?? '').trim() || null;
+    await po.update(updates);
+    res.json(po);
+  } catch (err) {
+    console.error('[po/details]', err);
     res.status(400).json({ message: err.message });
   }
 });

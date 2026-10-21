@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { InvoiceSheet } from '@/hub/components/OrderPrint';
+import { printBusinessFrom } from '@/hub/lib/printBusiness';
 import { LoadingRows, StatusBadge } from '@/hub/components/shared';
 import { Button } from '@/hub/ui/button';
 import { Checkbox } from '@/hub/ui/checkbox';
@@ -117,15 +118,7 @@ function OrderBody({ data }) {
   const [chosenLabelSize, setChosenLabelSize] = useState(() => (hasStoredLabelSize() ? readLabelSize() : null));
   const labelSize = chosenLabelSize ?? (LABEL_SIZES.includes(settingsData?.labelSize) ? settingsData.labelSize : '100x130');
   /** Print header/footer text comes from Settings, with the built-in defaults as fallback. */
-  const printBusiness = {
-    name: settingsData?.businessName ?? 'FEMNIA',
-    location: settingsData?.location ?? 'Al Thumama, Qatar',
-    phone: settingsData?.phone ?? '66543343',
-    currency: settingsData?.currency ?? 'QAR',
-    invoiceFooter: settingsData?.invoiceFooter ?? 'Thank you for shopping with FEMNIA.',
-    labelFooter: settingsData?.labelFooter ?? '',
-    logoUrl: settingsData?.logoUrl ?? '',
-  };
+  const printBusiness = printBusinessFrom(settingsData);
 
   const [returnOpen, setReturnOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);

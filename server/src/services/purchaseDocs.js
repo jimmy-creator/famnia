@@ -24,20 +24,34 @@ const LEFT = 50;
 const WIDTH = 495.28;
 const PAGE_BOTTOM = 785;   // A4 is 842pt; pdfkit's own page break is at 842 - 50
 
-// Env read at call time: dotenv runs after imports resolve.
+// The company block comes from Hub → Settings (companyProfile); env is read at
+// call time because dotenv runs after imports resolve.
+let current = {};
 function store() {
   const n = parseInt(process.env.CURRENCY_DECIMALS, 10);
   const decimals = Number.isFinite(n) && n >= 0 && n <= 4 ? n : 2;
   const symbol = process.env.CURRENCY_SYMBOL || 'QAR';
   return {
-    name: process.env.STORE_NAME || 'Femnia Fashion',
-    address: process.env.STORE_ADDRESS || '',
-    phone: process.env.STORE_PHONE || '',
-    email: process.env.STORE_CONTACT_EMAIL || process.env.SMTP_EMAIL || '',
+    name: current.legalName || 'Femnia Online Trading WLL',
+    brand: current.brandName || 'FEMNIA',
+    address: current.address || '',
+    phone: current.phone || '',
+    email: current.email || '',
+    website: current.website || '',
+    cr: current.crNumber || '',
     trn: process.env.STORE_TRN || '',
     money: (v) => `${symbol} ${(parseFloat(v) || 0).toFixed(decimals)}`,
   };
 }
+
+const companyLines = (s, loc = {}) => [
+  loc.name && loc.name !== s.name ? `Deliver to: ${loc.name}` : null,
+  loc.address || s.address,
+  s.cr && `CR No: ${s.cr}`,
+  s.phone && `Phone: ${s.phone}`,
+  s.email && `Email: ${s.email}`,
+  s.trn && `TRN: ${s.trn}`,
+];
 
 // Server runs on the store's timezone (tz.js), so these are Qatar dates.
 const longDate = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -67,7 +81,8 @@ function header(doc, { title, number, date, cancelled }) {
     doc.roundedRect(LEFT, 28, 168, 46, 8).fill('#ffffff');
     doc.image(LOGO_PATH, 60, 35, { fit: [148, 32], align: 'center', valign: 'center' });
   } else {
-    doc.fontSize(22).font('Helvetica-Bold').fill('#ffffff').text(store().name.toUpperCase(), LEFT, 38, { characterSpacing: 2 });
+    // The short brand fits beside the title; the legal name is in the party block and footer.
+    doc.fontSize(22).font('Helvetica-Bold').fill('#ffffff').text(store().brand.toUpperCase(), LEFT, 38, { characterSpacing: 2, width: 240 });
   }
   doc.fontSize(20).fill('#ffffff').font('Helvetica-Bold').text(title, 300, 28, { width: 245, align: 'right' });
   doc.fontSize(9).fill(bandMeta).font('Helvetica').text(`#${number}`, 300, 56, { width: 245, align: 'right' });
@@ -122,7 +137,10 @@ function table(doc, y, cols, rows) {
   rows.forEach((row, r) => {
     doc.fontSize(9).font('Helvetica');
     const nameH = doc.heightOfString(String(row.cells[nameCol]), { width: cols[nameCol].width - 6 });
-    const h = Math.max(26, nameH + (row.sub ? 22 : 14));
+    // The sub line (code · SKU · size · colour) can wrap too, so measure it at its own size.
+    const subH = row.sub ? doc.fontSize(7.5).heightOfString(row.sub, { width: cols[nameCol].width - 6 }) + 2 : 0;
+    doc.fontSize(9);
+    const h = Math.max(26, nameH + subH + 16);
     if (y + h > PAGE_BOTTOM) { doc.addPage(); y = head(LEFT); }
     if (r % 2 === 0) doc.rect(LEFT, y, WIDTH, h).fill(tint);
     row.cells.forEach((cell, i) => {
@@ -184,7 +202,7 @@ function signOff(doc, y, left, right) {
   const s = store();
   doc.moveTo(LEFT, y).lineTo(545.28, y).lineWidth(0.5).strokeColor(rule).stroke();
   doc.fontSize(8).fill(grey)
-    .text([s.name, s.phone, s.email, s.trn && `TRN: ${s.trn}`].filter(Boolean).join(' • '), LEFT, y + 10, { width: WIDTH, align: 'center' })
+    .text([s.name, s.cr && `CR No: ${s.cr}`, s.phone, s.email, s.website, s.trn && `TRN: ${s.trn}`].filter(Boolean).join(' • '), LEFT, y + 10, { width: WIDTH, align: 'center' })
     .text('This is a computer-generated document.', LEFT, y + 22, { width: WIDTH, align: 'center' });
 }
 
@@ -199,14 +217,15 @@ const supplierLines = (sup = {}) => [
 
 const title = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** `po` is PurchaseOrder.toJSON() with Supplier, Location, creator. */
-export function generatePurchaseOrderPdf(po) {
+/** `po` is PurchaseOrder.toJSON() with Supplier, Location, creator, SupplierPayments; `company` from companyProfile(). */
+export function generatePurchaseOrderPdf(po, company = {}) {
+  current = company;
   return render((doc) => {
     const s = store();
     const loc = po.Location || {};
     header(doc, { title: 'PURCHASE ORDER', number: po.poNumber, date: po.createdAt, cancelled: po.status === 'cancelled' });
     let y = parties(doc, 132,
-      { label: 'FROM / DELIVER TO', name: s.name, lines: [loc.name, loc.address || s.address, s.phone && `Phone: ${s.phone}`, s.trn && `TRN: ${s.trn}`] },
+      { label: 'BUYER / DELIVER TO', name: s.name, lines: companyLines(s, loc) },
       { label: 'SUPPLIER', name: po.Supplier?.name, lines: supplierLines(po.Supplier) });
 
     const paid = parseFloat(po.amountPaid) || 0;
@@ -218,6 +237,17 @@ export function generatePurchaseOrderPdf(po) {
       ['STATUS', title(po.status), po.status === 'cancelled' ? danger : null],
       ['PAYMENT', title(po.paymentStatus)],
     ]);
+    // References, terms and transport: only the ones filled in.
+    const extra = [
+      ['SUPPLIER REF.', po.supplierReference],
+      ['SUPPLIER INVOICE', po.supplierInvoiceNo],
+      ['PAYMENT TERMS', po.paymentTerms],
+      ['TRANSPORT', po.transportMode],
+      ['CARRIER', po.carrier],
+      ['TRACKING / AWB', po.trackingNumber],
+      ['DISPATCHED', po.dispatchDate ? dayOnly(po.dispatchDate) : null],
+    ].filter(([, v]) => v);
+    for (let i = 0; i < extra.length; i += 4) y = detailsBar(doc, y - 6, extra.slice(i, i + 4));
 
     const items = po.items || [];
     const anyReceived = items.some((l) => (l.receivedQty || 0) > 0);
@@ -232,15 +262,22 @@ export function generatePurchaseOrderPdf(po) {
     y = table(doc, y, cols, items.map((l, i) => {
       const qty = parseInt(l.orderedQty, 10) || 0;
       const amount = (parseFloat(l.unitCost) || 0) * qty * (1 + (parseFloat(l.taxRate) || 0) / 100);
-      const tax = parseFloat(l.taxRate) ? ` · tax ${parseFloat(l.taxRate)}%` : '';
+      const sub = [
+        l.productCode && `Code ${l.productCode}`,
+        l.sku && `SKU ${l.sku}`,
+        l.size && `Size ${l.size}`,
+        l.color && `Colour ${l.color}`,
+        parseFloat(l.taxRate) ? `tax ${parseFloat(l.taxRate)}%` : null,
+      ].filter(Boolean).join(' · ');
       return {
         cells: [i + 1, l.name, qty, ...(anyReceived ? [l.receivedQty || 0] : []), s.money(l.unitCost), s.money(amount)],
-        sub: l.sku || tax ? `${l.sku ? `SKU ${l.sku}` : ''}${tax}` : null,
+        sub: sub || null,
       };
     }));
 
     const tax = parseFloat(po.taxAmount) || 0;
     const shipping = parseFloat(po.shippingCost) || 0;
+    const other = parseFloat(po.otherCharges) || 0;
     const discount = parseFloat(po.discount) || 0;
     const totalQty = items.reduce((a, l) => a + (parseInt(l.orderedQty, 10) || 0), 0);
     y = totals(doc, y, [
@@ -248,6 +285,7 @@ export function generatePurchaseOrderPdf(po) {
       { label: 'Subtotal', value: s.money(po.subtotal) },
       ...(tax ? [{ label: 'Tax', value: s.money(tax) }] : []),
       ...(shipping ? [{ label: 'Shipping', value: s.money(shipping) }] : []),
+      ...(other ? [{ label: 'Customs / other', value: s.money(other) }] : []),
       ...(discount ? [{ label: 'Discount', value: `-${s.money(discount)}` }] : []),
       { label: 'TOTAL', value: s.money(total), strong: true },
       ...(paid ? [
@@ -255,6 +293,22 @@ export function generatePurchaseOrderPdf(po) {
         { label: 'Balance due', value: s.money(total - paid), color: total - paid > 0 ? danger : null },
       ] : []),
     ]);
+    const payments = po.SupplierPayments || [];
+    if (payments.length) {
+      if (y + 60 > PAGE_BOTTOM) { doc.addPage(); y = LEFT; }
+      doc.fontSize(8).fill(brand).font('Helvetica-Bold').text('PAYMENTS', LEFT, y);
+      y = table(doc, y + 14, [
+        { label: '#', width: 22 },
+        { label: 'PAYMENT', width: 150 },
+        { label: 'DATE', width: 80 },
+        { label: 'METHOD / REFERENCE', width: 148 },
+        { label: 'AMOUNT', width: 85, align: 'right' },
+      ], payments.map((p, i) => ({
+        cells: [i + 1, p.paymentNumber || '—', shortDate(p.paidAt || p.createdAt),
+          [title(String(p.paymentMethod || '')), p.reference].filter(Boolean).join(' · ') || '—', s.money(p.amount)],
+      })));
+    }
+    y = notesBlock(doc, y, 'TRANSPORT NOTES', po.transportNotes);
     y = notesBlock(doc, y, 'NOTES', po.notes);
     signOff(doc, y, `Prepared by${po.creator?.name ? `: ${po.creator.name}` : ''}`, 'Authorised signature');
   });
@@ -263,13 +317,14 @@ export function generatePurchaseOrderPdf(po) {
 const REFUND = { credit_note: 'Credit note', cash: 'Cash', bank: 'Bank' };
 
 /** `pr` is PurchaseReturn.toJSON() with Supplier, Location, PurchaseOrder, creator. */
-export function generatePurchaseReturnPdf(pr) {
+export function generatePurchaseReturnPdf(pr, company = {}) {
+  current = company;
   return render((doc) => {
     const s = store();
     const loc = pr.Location || {};
     header(doc, { title: 'PURCHASE RETURN', number: pr.returnNumber, date: pr.createdAt, cancelled: pr.status === 'cancelled' });
     let y = parties(doc, 132,
-      { label: 'RETURNED BY', name: s.name, lines: [loc.name, loc.address || s.address, s.phone && `Phone: ${s.phone}`, s.trn && `TRN: ${s.trn}`] },
+      { label: 'RETURNED BY', name: s.name, lines: companyLines(s, loc) },
       { label: 'RETURNED TO', name: pr.Supplier?.name, lines: supplierLines(pr.Supplier) });
 
     y = detailsBar(doc, y, [

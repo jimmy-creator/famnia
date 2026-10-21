@@ -28,6 +28,8 @@ const PurchaseOrder = sequelize.define('PurchaseOrder', {
   subtotal: { type: DataTypes.DECIMAL(12, 3), defaultValue: 0 },
   taxAmount: { type: DataTypes.DECIMAL(12, 3), defaultValue: 0 },
   shippingCost: { type: DataTypes.DECIMAL(12, 3), defaultValue: 0 },
+  // Customs, clearance, handling — landed into unit cost like shipping.
+  otherCharges: { type: DataTypes.DECIMAL(12, 3), allowNull: false, defaultValue: 0 },
   discount: { type: DataTypes.DECIMAL(12, 3), defaultValue: 0 },
   totalAmount: { type: DataTypes.DECIMAL(12, 3), defaultValue: 0 },
 
@@ -46,6 +48,19 @@ const PurchaseOrder = sequelize.define('PurchaseOrder', {
   receivedDate: { type: DataTypes.DATE, allowNull: true },
 
   notes: { type: DataTypes.TEXT, allowNull: true },
+
+  // References and terms (all optional).
+  supplierReference: { type: DataTypes.STRING(80), allowNull: true },   // their quotation / proforma no.
+  supplierInvoiceNo: { type: DataTypes.STRING(80), allowNull: true },
+  paymentTerms: { type: DataTypes.STRING(120), allowNull: true },
+
+  // Transport (all optional): editable even after goods arrive.
+  transportMode: { type: DataTypes.STRING(40), allowNull: true },
+  carrier: { type: DataTypes.STRING(120), allowNull: true },
+  trackingNumber: { type: DataTypes.STRING(120), allowNull: true },
+  dispatchDate: { type: DataTypes.DATEONLY, allowNull: true },
+  transportNotes: { type: DataTypes.TEXT, allowNull: true },
+
   createdBy: { type: DataTypes.INTEGER, allowNull: false },
 }, {
   indexes: [

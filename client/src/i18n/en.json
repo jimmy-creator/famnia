@@ -51,7 +51,7 @@
     "bestSellersTitle": "New In",
     "latestLaunchesTitle": "Latest launches",
     "seoTitle": "Timeless Designs, Modern Elegance",
-    "seoDescription": "Femnia Fashion — timeless womenswear and accessories. Elevate your style with modern, elegant essentials."
+    "seoDescription": "FEMNIA — timeless womenswear and accessories. Elevate your style with modern, elegant essentials."
   },
   "products": {
     "allProducts": "All Products",
@@ -217,6 +217,7 @@
     "whatsappLine": "Chat with us instantly",
     "instagram": "Follow us on Instagram",
     "visitUs": "Visit us",
+    "company": "Company",
     "sendMessage": "Send a message",
     "name": "Name",
     "namePlaceholder": "Your name",

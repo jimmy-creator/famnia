@@ -151,6 +151,8 @@ export default function PosReceipt({ payload, currency = 'KWD', onClose, autoPri
         />
         <h2>{location?.name || RECEIPT_STORE.name}</h2>
         <div className="meta">
+          {RECEIPT_STORE.legalName && <div>{RECEIPT_STORE.legalName}</div>}
+          {RECEIPT_STORE.cr && <div>CR No: {RECEIPT_STORE.cr}</div>}
           {(location?.address || RECEIPT_STORE.address) && <div>{location?.address || RECEIPT_STORE.address}</div>}
           {(location?.phone || RECEIPT_STORE.phone) && <div>Tel: {location?.phone || RECEIPT_STORE.phone}</div>}
           {RECEIPT_STORE.email && <div>{RECEIPT_STORE.email}</div>}

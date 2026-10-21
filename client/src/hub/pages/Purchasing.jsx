@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Link2, PackageCheck, Plus, Printer, Trash2, Wallet } from 'lucide-react';
+import { Download, Eye, Link2, PackageCheck, Plus, Printer, Trash2, Wallet } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -23,6 +23,7 @@ import {
   payPurchaseOrder,
   pk,
   poPdfUrl,
+  printPdf,
   purchaseOrderQuery,
   purchaseOrdersQuery,
   purchaseReturnQuery,
@@ -31,6 +32,7 @@ import {
   returnPdfUrl,
   returnablePosQuery,
   savePurchaseOrder,
+  savePurchaseOrderDetails,
   saveSupplier,
   sendPurchaseOrder,
   supplierProductsQuery,
@@ -183,11 +185,12 @@ const PO_STATUSES = ['draft', 'sent', 'partial', 'received', 'cancelled'];
 const PAY_METHODS = ['cash', 'bank', 'card', 'cheque', 'other'];
 const outstandingOf = (po) => Math.max(0, +(num(po.totalAmount) - num(po.amountPaid)).toFixed(2));
 
-function poTotals(lines, shipping, discount) {
+function poTotals(lines, shipping, discount, other = 0) {
   const subtotal = lines.reduce((s, l) => s + num(l.unitCost) * num(l.orderedQty), 0);
   const tax = lines.reduce((s, l) => s + num(l.unitCost) * num(l.orderedQty) * (num(l.taxRate) / 100), 0);
-  return { subtotal, tax, total: subtotal + tax + num(shipping) - num(discount) };
+  return { subtotal, tax, total: subtotal + tax + num(shipping) + num(other) - num(discount) };
 }
+// `shipping` here is everything landed into unit cost: shipping plus customs / other charges.
 function landedUnit(line, subtotal, shipping) {
   const qty = num(line.orderedQty);
   if (!qty) return 0;
@@ -262,6 +265,64 @@ function SupplierQuickAdd({ supplierId, locationId, existing, onAdd }) {
   );
 }
 
+// Optional PO references, terms and transport — none of them is required.
+const TRANSPORT_MODES = ['Air freight', 'Sea freight', 'Road', 'Courier', 'Supplier delivery', 'Self pickup'];
+const PAYMENT_TERMS = ['100% advance', '50% advance, balance before dispatch', 'Cash on delivery', 'Bank transfer before dispatch'];
+const detailsOf = (po) => ({
+  supplierReference: po?.supplierReference ?? '',
+  supplierInvoiceNo: po?.supplierInvoiceNo ?? '',
+  paymentTerms: po?.paymentTerms ?? '',
+  transportMode: po?.transportMode ?? '',
+  carrier: po?.carrier ?? '',
+  trackingNumber: po?.trackingNumber ?? '',
+  dispatchDate: po?.dispatchDate ? String(po.dispatchDate).slice(0, 10) : '',
+  transportNotes: po?.transportNotes ?? '',
+});
+
+function PoDetailsFields({ value, onChange }) {
+  const set = (key) => (e) => onChange({ ...value, [key]: e.target.value });
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <Field label="Supplier quotation / ref. no.">
+        <Input className="h-10" value={value.supplierReference} onChange={set('supplierReference')} placeholder="Optional" />
+      </Field>
+      <Field label="Supplier invoice no.">
+        <Input className="h-10" value={value.supplierInvoiceNo} onChange={set('supplierInvoiceNo')} placeholder="Optional" />
+      </Field>
+      <Field label="Payment terms">
+        <Input className="h-10" list="po-payment-terms" value={value.paymentTerms} onChange={set('paymentTerms')} placeholder="Optional" />
+        <datalist id="po-payment-terms">
+          {PAYMENT_TERMS.map((t) => (
+            <option key={t} value={t} />
+          ))}
+        </datalist>
+      </Field>
+      <Field label="Transport mode">
+        <select className={cn(SELECT, 'h-10')} value={value.transportMode} onChange={set('transportMode')}>
+          <option value="">Not set</option>
+          {[...new Set([...TRANSPORT_MODES, value.transportMode].filter(Boolean))].map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Carrier / forwarder">
+        <Input className="h-10" value={value.carrier} onChange={set('carrier')} placeholder="e.g. DHL, Aramex" />
+      </Field>
+      <Field label="Tracking / AWB / B/L no.">
+        <Input className="h-10" value={value.trackingNumber} onChange={set('trackingNumber')} placeholder="Optional" />
+      </Field>
+      <Field label="Dispatch date">
+        <Input className="h-10" type="date" value={value.dispatchDate} onChange={set('dispatchDate')} />
+      </Field>
+      <Field label="Transport notes" className="sm:col-span-2">
+        <Input className="h-10" value={value.transportNotes} onChange={set('transportNotes')} placeholder="Cartons, weight, customs agent…" />
+      </Field>
+    </div>
+  );
+}
+
 /** Create or edit a PO. Mounted with a key so the form starts from the PO it edits. */
 function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
   const client = useQueryClient();
@@ -269,8 +330,10 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
   const [locationId, setLocationId] = useState(String(po?.locationId ?? locations[0]?.id ?? ''));
   const [expectedDate, setExpectedDate] = useState(po?.expectedDate ? String(po.expectedDate).slice(0, 10) : '');
   const [shipping, setShipping] = useState(po ? num(po.shippingCost) : 0);
+  const [otherCharges, setOtherCharges] = useState(po ? num(po.otherCharges) : 0);
   const [discount, setDiscount] = useState(po ? num(po.discount) : 0);
   const [notes, setNotes] = useState(po?.notes ?? '');
+  const [details, setDetails] = useState(() => detailsOf(po));
   const [lines, setLines] = useState(() =>
     (po?.items ?? []).map((it) => ({
       productId: it.productId,
@@ -282,7 +345,8 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
     })),
   );
   const existing = useMemo(() => new Set(lines.map((l) => lineKey(l.productId, l.variantIndex))), [lines]);
-  const totals = poTotals(lines, shipping, discount);
+  const totals = poTotals(lines, shipping, discount, otherCharges);
+  const landedExtras = num(shipping) + num(otherCharges);
   const editingSent = po?.status === 'sent';
 
   const addLines = (next) =>
@@ -311,9 +375,11 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
           taxRate: num(l.taxRate),
         })),
         shippingCost: num(shipping),
+        otherCharges: num(otherCharges),
         discount: num(discount),
         expectedDate: expectedDate || null,
         notes,
+        ...details,
         status,
       }),
     onSuccess: async (saved, status) => {
@@ -330,6 +396,7 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
     : lines.length === 0 ? 'Add at least one line.'
     : lines.some((l) => !(parseInt(l.orderedQty, 10) > 0)) ? 'Every line needs a quantity of 1 or more.'
     : lines.some((l) => num(l.unitCost) < 0) ? 'Unit costs cannot be negative.'
+    : num(shipping) < 0 || num(otherCharges) < 0 || num(discount) < 0 ? 'Charges and discount cannot be negative.'
     : null;
 
   const supplierOptions = suppliers.filter((s) => s.active !== false || String(s.id) === supplierId);
@@ -339,11 +406,14 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
       <DialogContent className="z-[70] max-h-[92vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{po ? `Edit ${po.poNumber}` : 'New purchase order'}</DialogTitle>
-          <DialogDescription>Costs are what you pay the supplier; tax and shipping roll into each line&apos;s landed cost.</DialogDescription>
+          <DialogDescription>
+            Costs are what you pay the supplier; tax, shipping and customs / other charges roll into each line&apos;s landed cost.
+            Only the fields marked * are required.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Supplier">
+          <Field label="Supplier *">
             <select className={SELECT} value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
               <option value="">Choose supplier…</option>
               {supplierOptions.map((s) => (
@@ -354,7 +424,7 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
               ))}
             </select>
           </Field>
-          <Field label="Receive at">
+          <Field label="Receive at *">
             <select className={SELECT} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
               {locations.map((l) => (
                 <option key={l.id} value={l.id}>
@@ -396,7 +466,7 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
                   </button>
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
-                  <Field label="Qty">
+                  <Field label="Qty *">
                     <Input className="h-10" type="number" min="1" step="1" value={l.orderedQty} onChange={(e) => setLine(i, { orderedQty: e.target.value })} />
                   </Field>
                   <Field label="Unit cost">
@@ -414,7 +484,7 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
                   <div className="grid gap-1.5 text-sm">
                     <span className="text-xs font-medium text-muted-foreground">Landed / unit</span>
                     <span className="flex h-10 items-center font-semibold text-primary">
-                      {QAR(landedUnit(l, totals.subtotal, shipping))}
+                      {QAR(landedUnit(l, totals.subtotal, landedExtras))}
                     </span>
                   </div>
                 </div>
@@ -425,8 +495,11 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Shipping">
+            <Field label="Shipping / freight">
               <Input className="h-11" type="number" min="0" step={PRICE_STEP} value={shipping} onChange={(e) => setShipping(e.target.value)} />
+            </Field>
+            <Field label="Customs / other">
+              <Input className="h-11" type="number" min="0" step={PRICE_STEP} value={otherCharges} onChange={(e) => setOtherCharges(e.target.value)} />
             </Field>
             <Field label="Discount">
               <Input className="h-11" type="number" min="0" step={PRICE_STEP} value={discount} onChange={(e) => setDiscount(e.target.value)} />
@@ -440,6 +513,7 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
               ['Subtotal', totals.subtotal],
               ['Tax', totals.tax],
               ['Shipping', num(shipping)],
+              ['Customs / other', num(otherCharges)],
               ['Discount', -num(discount)],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between">
@@ -453,6 +527,13 @@ function PoEditor({ po, suppliers, locations, onClose, onSaved }) {
             </div>
           </dl>
         </div>
+
+        <section className="rounded-2xl border border-border p-4">
+          <h3 className="mb-3 text-sm font-semibold">
+            References, terms &amp; transport <span className="font-normal text-muted-foreground">(optional)</span>
+          </h3>
+          <PoDetailsFields value={details} onChange={setDetails} />
+        </section>
 
         {invalid && <p className="text-xs text-muted-foreground">{invalid}</p>}
         <div className="flex flex-wrap justify-end gap-2">
@@ -631,11 +712,59 @@ function PayPanel({ po, onDone, onCancel }) {
   );
 }
 
+/** References, terms, transport and notes on any PO that isn't cancelled — never costs or stock. */
+function DetailsPanel({ po, onDone, onCancel }) {
+  const client = useQueryClient();
+  const [details, setDetails] = useState(() => detailsOf(po));
+  const [notes, setNotes] = useState(po.notes ?? '');
+  const run = useMutation({
+    mutationFn: () => savePurchaseOrderDetails(po.id, { ...details, notes }),
+    onSuccess: async () => {
+      toast.success('Details saved.');
+      await client.invalidateQueries({ queryKey: pk.all });
+      onDone();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  return (
+    <div className="grid gap-3 rounded-2xl border border-primary/30 bg-primary/5 p-4">
+      <p className="text-sm font-semibold">References, terms &amp; transport</p>
+      <PoDetailsFields value={details} onChange={setDetails} />
+      <Field label="Notes">
+        <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+      </Field>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="outline" className="h-10" onClick={onCancel} disabled={run.isPending}>
+          Back
+        </Button>
+        <Button className="h-10" disabled={run.isPending} onClick={() => run.mutate()}>
+          Save details
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const DETAIL_LABELS = [
+  ['supplierReference', 'Supplier ref.'],
+  ['supplierInvoiceNo', 'Supplier invoice'],
+  ['paymentTerms', 'Payment terms'],
+  ['transportMode', 'Transport'],
+  ['carrier', 'Carrier'],
+  ['trackingNumber', 'Tracking / AWB'],
+  ['dispatchDate', 'Dispatched'],
+  ['transportNotes', 'Transport notes'],
+];
+
 function PoDetail({ id, isAdmin, onClose, onEdit }) {
   const client = useQueryClient();
   const q = useQuery(purchaseOrderQuery(id));
-  const [panel, setPanel] = useState(null); // 'receive' | 'pay' | 'cancel'
+  const [panel, setPanel] = useState(null); // 'receive' | 'pay' | 'cancel' | 'details'
   const refresh = () => client.invalidateQueries({ queryKey: pk.all });
+  const printing = useMutation({
+    mutationFn: () => printPdf(poPdfUrl(id)),
+    onError: (e) => toast.error(e.message),
+  });
   const send = useMutation({
     mutationFn: () => sendPurchaseOrder(id),
     onSuccess: async () => {
@@ -696,10 +825,22 @@ function PoDetail({ id, isAdmin, onClose, onEdit }) {
               </p>
             )}
 
+            {DETAIL_LABELS.some(([k]) => po[k]) && (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-2xl border border-border bg-secondary/20 p-3 text-sm sm:grid-cols-4">
+                {DETAIL_LABELS.filter(([k]) => po[k]).map(([k, label]) => (
+                  <div key={k} className={cn('min-w-0', k === 'transportNotes' && 'col-span-2 sm:col-span-4')}>
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="break-words font-medium">{k === 'dispatchDate' ? fmtDate(po[k]) : po[k]}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+
             <div className="overflow-x-auto rounded-2xl border border-border">
-              <table className="w-full min-w-[560px] text-sm">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead className="bg-secondary/60 text-left text-xs uppercase text-muted-foreground">
                   <tr>
+                    <th className="px-3 py-2">Code</th>
                     <th className="px-3 py-2">Item</th>
                     <th className="px-3 py-2 text-right">Ordered</th>
                     <th className="px-3 py-2 text-right">Received</th>
@@ -711,7 +852,15 @@ function PoDetail({ id, isAdmin, onClose, onEdit }) {
                 <tbody>
                   {items.map((it) => (
                     <tr key={lineKey(it.productId, it.variantIndex)} className="border-t border-border">
-                      <td className="px-3 py-2">{it.name}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-primary">{it.productCode || '—'}</td>
+                      <td className="px-3 py-2">
+                        {it.name}
+                        {(it.sku || it.size || it.color) && (
+                          <span className="block text-xs text-muted-foreground">
+                            {[it.sku, it.size, it.color].filter(Boolean).join(' · ')}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right">{it.orderedQty}</td>
                       <td className={cn('px-3 py-2 text-right', num(it.receivedQty) >= num(it.orderedQty) && 'text-emerald-700')}>
                         {num(it.receivedQty)}
@@ -719,7 +868,9 @@ function PoDetail({ id, isAdmin, onClose, onEdit }) {
                       <td className="px-3 py-2 text-right">{QAR(it.unitCost)}</td>
                       <td className="px-3 py-2 text-right">{num(it.taxRate)}%</td>
                       <td className="px-3 py-2 text-right font-medium">
-                        {it.landedUnitCost != null ? QAR(it.landedUnitCost) : QAR(landedUnit(it, num(po.subtotal), po.shippingCost))}
+                        {it.landedUnitCost != null
+                          ? QAR(it.landedUnitCost)
+                          : QAR(landedUnit(it, num(po.subtotal), num(po.shippingCost) + num(po.otherCharges)))}
                       </td>
                     </tr>
                   ))}
@@ -732,6 +883,7 @@ function PoDetail({ id, isAdmin, onClose, onEdit }) {
                 ['Subtotal', po.subtotal],
                 ['Tax', po.taxAmount],
                 ['Shipping', po.shippingCost],
+                ...(num(po.otherCharges) ? [['Customs / other', po.otherCharges]] : []),
                 ['Discount', -num(po.discount)],
                 ['Total', po.totalAmount],
               ].map(([k, v]) => (
@@ -747,6 +899,9 @@ function PoDetail({ id, isAdmin, onClose, onEdit }) {
               <ReceivePanel key={`r-${po.updatedAt}`} po={po} onCancel={() => setPanel(null)} onDone={() => setPanel(null)} />
             )}
             {panel === 'pay' && <PayPanel key={`p-${po.updatedAt}`} po={po} onCancel={() => setPanel(null)} onDone={() => setPanel(null)} />}
+            {panel === 'details' && (
+              <DetailsPanel key={`d-${po.updatedAt}`} po={po} onCancel={() => setPanel(null)} onDone={() => setPanel(null)} />
+            )}
 
             {panel === null && (
               <div className="flex flex-wrap gap-2">
@@ -758,6 +913,11 @@ function PoDetail({ id, isAdmin, onClose, onEdit }) {
                 {editable && (
                   <Button variant="outline" className="h-10" onClick={() => onEdit(po)}>
                     Edit
+                  </Button>
+                )}
+                {!editable && po.status !== 'cancelled' && (
+                  <Button variant="outline" className="h-10" onClick={() => setPanel('details')}>
+                    Edit details
                   </Button>
                 )}
                 {isAdmin && po.status !== 'cancelled' && outstanding > 0 && (
@@ -776,7 +936,15 @@ function PoDetail({ id, isAdmin, onClose, onEdit }) {
                   </Button>
                 )}
                 <Button variant="outline" className="h-10" onClick={() => pdf(poPdfUrl(po.id))}>
-                  <Printer className="mr-2 size-4" /> Print / PDF
+                  <Eye className="mr-2 size-4" /> View PDF
+                </Button>
+                <Button variant="outline" className="h-10" asChild>
+                  <a href={`${poPdfUrl(po.id)}?download=1`} download={`${po.poNumber}.pdf`}>
+                    <Download className="mr-2 size-4" /> Download
+                  </a>
+                </Button>
+                <Button variant="outline" className="h-10" disabled={printing.isPending} onClick={() => printing.mutate()}>
+                  <Printer className="mr-2 size-4" /> Print
                 </Button>
                 {isAdmin && editable && !anyReceived && (
                   <Button variant="outline" className="h-10 border-destructive/40 text-destructive" onClick={() => setPanel('cancel')}>

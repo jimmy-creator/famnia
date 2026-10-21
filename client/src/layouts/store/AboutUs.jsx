@@ -3,18 +3,20 @@ import { useTranslation } from 'react-i18next';
 import { ShoppingBag, Award, Truck, ShieldCheck, Headphones, RefreshCw, Mail, Phone, MessageCircle } from 'lucide-react';
 import StaticPage from './StaticPage';
 import InstagramCard from '../../components/InstagramCard';
+import { telHref, useCompany } from '@/lib/company';
 
-const CONTACT_LINKS = (t) => [
-  { href: 'mailto:info@femnia.com', Icon: Mail, title: t('contact.emailUs'), lines: ['info@femnia.com'] },
-  { href: 'tel:+97466543343', Icon: Phone, title: t('contact.callUs'), lines: ['+974 6654 3343'] },
-  { href: 'https://wa.me/97466543343', Icon: MessageCircle, title: t('contact.whatsapp'), lines: [t('contact.whatsappLine')] },
+const CONTACT_LINKS = (t, c) => [
+  { href: `mailto:${c.email}`, Icon: Mail, title: t('contact.emailUs'), lines: [c.email] },
+  { href: telHref(c.phone), Icon: Phone, title: t('contact.callUs'), lines: [c.phone] },
+  { href: `https://wa.me/${c.whatsapp}`, Icon: MessageCircle, title: t('contact.whatsapp'), lines: [t('contact.whatsappLine')] },
 ];
 
 function ContactCards() {
   const { t } = useTranslation();
+  const company = useCompany();
   return (
     <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {CONTACT_LINKS(t).map(({ href, Icon, title, lines }) => (
+      {CONTACT_LINKS(t, company).map(({ href, Icon, title, lines }) => (
         <a
           key={href}
           href={href}
@@ -51,12 +53,15 @@ function ValueGrid({ items }) {
 }
 
 function EnglishBody() {
+  const company = useCompany();
   return (
     <>
       <section className="s2-static-section">
         <h2>Who We Are</h2>
         <p>
-          Femnia Fashion is a Qatar-based womenswear label built around a simple idea: a carefully
+          {company.brandName} is a Qatar-based online womenswear label, operated by{' '}
+          <strong>{company.legalName}</strong>
+          {company.crNumber ? ` (CR No: ${company.crNumber})` : ''}. It is built around a simple idea: a carefully
           chosen wardrobe of timeless pieces — dresses, tops, tailoring and accessories — cut from
           good fabric and made to outlast the season.
         </p>
@@ -106,12 +111,15 @@ function EnglishBody() {
 }
 
 function ArabicBody() {
+  const company = useCompany();
   return (
     <>
       <section className="s2-static-section">
         <h2>من نحن</h2>
         <p>
-          Femnia Fashion علامة أزياء نسائية مقرّها قطر، قائمة على فكرة بسيطة: خزانة مختارة بعناية
+          {company.brandName} علامة أزياء نسائية إلكترونية مقرّها قطر، تديرها{' '}
+          <strong>{company.legalName}</strong>
+          {company.crNumber ? ` (رقم السجل التجاري: ${company.crNumber})` : ''}، وهي قائمة على فكرة بسيطة: خزانة مختارة بعناية
           من القطع الخالدة — فساتين، بلوزات، تفصيل، وإكسسوارات — من أقمشة جيدة وصناعة تدوم
           أكثر من موسم.
         </p>
@@ -166,8 +174,8 @@ export default function AboutUs() {
     <StaticPage
       title="About Us"
       titleAr="من نحن"
-      description="Femnia Fashion — timeless womenswear and accessories designed for quality, fit and everyday elegance, delivered across Qatar."
-      descriptionAr="Femnia Fashion — أزياء نسائية خالدة وإكسسوارات مصمّمة للجودة والمقاس والأناقة اليومية، مع توصيل في جميع أنحاء قطر."
+      description="FEMNIA — timeless womenswear and accessories designed for quality, fit and everyday elegance, delivered across Qatar."
+      descriptionAr="FEMNIA — أزياء نسائية خالدة وإكسسوارات مصمّمة للجودة والمقاس والأناقة اليومية، مع توصيل في جميع أنحاء قطر."
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

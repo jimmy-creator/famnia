@@ -65,6 +65,8 @@ export const returnablePosQuery = (supplierId) => ({
 export const savePurchaseOrder = (id, body) =>
   id ? send('put', `/purchase-orders/${id}`, body) : send('post', '/purchase-orders', body);
 export const sendPurchaseOrder = (id) => send('post', `/purchase-orders/${id}/send`);
+/** References, terms, transport and notes only — allowed after goods arrive. */
+export const savePurchaseOrderDetails = (id, body) => send('patch', `/purchase-orders/${id}/details`, body);
 export const cancelPurchaseOrder = (id) => send('post', `/purchase-orders/${id}/cancel`);
 export const receivePurchaseOrder = (id, body) => send('post', `/purchase-orders/${id}/receive`, body);
 export const payPurchaseOrder = (id, body) => send('post', `/purchase-orders/${id}/pay`, body);
@@ -84,3 +86,23 @@ export const cancelPurchaseReturn = (id) => send('post', `/purchase-returns/${id
 const API = import.meta.env.VITE_API_URL || '/api';
 export const poPdfUrl = (id) => `${API}/purchase-orders/${id}/pdf`;
 export const returnPdfUrl = (id) => `${API}/purchase-returns/${id}/pdf`;
+
+/** Prints a PDF from the API without leaving the page: loads it in a hidden frame and opens the print dialog. */
+export async function printPdf(url) {
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) throw new Error(`Could not load the document (${res.status}).`);
+  const blobUrl = URL.createObjectURL(await res.blob());
+  const frame = document.createElement('iframe');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+  frame.src = blobUrl;
+  frame.onload = () => {
+    frame.contentWindow?.focus();
+    frame.contentWindow?.print();
+    // Leave the frame long enough for the print dialog to read it.
+    setTimeout(() => {
+      frame.remove();
+      URL.revokeObjectURL(blobUrl);
+    }, 60_000);
+  };
+  document.body.appendChild(frame);
+}

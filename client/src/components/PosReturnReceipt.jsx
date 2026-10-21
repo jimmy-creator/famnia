@@ -109,6 +109,8 @@ export default function PosReturnReceipt({ payload, currency = 'KWD', onClose })
           <div className="location">{sr.Location.name}</div>
         )}
         <div className="meta">
+          <div>{RECEIPT_STORE.legalName}</div>
+          <div>CR No: {RECEIPT_STORE.cr}</div>
           <div>{sr.Location?.address || RECEIPT_STORE.address}</div>
           <div>Tel: {sr.Location?.phone || RECEIPT_STORE.phone}</div>
           <div>{RECEIPT_STORE.email}</div>

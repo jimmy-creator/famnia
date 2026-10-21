@@ -48,12 +48,13 @@
     }
     </script>
 
-    <!-- Store schema (local SEO — physical store in Ar-Rayyan, Qatar) -->
+    <!-- Online store schema (no physical shop — sells online across Qatar) -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": "Store",
+      "@type": "OnlineStore",
       "name": "%VITE_STORE_NAME%",
+      "legalName": "Femnia Online Trading WLL",
       "url": "%VITE_SITE_URL%",
       "image": "%VITE_SITE_URL%%VITE_OG_IMAGE%",
       "telephone": "+974 6654 3343",
@@ -62,8 +63,6 @@
       "sameAs": ["https://www.instagram.com/femnia_online/", "https://www.instagram.com/onlydailywears/"],
       "address": {
         "@type": "PostalAddress",
-        "streetAddress": "5C6J+JMG",
-        "addressLocality": "Ar-Rayyan",
         "addressCountry": "QA"
       }
     }

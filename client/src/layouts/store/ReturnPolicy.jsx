@@ -1,9 +1,12 @@
 import { useTranslation } from 'react-i18next';
 import StaticPage from './StaticPage';
+import { DEFAULT_COMPANY, useCompany } from '@/lib/company';
 
-const WHATSAPP_URL = 'https://wa.me/97466543343';
+const WHATSAPP_URL = `https://wa.me/${DEFAULT_COMPANY.whatsapp}`;
+
 
 export function EnglishBody() {
+  const c = useCompany();
   return (
     <>
       <p className="s2-static-date">Last updated: October 2026</p>
@@ -85,7 +88,7 @@ export function EnglishBody() {
           For exchange requests, refund inquiries, or product-related concerns, please contact FEMNIA through our official WhatsApp support.
         </p>
         <p>
-          📞 / WhatsApp: <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">+974 6654 3343</a>
+          📞 / WhatsApp: <a href={`https://wa.me/${c.whatsapp}`} target="_blank" rel="noopener noreferrer">{c.phone}</a>
         </p>
         <p><strong>FEMNIA – Elegant | Comfort | Affordable</strong></p>
         <p>Thank you for shopping with FEMNIA!</p>
@@ -95,6 +98,7 @@ export function EnglishBody() {
 }
 
 export function ArabicBody() {
+  const c = useCompany();
   return (
     <>
       <p className="s2-static-date">آخر تحديث: أكتوبر 2026</p>
@@ -176,7 +180,7 @@ export function ArabicBody() {
           لطلبات الاستبدال أو استفسارات الاسترداد أو أي استفسار عن المنتجات، يُرجى التواصل مع FEMNIA عبر دعم واتساب الرسمي.
         </p>
         <p>
-          📞 / واتساب: <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">+974 6654 3343</a>
+          📞 / واتساب: <a href={`https://wa.me/${c.whatsapp}`} target="_blank" rel="noopener noreferrer">{c.phone}</a>
         </p>
         <p><strong>FEMNIA – أناقة | راحة | أسعار مناسبة</strong></p>
         <p>شكرًا لتسوّقك مع FEMNIA!</p>

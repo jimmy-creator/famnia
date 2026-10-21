@@ -1,13 +1,7 @@
 import PDFDocument from 'pdfkit';
 
-const storeName = process.env.STORE_NAME || 'Femnia Fashion';
 const storeTagline = process.env.STORE_TAGLINE || 'Timeless Elegance';
-// Public contact address for the invoice — falls back to the SMTP sender when
-// a dedicated STORE_EMAIL isn't configured.
-const storeEmail = process.env.STORE_EMAIL || process.env.SMTP_EMAIL || '';
 const storeTRN = process.env.STORE_TRN || process.env.STORE_GSTIN || '';
-const storeAddress = process.env.STORE_ADDRESS || '';
-const storePhone = process.env.STORE_PHONE || '';
 
 const currencySymbol = process.env.CURRENCY_SYMBOL || 'Rs.';
 // Display decimals — pairs with the client's VITE_CURRENCY_DECIMALS.
@@ -50,7 +44,14 @@ function drawMonogram(doc, x, y, size, gold, ink) {
   doc.restore();
 }
 
-export function generateInvoice(order) {
+/** `company` is companyProfile() from Hub → Settings (legal name, CR, contact details). */
+export function generateInvoice(order, company = {}) {
+  const storeName = company.legalName || 'Femnia Online Trading WLL';
+  const brandName = company.brandName || 'FEMNIA';
+  const storeEmail = company.email || '';
+  const storeAddress = company.address || '';
+  const storePhone = company.phone || '';
+  const storeCR = company.crNumber || '';
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ size: 'A4', margin: 50 });
@@ -83,8 +84,8 @@ export function generateInvoice(order) {
       drawMonogram(doc, 50, 26, 48, copper, dark);
       const brandX = 112;
 
-      // Two-tone wordmark: first word cream, rest gold (FEMNIA FASHION).
-      const words = storeName.toUpperCase().split(' ');
+      // Two-tone wordmark: first word cream, rest gold.
+      const words = brandName.toUpperCase().split(' ');
       const firstWord = words.shift();
       const restWords = words.join(' ');
       doc.fontSize(18).font('Times-Bold').fill('#ffffff')
@@ -120,6 +121,7 @@ export function generateInvoice(order) {
       y += 14;
       doc.fontSize(9).fill(grey).font('Helvetica');
       if (storeAddress) { doc.text(storeAddress, 50, y); y += 12; }
+      if (storeCR) { doc.text(`CR No: ${storeCR}`, 50, y); y += 12; }
       if (storePhone) { doc.text(`Phone: ${storePhone}`, 50, y); y += 12; }
       if (storeEmail) { doc.text(`Email: ${storeEmail}`, 50, y); y += 12; }
       if (storeTRN) { doc.text(`TRN: ${storeTRN}`, 50, y); y += 12; }
@@ -277,11 +279,11 @@ export function generateInvoice(order) {
       doc.text('Thank you for your purchase!', 50, y, { width: 495.28, align: 'center' });
       y += 14;
       doc.fill(dark).font('Helvetica-Bold')
-        .text(`${storeName} — ${storeTagline}`, 50, y, { width: 495.28, align: 'center' });
+        .text(storeName, 50, y, { width: 495.28, align: 'center' });
       y += 12;
       // Joined from the parts that are actually set — concatenating directly
       // left a dangling "• " whenever the email or phone was unconfigured.
-      const contactLine = [storeEmail, storePhone, storeTRN && `TRN: ${storeTRN}`]
+      const contactLine = [storeCR && `CR No: ${storeCR}`, storeEmail, storePhone, company.website, storeTRN && `TRN: ${storeTRN}`]
         .filter(Boolean)
         .join('  •  ');
       if (contactLine) {

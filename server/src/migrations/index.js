@@ -111,6 +111,15 @@ const STEPS = [
   // Hub expense/asset entries can be voided (kept for the audit trail).
   ...[['voidedAt', DataTypes.DATE], ['voidReason', DataTypes.STRING(200)], ['voidedBy', DataTypes.INTEGER]]
     .map(([col, type]) => [`HubExpenseEntries.${col}`, () => addColumnIfMissing('HubExpenseEntries', col, { type, allowNull: true })]),
+  // Purchase orders: supplier references, payment terms and transport details.
+  ...[
+    ['supplierReference', DataTypes.STRING(80)], ['supplierInvoiceNo', DataTypes.STRING(80)], ['paymentTerms', DataTypes.STRING(120)],
+    ['transportMode', DataTypes.STRING(40)], ['carrier', DataTypes.STRING(120)], ['trackingNumber', DataTypes.STRING(120)],
+    ['dispatchDate', DataTypes.DATEONLY], ['transportNotes', DataTypes.TEXT],
+  ].map(([col, type]) => [`PurchaseOrders.${col}`, () => addColumnIfMissing('PurchaseOrders', col, { type, allowNull: true })]),
+  ['PurchaseOrders.otherCharges', () => addColumnIfMissing('PurchaseOrders', 'otherCharges', {
+    type: DataTypes.DECIMAL(12, 3), allowNull: false, defaultValue: 0,
+  })],
 ];
 
 export async function runMigrations({ log = console.log } = {}) {

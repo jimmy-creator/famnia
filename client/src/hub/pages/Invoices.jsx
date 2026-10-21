@@ -13,6 +13,7 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { InvoiceSheet } from '@/hub/components/OrderPrint';
+import { printBusinessFrom } from '@/hub/lib/printBusiness';
 import { SalesOrderDetails } from '@/hub/components/SalesOrderDetails';
 import { EmptyState, ErrorState, LoadingRows, PageHeader, StatusBadge } from '@/hub/components/shared';
 import { Button } from '@/hub/ui/button';
@@ -58,15 +59,7 @@ export default function InvoicesPage() {
   const settingsData = useQuery(appSettingsQuery).data;
   const labelSize = chosenSize ?? settingsData?.labelSize ?? '100x130';
   /** Print header/footer text comes from Settings, with the built-in defaults as fallback. */
-  const printBusiness = {
-    name: settingsData?.businessName ?? 'FEMNIA',
-    location: settingsData?.location ?? 'Al Thumama, Qatar',
-    phone: settingsData?.phone ?? '66543343',
-    currency: settingsData?.currency ?? 'QAR',
-    invoiceFooter: settingsData?.invoiceFooter ?? 'Thank you for shopping with FEMNIA.',
-    labelFooter: settingsData?.labelFooter ?? '',
-    logoUrl: settingsData?.logoUrl ?? '',
-  };
+  const printBusiness = printBusinessFrom(settingsData);
 
   const canViewInvoices = can(access, 'invoices.view');
   const canPrintInvoice = can(access, 'invoices.print');

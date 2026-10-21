@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Mail, Send, Phone, MessageCircle, MapPin } from 'lucide-react';
+import { Mail, Send, Phone, MessageCircle, Building2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import api from '../../api/axios';
@@ -9,19 +9,26 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { telHref, useCompany } from '@/lib/company';
 
-const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
+const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'FEMNIA';
 
 export default function ContactUs() {
   const { t } = useTranslation();
+  const company = useCompany();
   const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
   const [loading, setLoading] = useState(false);
 
   const contactCards = [
-    { href: 'mailto:info@femnia.com', Icon: Mail, title: t('contact.emailUs'), lines: ['info@femnia.com'] },
-    { href: 'tel:+97466543343', Icon: Phone, title: t('contact.callUs'), lines: ['+974 6654 3343'] },
-    { href: 'https://wa.me/97466543343', Icon: MessageCircle, title: t('contact.whatsapp'), lines: [t('contact.whatsappLine')] },
-    { href: 'https://www.google.com/maps/search/?api=1&query=5C6J%2BJMG%20Ar-Rayyan%20Qatar', Icon: MapPin, title: t('contact.visitUs'), lines: ['5C6J+JMG, Ar-Rayyan, Qatar'] },
+    { href: `mailto:${company.email}`, Icon: Mail, title: t('contact.emailUs'), lines: [company.email] },
+    { href: telHref(company.phone), Icon: Phone, title: t('contact.callUs'), lines: [company.phone] },
+    { href: `https://wa.me/${company.whatsapp}`, Icon: MessageCircle, title: t('contact.whatsapp'), lines: [t('contact.whatsappLine')] },
+    {
+      href: null,
+      Icon: Building2,
+      title: t('contact.company'),
+      lines: [company.legalName, company.crNumber && t('footer.crNumber', { number: company.crNumber }), company.address].filter(Boolean),
+    },
   ];
 
   const handleSubmit = async (e) => {
@@ -60,9 +67,9 @@ export default function ContactUs() {
           {contactCards.map(({ href, Icon, title, lines }) => (
             <a
               key={title}
-              href={href}
-              target={href.startsWith('http') ? '_blank' : undefined}
-              rel={href.startsWith('http') ? 'noopener noreferrer' : undefined}
+              href={href ?? undefined}
+              target={href?.startsWith('http') ? '_blank' : undefined}
+              rel={href?.startsWith('http') ? 'noopener noreferrer' : undefined}
               className="flex items-start gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/40 hover:bg-accent"
             >
               <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-primary">

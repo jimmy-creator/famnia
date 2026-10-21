@@ -31,7 +31,10 @@ const PREFIX_RE = /^[A-Z][A-Z0-9]{1,7}$/;
 export function validateSettings(next) {
   const errors = {};
   if (!next.businessName.trim()) errors.businessName = 'Business name is required.';
-  if (!next.location.trim()) errors.location = 'Location is required.';
+  if (!(next.legalName ?? '').trim()) errors.legalName = 'Company legal name is required.';
+  if (!next.location.trim()) errors.location = 'Address is required.';
+  if ((next.email ?? '').trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next.email.trim())) errors.email = 'Enter a valid email address.';
+  if ((next.whatsapp ?? '') && !/^[0-9]{8,15}$/.test(next.whatsapp)) errors.whatsapp = 'Digits only, with the country code (e.g. 97466543343).';
   if (!/^[0-9+\-\s]{6,20}$/.test(next.phone.trim())) errors.phone = 'Enter a valid phone number.';
   if (!/^[A-Z]{2,5}$/.test(next.currency.trim())) errors.currency = 'Use a currency code such as QAR.';
   if (!PREFIX_RE.test(next.invoicePrefix.trim()))

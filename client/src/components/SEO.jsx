@@ -23,7 +23,7 @@ function useDropServerMeta() {
   }, []);
 }
 
-const SITE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
+const SITE_NAME = import.meta.env.VITE_STORE_NAME || 'FEMNIA';
 const DEFAULT_DESC = import.meta.env.VITE_STORE_DESC || `Shop the latest products at great prices. Free delivery on orders over ${CURRENCY}100.`;
 const SITE_URL = typeof window !== 'undefined' ? window.location.origin : (import.meta.env.VITE_SITE_URL || '');
 const OG_IMAGE = import.meta.env.VITE_OG_IMAGE || '/images/hero-banner.jpeg';

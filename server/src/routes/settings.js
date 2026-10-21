@@ -2,8 +2,19 @@ import { Router } from 'express';
 import { Setting, Counter } from '../models/index.js';
 import { protect, admin, requirePermission } from '../middleware/auth.js';
 import { isExpressEnabled } from '../utils/shipping.js';
+import { cachedCompanyProfile, companyProfile } from '../hub/settings.js';
 
 const router = Router();
+
+// Company identity (public): legal name, CR number and contact details, edited
+// in Hub → Settings and shown in the store footer, policies and contact pages.
+router.get('/company', async (req, res) => {
+  try {
+    res.json(await companyProfile());
+  } catch {
+    res.json(cachedCompanyProfile());
+  }
+});
 
 // Get theme (public — all visitors need the active theme).
 // Returns null when no row exists so the client falls through to its

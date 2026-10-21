@@ -18,7 +18,7 @@ export const LABEL_SIZES = [
   { id: 'large', label: '80 × 50 mm', width: 80, height: 50, barcodeH: 44, fontPt: 11 },
 ];
 
-export const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia Fashion';
+export const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'FEMNIA';
 
 export function BarcodeSvg({ value, height = 30 }) {
   const ref = useRef(null);

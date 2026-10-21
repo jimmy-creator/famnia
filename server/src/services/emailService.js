@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { cachedCompanyProfile } from '../hub/settings.js';
 
 const smtpConfig = process.env.SMTP_HOST
   ? {
@@ -51,10 +52,8 @@ export async function sendTestEmail(to) {
   });
 }
 
-const storeName = process.env.STORE_NAME || 'Fineline';
-const storeEmail = process.env.SMTP_EMAIL;
-const storePhone = process.env.STORE_PHONE || '';
-const storeAddress = process.env.STORE_ADDRESS || '';
+// Company identity from Hub → Settings (last-loaded copy; templates are synchronous).
+const company = () => cachedCompanyProfile();
 
 const brandColor = process.env.BRAND_COLOR || '#1a1614';
 const brandLight = process.env.BRAND_LIGHT || '#faf8f5';
@@ -92,6 +91,8 @@ function orderItemsHTML(items) {
 }
 
 function baseTemplate(content) {
+  const c = company();
+  const storeEmail = c.email || process.env.SMTP_EMAIL;
   return `
 <!DOCTYPE html>
 <html>
@@ -105,9 +106,9 @@ function baseTemplate(content) {
     <!-- Header -->
     <div style="background:${brandColor};padding:24px 32px;border-radius:12px 12px 0 0;text-align:center;">
       <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">
-        ${storeName}
+        ${c.brandName}
       </h1>
-      ${storeAddress ? `<p style="margin:6px 0 0;font-size:12px;color:rgba(255,255,255,0.65);">${storeAddress}</p>` : ''}
+      ${c.address ? `<p style="margin:6px 0 0;font-size:12px;color:rgba(255,255,255,0.65);">${c.address}</p>` : ''}
     </div>
 
     <!-- Content -->
@@ -118,9 +119,9 @@ function baseTemplate(content) {
     <!-- Footer -->
     <div style="background:${brandLight};padding:20px 32px;border:1px solid ${brandBorder};border-top:none;border-radius:0 0 12px 12px;text-align:center;">
       <p style="margin:0;font-size:12px;color:${textDim};">
-        © ${new Date().getFullYear()} ${storeName}. All rights reserved.
+        © ${new Date().getFullYear()} ${c.legalName}${c.crNumber ? ` · CR No: ${c.crNumber}` : ''}. All rights reserved.
       </p>
-      ${storePhone ? `<p style="margin:6px 0 0;font-size:12px;color:${textDim};">📞 ${storePhone}</p>` : ''}
+      ${c.phone ? `<p style="margin:6px 0 0;font-size:12px;color:${textDim};">📞 ${c.phone}</p>` : ''}
       <p style="margin:6px 0 0;font-size:12px;color:${textDim};">
         Questions? Reply to this email or write to <a href="mailto:${storeEmail}" style="color:${brandColor};text-decoration:none;">${storeEmail}</a>
       </p>
@@ -292,7 +293,7 @@ async function sendEmail(to, subject, html) {
 
   try {
     const info = await transporter.sendMail({
-      from: `"${storeName}" <${storeEmail}>`,
+      from: `"${company().brandName}" <${process.env.SMTP_EMAIL}>`,
       to,
       subject,
       html,
@@ -339,7 +340,7 @@ export async function sendPasswordResetEmail(email, resetUrl) {
     </div>
   `);
 
-  return sendEmail(email, `Reset Your Password - ${storeName}`, html);
+  return sendEmail(email, `Reset Your Password - ${company().brandName}`, html);
 }
 
 // ============================================
@@ -397,7 +398,7 @@ export async function sendAbandonedCartEmail(email, items, cartTotal, recoveryUr
     </p>
   `);
 
-  return sendEmail(email, `You left items in your cart - ${storeName}`, html);
+  return sendEmail(email, `You left items in your cart - ${company().brandName}`, html);
 }
 
 // ============================================

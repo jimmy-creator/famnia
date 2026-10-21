@@ -282,7 +282,18 @@ function SettingsForm({ saved, isAdmin, onRefresh, section, setSection, backup }
                 onChange={(e) => set('currency', e.target.value.toUpperCase())}
               />
             </Field>
-            <Field id="s-location" label="Location" error={err('location')}>
+            <Field
+              id="s-legal"
+              label="Company legal name"
+              hint="Printed on invoices, bills, purchase orders and the online store."
+              error={err('legalName')}
+            >
+              <Input id="s-legal" className="h-11" value={form.legalName ?? ''} onChange={(e) => set('legalName', e.target.value)} />
+            </Field>
+            <Field id="s-cr" label="CR number" hint="Commercial registration. Leave empty to hide it." error={err('crNumber')}>
+              <Input id="s-cr" className="h-11" value={form.crNumber ?? ''} onChange={(e) => set('crNumber', e.target.value)} />
+            </Field>
+            <Field id="s-location" label="Address" hint="Shown on documents and the store, e.g. “Qatar”." error={err('location')}>
               <Input
                 id="s-location"
                 className="h-11"
@@ -292,6 +303,21 @@ function SettingsForm({ saved, isAdmin, onRefresh, section, setSection, backup }
             </Field>
             <Field id="s-phone" label="Phone" error={err('phone')}>
               <Input id="s-phone" className="h-11" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
+            </Field>
+            <Field id="s-whatsapp" label="WhatsApp" hint="Digits with country code, e.g. 97466543343." error={err('whatsapp')}>
+              <Input
+                id="s-whatsapp"
+                className="h-11"
+                inputMode="numeric"
+                value={form.whatsapp ?? ''}
+                onChange={(e) => set('whatsapp', e.target.value.replace(/\D/g, ''))}
+              />
+            </Field>
+            <Field id="s-email" label="Email" error={err('email')}>
+              <Input id="s-email" type="email" className="h-11" value={form.email ?? ''} onChange={(e) => set('email', e.target.value)} />
+            </Field>
+            <Field id="s-website" label="Website" error={err('website')}>
+              <Input id="s-website" className="h-11" value={form.website ?? ''} onChange={(e) => set('website', e.target.value)} />
             </Field>
             <div className="sm:col-span-2">
               <Field

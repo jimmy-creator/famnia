@@ -28,7 +28,7 @@ function itemSummary(order, productCodes = {}) {
 const LABEL_BUSINESS_FALLBACK = {
   name: 'FEMNIA',
   location: 'Qatar',
-  phone: 'WhatsApp-66543343',
+  phone: '+974 6654 3343',
   currency: 'QAR',
   footer: '',
 };
@@ -52,7 +52,9 @@ export function DeliveryLabel({ order, size, business = LABEL_BUSINESS_FALLBACK,
       <p className="dl-subtitle">DELIVERY LABEL</p>
       <div className="dl-row">
         <div className="dl-cell dl-cell--label">FROM</div>
-        <div className="dl-cell dl-cell--plain">FEMNIA | Qatar | WhatsApp-66543343</div>
+        <div className="dl-cell dl-cell--plain">
+          {[business.name, business.location, business.phone && `WhatsApp ${business.phone}`].filter(Boolean).join(' | ')}
+        </div>
       </div>
       <div className="dl-row">
         <div className="dl-cell dl-cell--label">CUSTOMER</div>

@@ -29,6 +29,7 @@ import { rangeStart, rangeEnd } from '../utils/dates.js';
 import { lineKey, parseVariantIndex, totalsByKey } from '../utils/lines.js';
 import { generatePurchaseReturnPdf } from '../services/purchaseDocs.js';
 import { hasPermission } from '../hub/permissions.js';
+import { companyProfile } from '../hub/settings.js';
 
 const router = Router();
 
@@ -98,7 +99,7 @@ router.get('/:id/pdf', protect, async (req, res) => {
       ],
     });
     if (!row) return res.status(404).json({ message: 'Return not found' });
-    const pdf = await generatePurchaseReturnPdf(row.toJSON());
+    const pdf = await generatePurchaseReturnPdf(row.toJSON(), await companyProfile());
     res.set({
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="${row.returnNumber}.pdf"`,
