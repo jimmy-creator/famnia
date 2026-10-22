@@ -56,7 +56,7 @@ export function cartOrderMessage(items, subtotal) {
 }
 
 /** Checkout: items, totals and the delivery details the customer filled in. */
-export function checkoutOrderMessage({ items, subtotal, discount, couponCode, shipping, total, address }) {
+export function checkoutOrderMessage({ items, subtotal, discount, couponCode, shipping, total, address, pickup = false }) {
   return [
     "Hi, I'd like to place this order:",
     '',
@@ -64,14 +64,14 @@ export function checkoutOrderMessage({ items, subtotal, discount, couponCode, sh
     '',
     `Subtotal: ${money(subtotal)}`,
     discount > 0 ? `Discount${couponCode ? ` (${couponCode})` : ''}: -${money(discount)}` : null,
-    `Delivery: ${shipping > 0 ? money(shipping) : 'Free'}`,
-    `*Total: ${money(total)}*`,
+    pickup ? 'Pickup: Free' : `Delivery: ${shipping > 0 ? money(shipping) : 'Free'}`,
+    `*Total: ${money(total)}*${!pickup && shipping > 0 ? ' (delivery charge included)' : ''}`,
     '',
-    '*Deliver to*',
+    pickup ? '*I will pick up the order*' : '*Deliver to*',
     address.fullName,
     address.phone,
     address.altPhone || null,
-    address.address,
+    address.address || null,
     address.city || null,
     address.email || null,
   ].filter((l) => l != null).join('\n');

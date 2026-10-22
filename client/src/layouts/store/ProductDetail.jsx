@@ -33,6 +33,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { STORE_TZ } from '@/lib/storeTime';
 import { openWhatsApp, productOrderMessage } from '@/lib/whatsapp';
 import WhatsAppButton from '@/components/WhatsAppButton';
 
@@ -60,7 +61,7 @@ export default function ProductDetail() {
   const [selectedOptions, setSelectedOptions] = useState({});
   const [relatedProducts, setRelatedProducts] = useState([]);
   const [linkCopied, setLinkCopied] = useState(false);
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   // Picking a colour/design with its own image turns the gallery to that image.
   const showVariantImage = (p, options) => {
@@ -134,7 +135,9 @@ export default function ProductDetail() {
   const variantSellable = (v) => v && v.active !== false && !v.archived;
   const displayPrice = activeVariant?.price != null ? activeVariant.price : product.price;
   const displayStock = hasVariants ? (variantSellable(activeVariant) ? (activeVariant.stock ?? 0) : 0) : product.stock;
-  const discount = product.comparePrice ? Math.round((1 - displayPrice / product.comparePrice) * 100) : 0;
+  // An offer sets each size's own compare-at price (the price it replaces).
+  const comparePrice = activeVariant?.comparePrice ?? product.comparePrice;
+  const discount = comparePrice ? Math.round((1 - displayPrice / comparePrice) * 100) : 0;
   const productCode = productCodeOf(product, hasVariants ? selectedOptions : null);
   // The selected colour/size's own video wins over the product's.
   const video = activeVariant?.video || product.videoUrl || null;
@@ -235,11 +238,20 @@ export default function ProductDetail() {
 
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <span className="text-3xl font-semibold text-foreground"><CurrencySymbol />{formatPrice(displayPrice)}</span>
-            {product.comparePrice && (
-              <span className="text-lg text-muted-foreground line-through"><CurrencySymbol />{formatPrice(product.comparePrice)}</span>
+            {comparePrice > displayPrice && (
+              <span className="text-lg text-muted-foreground line-through"><CurrencySymbol />{formatPrice(comparePrice)}</span>
             )}
             {discount > 0 && <Badge>Save {discount}%</Badge>}
           </div>
+          {product.offer && (
+            <p className="mt-2 text-sm font-medium text-primary">
+              {product.offer.name} · {t('products.offerEnds', {
+                when: new Date(product.offer.endsAt).toLocaleString(i18n.language === 'ar' ? 'ar-QA' : 'en-GB', {
+                  timeZone: STORE_TZ, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                }),
+              })}
+            </p>
+          )}
 
           <TamaraWidget amount={displayPrice} className="mt-3" />
 

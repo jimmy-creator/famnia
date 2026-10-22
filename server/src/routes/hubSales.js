@@ -11,7 +11,7 @@ import {
   applyStockDelta, hasVariants, recomputeAfter, skuFields, skuStock, stockLocationId,
 } from '../hub/catalog.js';
 import {
-  CONTACT_EDITABLE_STATUSES, FIELD_LABELS, RETURN_REASONS, SALES_ORDER_STATUSES, SALES_PAYMENT_METHODS,
+  CONTACT_EDITABLE_STATUSES, FIELD_LABELS, ORDER_SOURCES, RETURN_REASONS, SALES_ORDER_STATUSES, SALES_PAYMENT_METHODS,
   SALES_PAYMENT_STATUSES, adoptLegacy, clean, computeTotals, customerCode, emailStatusChange, normalizePhone, round2,
   samePhone, syncLegacy, toSalesOrder,
 } from '../hub/sales.js';
@@ -234,6 +234,7 @@ function headerFrom(b, pickup, deliveryCharge) {
     address: clean(b.address) || null,
     landmark: clean(b.landmark, 200) || null,
     fulfilmentMethod: pickup ? 'Customer Pickup' : 'Delivery',
+    orderSource: ORDER_SOURCES.includes(b.orderSource) ? b.orderSource : null,
     shippingCharge: deliveryCharge,
     deliveryDate: !pickup ? b.deliveryDate || null : null,
     courier: !pickup ? clean(b.courier, 80) || null : null,
@@ -458,6 +459,11 @@ router.patch('/orders/:number/fulfilment', need('orders.update_delivery', 'payme
     set('pickupDate', b.pickupDate === undefined ? undefined : b.pickupDate || null);
     set('pickupTime', b.pickupTime === undefined ? undefined : clean(b.pickupTime, 20) || null);
     set('pickupNotes', b.pickupNotes === undefined ? undefined : clean(b.pickupNotes) || null);
+    // Web checkouts and till sales carry their source in the channel.
+    if (b.orderSource !== undefined && order.channel === 'staff') {
+      if (!ORDER_SOURCES.includes(b.orderSource)) throw bad('Choose where this order came from.');
+      set('orderSource', b.orderSource);
+    }
   }
   if (can(req, 'payments.edit')) {
     if (b.paymentMode !== undefined && SALES_PAYMENT_METHODS.includes(b.paymentMode)) set('hubPaymentMode', b.paymentMode);
@@ -480,7 +486,7 @@ router.patch('/orders/:number/fulfilment', need('orders.update_delivery', 'payme
   const previous = {
     hubStatus: before.status, deliveryDate: before.deliveryDate, courier: before.courier,
     trackingNumber: before.trackingNumber, deliveryNotes: before.deliveryNotes, pickupDate: before.pickupDate,
-    pickupTime: before.pickupTime, pickupNotes: before.pickupNotes, hubPaymentMode: before.paymentMode,
+    pickupTime: before.pickupTime, pickupNotes: before.pickupNotes, orderSource: before.orderSource, hubPaymentMode: before.paymentMode,
     hubPaymentStatus: before.paymentStatus, amountReceived: before.amountReceived, paymentDate: before.paymentDate,
     paymentTime: before.paymentTime, paymentReference: before.paymentReference, paymentNotes: before.paymentNotes,
     paymentHeldIn: before.paymentHeldIn, paymentHolderDetails: before.paymentHolderDetails,
@@ -584,6 +590,9 @@ router.post('/orders/:number/correct-prices', need('orders.edit_prices'), wrap(a
   const b = req.body || {};
   const reason = clean(b.reason, 200);
   if (!reason) throw bad('A reason is required to edit an order.');
+  // An exchange is the same edit on a completed order: swapped-out units come
+  // back as returns, and `reopen` sends the order round again for the new items.
+  const exchange = Boolean(b.exchange);
   const patches = Array.isArray(b.items) ? b.items : [];
   const t = await sequelize.transaction();
   let order;
@@ -678,7 +687,20 @@ router.post('/orders/:number/correct-prices', need('orders.edit_prices'), wrap(a
       l.lineTotal = round2(Math.max(l.gross - l.discount, 0));
     });
     const subtotal = round2(lines.reduce((s, l) => s + l.lineTotal, 0));
-    const deliveryCharge = before.fulfilmentMethod === 'Customer Pickup' ? 0 : round2(Math.max(Number(b.deliveryCharge) || 0, 0));
+    // The customer may switch between Delivery and Pickup after ordering.
+    const fulfilment = ['Delivery', 'Customer Pickup'].includes(b.fulfilmentMethod) ? b.fulfilmentMethod : before.fulfilmentMethod;
+    if (fulfilment !== before.fulfilmentMethod) {
+      if (fulfilment === 'Delivery') {
+        const address = clean(b.address) || before.address;
+        if (!address) throw bad('Enter the delivery address to switch this order to Delivery.');
+        order.address = address;
+        order.area = clean(b.area, 80) || before.area || null;
+        order.shippingAddress = { ...(order.shippingAddress || {}), ...shippingAddressFrom(order) };
+      }
+      order.fulfilmentMethod = fulfilment;
+      changes.push({ field: 'Fulfilment type', oldValue: before.fulfilmentMethod, newValue: fulfilment });
+    }
+    const deliveryCharge = fulfilment === 'Customer Pickup' ? 0 : round2(Math.max(Number(b.deliveryCharge) || 0, 0));
     // Web orders keep a coupon / bill discount on the header (hub orders store 0 there).
     const headerDiscount = round2(Math.max(parseFloat(order.discount) || 0, 0));
     const grandTotal = round2(Math.max(subtotal + deliveryCharge - headerDiscount, 0));
@@ -701,8 +723,10 @@ router.post('/orders/:number/correct-prices', need('orders.edit_prices'), wrap(a
         await applyStockDelta({
           productId: d.productId, variantIndex: d.variantIndex, delta: -d.qty, transaction: t, locationId,
           ctx: d.qty > 0
-            ? { kind: 'sale', reference: order.orderNumber, orderId: order.id, createdBy: req.user.id, notes: `Order edited · ${reason}` }
-            : { kind: 'cancel_restock', reference: `EDIT-${order.orderNumber}-${d.sku}`, orderId: order.id, reason, createdBy: req.user.id },
+            ? { kind: 'sale', reference: order.orderNumber, orderId: order.id, createdBy: req.user.id, notes: `${exchange ? 'Exchange' : 'Order edited'} · ${reason}` }
+            : exchange
+              ? { kind: 'return', reference: `EXC-${order.orderNumber}-${d.sku}`, orderId: order.id, reason: 'Exchange', notes: reason, createdBy: req.user.id }
+              : { kind: 'cancel_restock', reference: `EDIT-${order.orderNumber}-${d.sku}`, orderId: order.id, reason, createdBy: req.user.id },
         });
         touched.add(d.productId);
       }
@@ -714,6 +738,16 @@ router.post('/orders/:number/correct-prices', need('orders.edit_prices'), wrap(a
     order.changed('items', true);
     order.shippingCharge = deliveryCharge;
     order.totalAmount = grandTotal;
+    if (exchange && b.reopen && before.status !== 'Confirmed') {
+      order.hubStatus = 'Confirmed';
+      changes.push({ field: 'Status', oldValue: before.status, newValue: 'Confirmed' });
+    }
+    // A Paid order that now costs more is no longer fully paid.
+    if (before.paymentStatus === 'Paid' && grandTotal > before.amountReceived) {
+      order.hubPaymentStatus = 'Partially Paid';
+      changes.push({ field: 'Payment status', oldValue: 'Paid', newValue: 'Partially Paid' });
+    }
+    syncLegacy(order);
     await order.save({ transaction: t });
 
     if (deliveryCharge !== before.deliveryCharge) changes.push({ field: 'Delivery charge', oldValue: String(before.deliveryCharge), newValue: String(deliveryCharge) });
@@ -729,7 +763,7 @@ router.post('/orders/:number/correct-prices', need('orders.edit_prices'), wrap(a
     const balanceDue = round2(Math.max(grandTotal - before.amountReceived, 0));
     if (overpaid > 0) changes.push({ field: 'Overpayment flagged', oldValue: null, newValue: `QAR ${overpaid} received above the new total` });
     if (balanceDue > 0 && before.amountReceived > 0) changes.push({ field: 'Balance due', oldValue: null, newValue: `QAR ${balanceDue} still to collect` });
-    changes.push({ field: 'Order edit reason', oldValue: null, newValue: reason });
+    changes.push({ field: exchange ? 'Exchange reason' : 'Order edit reason', oldValue: null, newValue: reason });
     await auditOrder(req, order.id, changes, t);
     await t.commit();
     result = { ok: true, changes: changes.length, grandTotal, subtotal, orderDiscount, overpaid, balanceDue };
@@ -738,7 +772,7 @@ router.post('/orders/:number/correct-prices', need('orders.edit_prices'), wrap(a
     throw err;
   }
   await recomputeAfter([...touched]);
-  await hubLog(req, 'Order edited', 'Sales Orders', order.orderNumber, `${reason} · new total QAR ${result.grandTotal}`);
+  await hubLog(req, exchange ? 'Order exchange' : 'Order edited', 'Sales Orders', order.orderNumber, `${reason} · new total QAR ${result.grandTotal}`);
   res.json(result);
 }));
 

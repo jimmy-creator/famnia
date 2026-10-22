@@ -32,6 +32,11 @@ export const couponsQuery = { queryKey: sk.coupons, queryFn: () => get('/coupons
 export const saveCoupon = (id, payload) => (id ? send('put', `/coupons/${id}`, payload) : send('post', '/coupons', payload));
 export const deleteCoupon = (id) => send('delete', `/coupons/${id}`);
 
+/* ------------------------------ offers ------------------------------ */
+export const offersQuery = { queryKey: [...qk.all, 'store', 'offers'], queryFn: () => get('/offers') };
+export const saveOffer = (id, payload) => (id ? send('put', `/offers/${id}`, payload) : send('post', '/offers', payload));
+export const deleteOffer = (id) => send('delete', `/offers/${id}`);
+
 /* ------------------------------ reviews ------------------------------ */
 export const reviewsQuery = { queryKey: sk.reviews, queryFn: async () => (await get('/reviews/all')).reviews ?? [] };
 export const addReview = (input) => send('post', '/reviews/admin', input);

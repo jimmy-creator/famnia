@@ -15,8 +15,11 @@ import { localizedName } from '../../utils/i18nHelpers';
 import SEO from '../../components/SEO';
 import ProductCard from './ProductCard';
 import { Skeleton } from '@/components/ui/skeleton';
+import { FaInstagram, FaWhatsapp } from 'react-icons/fa6';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { cn } from '@/lib/utils';
+import { whatsappUrl } from '@/lib/whatsapp';
+import { INSTAGRAM_ACCOUNTS } from '@/lib/social';
 
 const STORE_NAME = import.meta.env.VITE_STORE_NAME || 'Femnia';
 
@@ -134,7 +137,8 @@ function EleganceSeal({ seal }) {
   // to read continuously as it loops.
   const ring = `${seal.text} · `;
   return (
-    <div className="pointer-events-none absolute bottom-3 end-3 size-16 sm:bottom-6 sm:end-6 sm:size-24 lg:size-28">
+    // Sits left of the WhatsApp / Instagram buttons in the bottom-right corner.
+    <div className="pointer-events-none absolute bottom-3 end-14 size-16 sm:bottom-6 sm:end-20 sm:size-24 lg:size-28">
       <svg viewBox="0 0 120 120" className="size-full animate-[spin_22s_linear_infinite]">
         <defs>
           <path id="seal-arc" d="M60,60 m-44,0 a44,44 0 1,1 88,0 a44,44 0 1,1 -88,0" fill="none" />
@@ -147,6 +151,28 @@ function EleganceSeal({ seal }) {
         <path d="M12 2 13.6 9.2 20.5 12 13.6 14.8 12 22 10.4 14.8 3.5 12 10.4 9.2Z" />
       </svg>
       <span className="sr-only">{seal.text}</span>
+    </div>
+  );
+}
+
+// WhatsApp and Instagram shortcuts floating in the hero's bottom-right corner.
+function HeroSocialButtons() {
+  const instagram = INSTAGRAM_ACCOUNTS[0];
+  const btn = 'flex size-9 items-center justify-center rounded-full text-white shadow-lg transition-transform hover:scale-110 sm:size-11';
+  return (
+    <div className="absolute bottom-3 end-3 z-20 flex flex-col gap-2 sm:bottom-5 sm:end-5">
+      <a href={whatsappUrl()} target="_blank" rel="noopener noreferrer" aria-label="Chat with us on WhatsApp" className={cn(btn, 'bg-[#25D366]')}>
+        <FaWhatsapp className="size-5 sm:size-6" />
+      </a>
+      <a
+        href={instagram.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`Follow @${instagram.handle} on Instagram`}
+        className={cn(btn, 'bg-[radial-gradient(circle_at_30%_107%,#fdf497_0%,#fd5949_45%,#d6249f_60%,#285AEB_90%)]')}
+      >
+        <FaInstagram className="size-5 sm:size-6" />
+      </a>
     </div>
   );
 }
@@ -234,6 +260,7 @@ function HeroBlock({ slides, active, seal, promos, compact, onSelect, onTouchSta
           </div>
 
           <EleganceSeal seal={seal} />
+          <HeroSocialButtons />
 
           {slides.length > 1 && (
             <div className="absolute inset-x-0 bottom-4 z-20 flex justify-center gap-1.5">
@@ -269,14 +296,14 @@ function HeroBlock({ slides, active, seal, promos, compact, onSelect, onTouchSta
 
 /* ── Categories ───────────────────────────────────────────────────────── */
 
-// Horizontal strip directly under the navbar: a round thumbnail per category
+// Horizontal strip directly under the hero: a round thumbnail per category
 // with its name beneath. Scrolls sideways when it overflows; centred when it
 // fits. Purely a shortcut into the catalogue — nothing filters here.
 function CategoryCircles({ categories }) {
   if (!categories.length) return null;
 
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-4 lg:px-8">
+    <section className="mx-auto max-w-7xl px-4 pt-6 lg:px-8">
       {/* py-1: the scroller clips both axes, so the 2px hover ring needs room. */}
       <div className="-mx-4 flex gap-4 overflow-x-auto px-4 py-1 [scrollbar-width:none] sm:gap-6 lg:mx-0 lg:justify-center lg:px-0 [&::-webkit-scrollbar]:hidden">
         {categories.map((c) => (
@@ -347,6 +374,7 @@ export default function Home() {
   const { t } = useTranslation();
 
   const [latest, setLatest] = useState([]);
+  const [onOffer, setOnOffer] = useState([]);
   const [railLoading, setRailLoading] = useState(true);
   const [categories, setCategories] = useState([]);
 
@@ -427,6 +455,10 @@ export default function Home() {
       .then((r) => setLatest(r.data.products || []))
       .catch(() => {})
       .finally(() => setRailLoading(false));
+
+    api.get(`/products?offer=1&sort=createdAt&order=DESC&limit=${RAIL_LIMIT}`)
+      .then((r) => setOnOffer(r.data.products || []))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -503,8 +535,6 @@ export default function Home() {
     <div className="pb-4">
       <SEO title={t('home.seoTitle')} description={t('home.seoDescription')} />
 
-      <CategoryCircles categories={categories} />
-
       <HeroBlock
         slides={slides}
         active={safeActive}
@@ -516,6 +546,22 @@ export default function Home() {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       />
+
+      <CategoryCircles categories={categories} />
+
+      {/* Offers — only while one is running (hub → Offers & Sales). */}
+      {onOffer.length > 0 && (
+        <section className="mx-auto mt-10 max-w-7xl px-4 lg:px-8">
+          <SectionHead title={t('products.offers')} to="/products?offer=1" actionLabel={t('common.viewAll')} />
+          <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] lg:mx-0 lg:px-0 [&::-webkit-scrollbar]:hidden">
+            {onOffer.map((p) => (
+              <div key={p.id} className="w-40 shrink-0 snap-start sm:w-48 lg:w-56">
+                <ProductCard product={p} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* New arrivals — one horizontal rail, so the newest stock is one swipe
           away rather than a grid the customer has to scroll past. */}

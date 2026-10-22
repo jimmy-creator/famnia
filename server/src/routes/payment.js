@@ -8,6 +8,7 @@ import { Op } from 'sequelize';
 import { calculateTax } from '../utils/tax.js';
 import { calculateShipping } from '../utils/shipping.js';
 import { contactPhoneError } from '../utils/phone.js';
+import { effectivePrice } from '../services/offers.js';
 
 // Reuse coupon logic
 async function applyCouponForPayment(couponCode, subtotal, userId, orderItems = [], paymentMethod = null) {
@@ -194,6 +195,8 @@ router.post('/create-order', optionalAuth, async (req, res) => {
         throw new Error(`${product.name} is out of stock`);
       }
 
+      // A running storefront offer replaces the list price.
+      price = effectivePrice(product.id, price);
       totalAmount += price * item.quantity;
       return {
         productId: product.id,
@@ -224,7 +227,7 @@ router.post('/create-order', optionalAuth, async (req, res) => {
     const shippingResult = await calculateShipping(afterDiscount, orderItems.length, shippingAddress?.state);
     // An option the store does not offer (express while hidden) falls back to standard.
     const shippingMethod = shippingResult[requestedMethod]?.rate !== undefined ? requestedMethod : 'standard';
-    const shipping = shippingResult[shippingMethod]?.rate || shippingResult.standard.rate;
+    const shipping = shippingResult[shippingMethod]?.rate ?? shippingResult.standard.rate;
     // Tax is inclusive — not added on top
     const finalAmount = Math.round((afterDiscount + shipping) * 100) / 100;
 
@@ -244,6 +247,7 @@ router.post('/create-order', optionalAuth, async (req, res) => {
       orderStatus: 'processing',
       shippingCharge: shipping,
       shippingMethod,
+      fulfilmentMethod: shippingMethod === 'pickup' ? 'Customer Pickup' : 'Delivery',
       couponCode: appliedCode,
       discount,
       taxAmount: totalTax,

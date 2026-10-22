@@ -149,9 +149,12 @@ export default function Checkout() {
     return url;
   };
 
+  const isPickup = shippingMethod === 'pickup';
   const getShippingAddress = () => ({
-    fullName: form.fullName, address: form.address,
-    city: form.city, state: form.state,
+    fullName: form.fullName,
+    // Pickup orders carry no street address.
+    address: isPickup ? '' : form.address,
+    city: isPickup ? '' : form.city, state: isPickup ? '' : form.state,
     country: form.country, phone: `+974 ${form.phone}`,
     ...(form.altPhone.trim() ? { altPhone: form.altPhone.trim() } : {}),
   });
@@ -499,7 +502,7 @@ export default function Checkout() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!form.city.trim()) {
+    if (!isPickup && !form.city.trim()) {
       toast.error(t('checkout.cityRequired'), toastStyle);
       return;
     }
@@ -562,6 +565,7 @@ export default function Checkout() {
       couponCode: couponApplied?.code,
       shipping,
       total: grandTotal,
+      pickup: isPickup,
       address: { ...getShippingAddress(), email: isGuest ? form.email : user.email },
     }));
     toast.success('Send the message in WhatsApp to confirm your order', toastStyle);
@@ -599,6 +603,38 @@ export default function Checkout() {
       <form onSubmit={handleSubmit} className="grid gap-8 lg:grid-cols-[1fr_380px]">
         {/* Left: address + payment */}
         <div className="flex min-w-0 flex-col gap-8">
+          {/* Delivery or pickup */}
+          {shippingOptions && (
+            <section className="rounded-lg border border-border bg-card p-6">
+              <h3 className="mb-4 font-medium">{t('shippingOpt.heading')}</h3>
+              <RadioGroup value={shippingMethod} onValueChange={setShippingMethod} className="gap-2">
+                {['standard', 'express', 'pickup'].map((key) => {
+                  const opt = shippingOptions[key];
+                  if (!opt) return null;
+                  return (
+                    <Label
+                      key={key}
+                      htmlFor={`ship-${key}`}
+                      className={cn(
+                        'flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm transition-colors',
+                        shippingMethod === key ? 'border-primary bg-primary/5' : 'border-input hover:bg-accent',
+                      )}
+                    >
+                      <RadioGroupItem id={`ship-${key}`} value={key} />
+                      <div className="flex flex-1 flex-col">
+                        <span className="font-medium">
+                          {key === 'standard' && opt.rate === 0 ? t('shippingOpt.freeShipping') : t(`shippingOpt.${key}`, { defaultValue: opt.label })}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{t(`shippingOpt.${key}Days`, { defaultValue: opt.days })}</span>
+                      </div>
+                      <span className="font-medium">{opt.rate === 0 ? t('shippingOpt.free') : <Money amount={opt.rate} />}</span>
+                    </Label>
+                  );
+                })}
+              </RadioGroup>
+            </section>
+          )}
+
           {/* Address */}
           <section className="rounded-lg border border-border bg-card p-6">
             {isGuest && (
@@ -616,12 +652,13 @@ export default function Checkout() {
               </div>
             )}
 
-            <h3 className="mb-4 font-medium">{t('checkout.shippingAddress')}</h3>
+            <h3 className="mb-4 font-medium">{isPickup ? t('shippingOpt.contactDetails') : t('checkout.shippingAddress')}</h3>
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="fullName">{t('checkout.fullName')}</Label>
                 <Input id="fullName" name="fullName" value={form.fullName} onChange={handleChange} required />
               </div>
+              {!isPickup && (<>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="address">{t('checkout.address', { defaultValue: 'Address' })}</Label>
                 <Input
@@ -649,6 +686,7 @@ export default function Checkout() {
                   {QATAR_CITIES.map((c) => <option key={c} value={c} />)}
                 </datalist>
               </div>
+              </>)}
               <div className="flex flex-col gap-2">
                 <Label htmlFor="phone">Qatar mobile number *</Label>
                 <div className="flex">
@@ -841,33 +879,13 @@ export default function Checkout() {
               )}
             </div>
 
-            {/* Shipping */}
+            {/* Shipping — chosen in the "Delivery or pickup" section */}
             {shippingOptions && (
-              <RadioGroup value={shippingMethod} onValueChange={setShippingMethod} className="mt-4 gap-2">
-                {['standard', 'express'].map((key) => {
-                  const opt = shippingOptions[key];
-                  if (!opt) return null;
-                  return (
-                    <Label
-                      key={key}
-                      htmlFor={`ship-${key}`}
-                      className={cn(
-                        'flex cursor-pointer items-center gap-3 rounded-md border p-3 text-sm transition-colors',
-                        shippingMethod === key ? 'border-primary bg-primary/5' : 'border-input hover:bg-accent',
-                      )}
-                    >
-                      <RadioGroupItem id={`ship-${key}`} value={key} />
-                      <div className="flex flex-1 flex-col">
-                        <span className="font-medium">
-                          {key === 'standard' && opt.rate === 0 ? t('shippingOpt.freeShipping') : t(`shippingOpt.${key}`, { defaultValue: opt.label })}
-                        </span>
-                        <span className="text-xs text-muted-foreground">{t(`shippingOpt.${key}Days`, { defaultValue: opt.days })}</span>
-                      </div>
-                      <span className="font-medium">{opt.rate === 0 ? t('shippingOpt.free') : <Money amount={opt.rate} />}</span>
-                    </Label>
-                  );
-                })}
-              </RadioGroup>
+              <Row
+                label={isPickup ? t('shippingOpt.pickup') : t(`shippingOpt.${shippingMethod}`, { defaultValue: 'Delivery' })}
+                value={shipping === 0 ? t('shippingOpt.free') : <Money amount={shipping} />}
+                className="mt-2"
+              />
             )}
 
             <Separator className="my-4" />

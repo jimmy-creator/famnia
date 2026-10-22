@@ -30,6 +30,7 @@ import DashboardPage from '@/hub/pages/Dashboard';
 import ReportsPage from '@/hub/pages/Reports';
 import PurchasingPage from '@/hub/pages/Purchasing';
 import StorePage from '@/hub/pages/Store';
+import OffersPage from '@/hub/pages/Offers';
 import CategoriesPage from '@/hub/pages/Categories';
 import CashBankPage from '@/hub/pages/CashBank';
 import PosAdminPage from '@/hub/pages/Pos';
@@ -129,6 +130,7 @@ export default function HubApp() {
           <Route path="back-office" element={<Navigate to="/hub/dashboard" replace />} />
           <Route path="purchasing" element={<PurchasingPage />} />
           <Route path="store" element={<StorePage />} />
+          <Route path="offers" element={<OffersPage />} />
           <Route path="categories" element={<CategoriesPage />} />
           <Route path="cash" element={<CashBankPage />} />
           <Route path="pos-admin" element={<PosAdminPage />} />

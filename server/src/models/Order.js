@@ -156,6 +156,9 @@ const Order = sequelize.define('Order', {
   hubPaymentStatus: { type: DataTypes.STRING(20), allowNull: true },
   hubPaymentMode: { type: DataTypes.STRING(30), allowNull: true },
   fulfilmentMethod: { type: DataTypes.STRING(20), allowNull: true },   // Delivery | Customer Pickup
+  // Where a staff-entered order came from (WhatsApp, Instagram, Phone call, …).
+  // Null on web checkouts and till sales — the hub derives theirs from channel.
+  orderSource: { type: DataTypes.STRING(30), allowNull: true },
   // Customer / address snapshot as entered by staff (web orders keep theirs
   // in shippingAddress).
   customerName: { type: DataTypes.STRING, allowNull: true },

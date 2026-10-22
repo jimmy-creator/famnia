@@ -4,6 +4,7 @@ import {
   Category, Product, ProductStock, Location, Order, Supplier, StockMovement, recomputeProductStock, variantMatches,
 } from '../models/index.js';
 import { withStockContext } from '../services/stockLedger.js';
+import { offerPriceFor } from '../services/offers.js';
 import { loadAppSettings } from './settings.js';
 
 /**
@@ -191,6 +192,8 @@ export function flattenSku(product, variantIndex, { totals, stock, settings, sup
     currentStock: current,
     costPrice: cost,
     sellingPriceQar: f.sellingPrice,
+    // The storefront offer running on it right now (hub orders can apply it with one click).
+    offerPrice: offerPriceFor(product.id, f.sellingPrice)?.price ?? null,
     profitPercent: cost > 0 ? round2(((f.sellingPrice - cost) / cost) * 100) : 0,
     shelfLocation: f.shelfLocation,
     reorderLevel,

@@ -33,6 +33,8 @@ export default function Products() {
   const search = searchParams.get('search') || '';
   const sort = searchParams.get('sort') || 'createdAt';
   const order = searchParams.get('order') || 'DESC';
+  // Products in a running offer (hub → Offers & Sales).
+  const offer = searchParams.get('offer') === '1';
 
   useEffect(() => {
     api.get('/products/categories').then((res) => setCategories(res.data)).catch(() => {});
@@ -43,6 +45,7 @@ export default function Products() {
     const params = { page, limit: 12, sort, order };
     if (category) params.category = category;
     if (search) params.search = search;
+    if (offer) params.offer = 1;
 
     api.get('/products', { params })
       .then((res) => {
@@ -54,7 +57,7 @@ export default function Products() {
       .finally(() => setLoading(false));
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [page, category, search, sort, order]);
+  }, [page, category, search, sort, order, offer]);
 
   const updateFilter = (key, value) => {
     const params = new URLSearchParams(searchParams);
@@ -69,7 +72,9 @@ export default function Products() {
     localStorage.setItem('product-view', mode);
   };
 
-  const title = search ? `"${search}"${category ? ` · ${category}` : ''}` : category || t('products.allProducts');
+  const title = search
+    ? `"${search}"${category ? ` · ${category}` : ''}`
+    : [offer ? t('products.offers') : null, category].filter(Boolean).join(' · ') || t('products.allProducts');
 
   const gridClass =
     viewMode === 'two-col'

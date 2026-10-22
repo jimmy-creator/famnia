@@ -55,6 +55,8 @@
   },
   "products": {
     "allProducts": "All Products",
+    "offers": "Offers",
+    "offerEnds": "Offer ends {{when}}",
     "filters": "Filters",
     "sortBy": "Sort by",
     "sortNewest": "Newest",
@@ -305,6 +307,10 @@
     "free": "Free",
     "standardDays": "1-2 business days",
     "expressDays": "1-2 business days",
+    "pickup": "Pickup",
+    "pickupDays": "Free — we will WhatsApp you when it is ready to collect",
+    "heading": "Delivery or pickup",
+    "contactDetails": "Your details",
     "addMorePre": "Add",
     "addMorePost": "more for free shipping"
   },

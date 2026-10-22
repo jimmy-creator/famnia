@@ -23,12 +23,15 @@ export async function calculateShipping(subtotal, itemCount, shippingState) {
   const express = (await isExpressEnabled())
     ? { express: { rate: expressRate, label: 'Express Shipping', days: '1-2 business days' } }
     : {};
+  // Always free; the team arranges the pickup with the customer on WhatsApp.
+  const pickup = { pickup: { rate: 0, label: 'Pickup', days: 'We will WhatsApp you when it is ready' } };
 
   // Free shipping above threshold
   if (subtotal >= freeThreshold) {
     return {
       standard: { rate: 0, label: 'Free Shipping', days: '1-2 business days' },
       ...express,
+      ...pickup,
       freeThreshold,
     };
   }
@@ -38,6 +41,7 @@ export async function calculateShipping(subtotal, itemCount, shippingState) {
   return {
     standard: { rate: Math.round(standardRate * 100) / 100, label: 'Standard Shipping', days: '1-2 business days' },
     ...express,
+    ...pickup,
     freeThreshold,
     amountForFree: Math.round((freeThreshold - subtotal) * 100) / 100,
   };

@@ -91,8 +91,11 @@ const NAV_GROUPS = [
     items: [page('/hub/pos-admin', 'POS & Shifts', null, { legacyAny: ['orders', 'analytics'], multiloc: true })],
   },
   {
-    id: 'store', label: 'Online Store', icon: Store, flat: true,
-    items: [page('/hub/store', 'Online Store', null, { legacyAny: ['coupons', 'reviews', 'orders', 'settings'] })],
+    id: 'store', label: 'Online Store', icon: Store,
+    items: [
+      page('/hub/store', 'Online Store', null, { legacyAny: ['coupons', 'reviews', 'orders', 'settings'] }),
+      page('/hub/offers', 'Offers & Sales', null, { legacyAny: ['coupons'] }),
+    ],
   },
   {
     id: 'admin', label: 'Admin', icon: ShieldCheck,
@@ -197,6 +200,18 @@ export function AppShell({ children }) {
     </nav>
   );
 
+  // The live storefront in a new tab of this browser, to check changes just made here.
+  const storeLink = (
+    <a
+      href="/?store=1"
+      target="_blank"
+      rel="noopener"
+      className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10"
+    >
+      <Store className="size-4" /> Visit online store <ExternalLink className="size-3.5" />
+    </a>
+  );
+
   // The classic admin stays reachable while the team moves over.
   const classic =
     access.data && (access.data.isAdmin || access.data.roles.includes('staff')) ? (
@@ -244,13 +259,24 @@ export function AppShell({ children }) {
           <Menu className="size-5" />
         </button>
         <FemniaLogo className="size-9" />
-        <button
-          aria-label="Log out"
-          onClick={logout}
-          className="inline-flex size-10 items-center justify-center rounded-xl border border-border"
-        >
-          <LogOut className="size-4" />
-        </button>
+        <div className="flex gap-2">
+          <a
+            href="/?store=1"
+            target="_blank"
+            rel="noopener"
+            aria-label="Visit online store"
+            className="inline-flex size-10 items-center justify-center rounded-xl border border-border text-primary"
+          >
+            <Store className="size-4" />
+          </a>
+          <button
+            aria-label="Log out"
+            onClick={logout}
+            className="inline-flex size-10 items-center justify-center rounded-xl border border-border"
+          >
+            <LogOut className="size-4" />
+          </button>
+        </div>
       </header>
 
       {open && (
@@ -264,6 +290,7 @@ export function AppShell({ children }) {
               </button>
             </div>
             {nav}
+            {storeLink}
             {classic}
             {userBlock}
           </aside>
@@ -277,6 +304,7 @@ export function AppShell({ children }) {
           <div>
             <div className="px-2 pb-6 pt-2">
               <FemniaLockup subtitle="Inventory & Delivery Hub" logoClassName="size-11" />
+              {storeLink}
             </div>
             {nav}
             {classic}

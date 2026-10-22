@@ -37,6 +37,7 @@ import { clearCart, getCart, setCart } from '@/hub/lib/cart';
 import { orderStatusMessage, whatsappLink } from '@/hub/lib/whatsapp';
 import {
   FULFILMENT_METHODS,
+  ORDER_SOURCES,
   PAYMENT_HELD_IN_OPTIONS,
   SALES_PAYMENT_METHODS,
   SALES_PAYMENT_STATUSES,
@@ -167,6 +168,8 @@ const lineFrom = (p, quantity) => ({
   category: p.category,
   quantity,
   unitPrice: p.sellingPriceQar,
+  // Website offer running now — staff apply it by hand (e.g. a customer who saw it online orders on WhatsApp).
+  offerPrice: p.offerPrice ?? null,
   discount: 0,
   consignment: null,
   available: p.currentStock,
@@ -231,6 +234,7 @@ function OrderForm({ products }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [history, setHistory] = useState([]);
 
+  const [orderSource, setOrderSource] = useState('');
   const [fulfilmentMethod, setFulfilmentMethod] = useState('Delivery');
   // null until typed: settings supply the default delivery charge for NEW orders only.
   const [deliveryChargeInput, setDeliveryCharge] = useState(null);
@@ -415,6 +419,7 @@ function OrderForm({ products }) {
     setCustomerNotes('');
     setHistory([]);
     setLookupState('idle');
+    setOrderSource('');
     setDeliveryCharge('0');
     setDeliveryDate('');
     setCourier('');
@@ -454,6 +459,7 @@ function OrderForm({ products }) {
       phone,
       area,
       address,
+      orderSource,
       fulfilmentMethod,
       deliveryCharge: charge,
       deliveryDate: deliveryDate || null,
@@ -515,9 +521,11 @@ function OrderForm({ products }) {
     ? 'Add at least one product.'
     : !customerName.trim() || !phone.trim()
       ? 'Customer name and mobile number are required.'
-      : fulfilmentMethod === 'Delivery' && !address.trim()
-        ? 'A delivery address is required for Delivery orders.'
-        : null;
+      : !orderSource
+        ? 'Choose where this order came from.'
+        : fulfilmentMethod === 'Delivery' && !address.trim()
+          ? 'A delivery address is required for Delivery orders.'
+          : null;
 
   return (
     <div className="pb-28 lg:pb-6">
@@ -559,6 +567,7 @@ function OrderForm({ products }) {
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-sm font-semibold">{money(p.sellingPriceQar)}</p>
+                    {p.offerPrice != null && <p className="text-xs font-medium text-primary">Offer {money(p.offerPrice)}</p>}
                     <p className="text-xs text-muted-foreground">{p.currentStock} in stock</p>
                   </div>
                 </button>
@@ -638,6 +647,15 @@ function OrderForm({ products }) {
                         onChange={(e) => setLine(l.key, { unitPrice: Math.max(Number(e.target.value) || 0, 0) })}
                         className="mt-1 h-9"
                       />
+                      {l.offerPrice != null && l.unitPrice !== l.offerPrice && (
+                        <button
+                          type="button"
+                          onClick={() => setLine(l.key, { unitPrice: l.offerPrice })}
+                          className="mt-1 text-xs font-medium text-primary underline-offset-2 hover:underline"
+                        >
+                          Use website offer {money(l.offerPrice)}
+                        </button>
+                      )}
                     </div>
                     <div>
                       <Label className="text-xs">Discount</Label>
@@ -733,6 +751,23 @@ function OrderForm({ products }) {
           <div className="card-surface p-4">
             <h2 className="section-title text-sm font-semibold">Customer</h2>
             <div className="mt-3 space-y-3">
+              <div>
+                <Label>Order came from</Label>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {ORDER_SOURCES.map((s) => (
+                    <Button
+                      key={s}
+                      type="button"
+                      size="sm"
+                      variant={orderSource === s ? 'default' : 'outline'}
+                      className="h-9"
+                      onClick={() => setOrderSource(s)}
+                    >
+                      {s}
+                    </Button>
+                  ))}
+                </div>
+              </div>
               <div>
                 <Label htmlFor="phone">Mobile number</Label>
                 <div className="mt-1 flex gap-2">

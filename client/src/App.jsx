@@ -122,7 +122,10 @@ let didInitialStaffRedirect = false;
 
 function StaffGate({ children }) {
   const { user } = useAuth();
+  const { search } = useLocation();
   const isStaff = user && (user.role === 'admin' || user.role === 'staff');
+  // "Visit online store" in the hub / admin opens /?store=1: show the shop, not the back office.
+  if (new URLSearchParams(search).has('store')) didInitialStaffRedirect = true;
   if (isStaff && !didInitialStaffRedirect) {
     didInitialStaffRedirect = true;
     return <Navigate to={user.role === 'admin' ? '/hub' : '/admin'} replace />;

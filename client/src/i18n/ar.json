@@ -55,6 +55,8 @@
   },
   "products": {
     "allProducts": "جميع المنتجات",
+    "offers": "العروض",
+    "offerEnds": "ينتهي العرض {{when}}",
     "filters": "الفلاتر",
     "sortBy": "ترتيب حسب",
     "sortNewest": "الأحدث",
@@ -305,6 +307,10 @@
     "free": "مجاني",
     "standardDays": "1–2 يوم عمل",
     "expressDays": "1–2 يوم عمل",
+    "pickup": "الاستلام",
+    "pickupDays": "مجاني — سنراسلك عبر واتساب عندما يكون جاهزًا للاستلام",
+    "heading": "التوصيل أو الاستلام",
+    "contactDetails": "بياناتك",
     "addMorePre": "أضف",
     "addMorePost": "إضافية للحصول على شحن مجاني"
   },

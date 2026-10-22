@@ -4,7 +4,7 @@
  * except an explicit return restock or an explicit cancellation restock.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Eye, Loader2, Pencil, Printer, Search, Tag, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Download, Eye, Loader2, Pencil, Printer, Search, Tag, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -50,6 +50,7 @@ import {
 } from '@/hub/lib/printing';
 import {
   DELIVERY_FLOW,
+  ORDER_SOURCES,
   PAYMENT_HELD_IN_OPTIONS,
   PICKUP_FLOW,
   RETURN_REASONS,
@@ -59,6 +60,8 @@ import {
 
 const money = (v) => `QAR ${Number(v || 0).toFixed(2)}`;
 const CONTACT_OPEN_STATUSES = ['Draft', 'Confirmed', 'Ready for Delivery', 'Out for Delivery'];
+/** Completed orders: changing items here is an exchange. */
+const EXCHANGE_STATUSES = ['Delivered', 'Collected', 'Order Fulfilled'];
 
 export function SalesOrderDetails({ orderId, onClose }) {
   const open = Boolean(orderId);
@@ -112,6 +115,9 @@ function OrderBody({ data }) {
   const [paymentNotes, setPaymentNotes] = useState(data.paymentNotes ?? '');
   const [area, setArea] = useState(data.area ?? '');
   const [address, setAddress] = useState(data.address ?? '');
+  /** Only staff-entered orders pick a source; web and till orders carry theirs. */
+  const sourceEditable = data.channel === 'Staff';
+  const [orderSource, setOrderSource] = useState(data.orderSource ?? '');
 
   const settingsData = useQuery(appSettingsQuery).data;
   // An explicit choice on this device wins; otherwise the Settings default applies.
@@ -159,6 +165,7 @@ function OrderBody({ data }) {
         orderId: data.id,
         // Only a real change: the server refuses Returned/Cancelled here even unchanged.
         ...(status !== data.status ? { status } : {}),
+        ...(sourceEditable && orderSource && orderSource !== data.orderSource ? { orderSource } : {}),
         ...(pickup
           ? { pickupDate: pickupDate || null, pickupTime, pickupNotes }
           : { deliveryDate: deliveryDate || null, courier, trackingNumber, deliveryNotes }),
@@ -303,6 +310,15 @@ function OrderBody({ data }) {
   const [pDelivery, setPDelivery] = useState('0');
   const [pReason, setPReason] = useState('');
   const [pSearch, setPSearch] = useState('');
+  const [pFulfilment, setPFulfilment] = useState(data.fulfilmentMethod);
+  const [pAddress, setPAddress] = useState('');
+  const [pArea, setPArea] = useState('');
+  const [pTried, setPTried] = useState(false);
+  /** Exchange = the same edit on a completed order, optionally sent round again for delivery. */
+  const [exchangeMode, setExchangeMode] = useState(false);
+  const [pReopen, setPReopen] = useState(true);
+  const pPickup = pFulfilment === 'Customer Pickup';
+  const needsAddress = !pPickup && pickup && !data.address;
   const catalogue = useQuery({ ...productsQuery, enabled: priceOpen });
   const addable = useMemo(() => {
     const term = pSearch.trim().toLowerCase();
@@ -312,7 +328,13 @@ function OrderBody({ data }) {
       .slice(0, 8);
   }, [catalogue.data, pSearch]);
 
-  const openPriceEdit = () => {
+  const openPriceEdit = (exchange = false) => {
+    setExchangeMode(exchange);
+    setPReopen(true);
+    setPFulfilment(data.fulfilmentMethod);
+    setPAddress(data.address ?? '');
+    setPArea(data.area ?? '');
+    setPTried(false);
     setPriceLines(
       data.items.map((item) => ({
         id: item.id ?? '',
@@ -327,7 +349,7 @@ function OrderBody({ data }) {
     setPDiscountType('amount');
     setPDiscountValue('0');
     setPDelivery(String(data.deliveryCharge));
-    setPReason('');
+    setPReason(exchange ? 'Exchange: ' : '');
     setPSearch('');
     setPriceOpen(true);
   };
@@ -360,9 +382,17 @@ function OrderBody({ data }) {
     const value = Math.max(Number(pDiscountValue) || 0, 0);
     const orderDiscount = pDiscountType === 'percent' ? (net * Math.min(value, 100)) / 100 : Math.min(value, net);
     const subtotal = Math.max(net - orderDiscount, 0);
-    const delivery = pickup ? 0 : Math.max(Number(pDelivery) || 0, 0);
+    const delivery = pPickup ? 0 : Math.max(Number(pDelivery) || 0, 0);
     return { net, orderDiscount, subtotal, delivery, grandTotal: subtotal + delivery };
-  }, [priceLines, pDiscountType, pDiscountValue, pDelivery, pickup]);
+  }, [priceLines, pDiscountType, pDiscountValue, pDelivery, pPickup]);
+
+  const switchFulfilment = (method) => {
+    setPFulfilment(method);
+    // Back to delivery from pickup: start from the usual charge, staff can still change it.
+    if (method === 'Delivery' && !(Number(pDelivery) > 0)) setPDelivery(String(settingsData?.defaultDeliveryCharge ?? 10));
+  };
+  const reasonMissing = !pReason.trim() || pReason.trim() === 'Exchange:';
+  const addressMissing = needsAddress && !pAddress.trim();
 
   const savePrices = useMutation({
     mutationFn: () =>
@@ -378,15 +408,19 @@ function OrderBody({ data }) {
         })),
         orderDiscountType: pDiscountType,
         orderDiscountValue: Number(pDiscountValue) || 0,
-        deliveryCharge: Number(pDelivery) || 0,
+        deliveryCharge: pPickup ? 0 : Number(pDelivery) || 0,
+        fulfilmentMethod: pFulfilment,
+        ...(needsAddress ? { address: pAddress, area: pArea } : {}),
+        exchange: exchangeMode,
+        reopen: exchangeMode && pReopen,
         reason: pReason,
       }),
     onSuccess: async (result) => {
       setPriceOpen(false);
-      toast.success(`Order updated — new total ${money(result.grandTotal)}.`, {
+      toast.success(`${exchangeMode ? 'Exchange saved' : 'Order updated'} — new total ${money(result.grandTotal)}.`, {
         description:
           result.overpaid > 0
-            ? `Customer has overpaid ${money(result.overpaid)}.`
+            ? `Customer is owed ${money(result.overpaid)} — refund it or add an item to cover it.`
             : result.balanceDue > 0 && data.amountReceived > 0
               ? `${money(result.balanceDue)} still to collect — update the payment when received.`
               : undefined,
@@ -498,7 +532,9 @@ function OrderBody({ data }) {
           <StatusBadge value={data.status} />
           <StatusBadge value={data.paymentStatus} />
           <span className="rounded-full bg-secondary px-2.5 py-1 text-xs">{data.fulfilmentMethod}</span>
-          {data.channel && <span className="rounded-full bg-secondary px-2.5 py-1 text-xs">{data.channel}</span>}
+          {(data.orderSource || data.channel) && (
+            <span className="rounded-full bg-secondary px-2.5 py-1 text-xs">{data.orderSource ?? data.channel}</span>
+          )}
           <span className="text-xs text-muted-foreground">{new Date(data.orderDate).toLocaleString('en-GB')}</span>
         </div>
 
@@ -545,6 +581,23 @@ function OrderBody({ data }) {
             </p>
           )}
         </div>
+
+        {!readOnly && canCorrectPrices && !isDraft && !isCancelled && (
+          data.items.some((i) => i.returnedQty > 0) ? (
+            <p className="text-xs text-muted-foreground">This order has returned items, so its items can no longer be edited.</p>
+          ) : (
+            <div className="flex flex-wrap justify-end gap-2">
+              {EXCHANGE_STATUSES.includes(data.status) && (
+                <Button variant="outline" className="h-10" onClick={() => openPriceEdit(true)}>
+                  <ArrowLeftRight className="mr-2 size-4" /> Exchange items
+                </Button>
+              )}
+              <Button variant="outline" className="h-10" onClick={() => openPriceEdit(false)}>
+                <Pencil className="mr-2 size-4" /> Edit items, delivery / pickup &amp; charges
+              </Button>
+            </div>
+          )
+        )}
 
         <div className="card-surface overflow-hidden">
           <table className="w-full text-sm">
@@ -618,6 +671,23 @@ function OrderBody({ data }) {
             )}
             {canUpdate && (
               <>
+                {!isDraft && sourceEditable && (
+                  <div>
+                    <Label>Order came from</Label>
+                    <Select value={orderSource} onValueChange={setOrderSource}>
+                      <SelectTrigger className="mt-1 h-11">
+                        <SelectValue placeholder="Not set — choose one" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ORDER_SOURCES.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {s}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 {!isDraft && (
                   <div>
                     <Label>Status</Label>
@@ -830,11 +900,6 @@ function OrderBody({ data }) {
                 Cancel order
               </Button>
             )}
-            {canCorrectPrices && data.status !== 'Cancelled' && !data.items.some((i) => i.returnedQty > 0) && (
-              <Button variant="outline" className="h-11" onClick={openPriceEdit}>
-                <Pencil className="mr-2 size-4" /> Edit order
-              </Button>
-            )}
           </div>
         )}
 
@@ -982,14 +1047,44 @@ function OrderBody({ data }) {
       <Dialog open={priceOpen} onOpenChange={setPriceOpen}>
         <DialogContent className="z-[70] max-h-[85vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Edit order</DialogTitle>
+            <DialogTitle>{exchangeMode ? `Exchange items · ${data.id}` : `Edit order · ${data.id}`}</DialogTitle>
             <DialogDescription>
-              Add or remove products, change quantities, prices and discounts, or the delivery charge. Stock follows the
-              change (added units are checked against live stock), and every edit is audited. Payment is not changed —
-              update it afterwards if the customer pays more or is owed money.
+              {exchangeMode
+                ? 'Remove (or reduce) what the customer is giving back and add what they are taking instead. Returned units go back into stock, new units are checked against live stock and deducted. Same order number; every change is audited.'
+                : 'Add or remove products, change quantities, prices and discounts, switch between delivery and pickup, or change the delivery charge. Stock follows the change (added units are checked against live stock), and every edit is audited.'}{' '}
+              Payment is not changed — settle any difference afterwards in Fulfilment &amp; payment.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            <div className="rounded-2xl border border-border p-3">
+              <Label className="text-xs text-muted-foreground">Fulfilment type</Label>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                {['Delivery', 'Customer Pickup'].map((m) => (
+                  <Button
+                    key={m}
+                    type="button"
+                    variant={pFulfilment === m ? 'default' : 'outline'}
+                    className="h-10"
+                    onClick={() => switchFulfilment(m)}
+                  >
+                    {m}
+                  </Button>
+                ))}
+              </div>
+              {pPickup && <p className="mt-2 text-xs text-muted-foreground">Delivery charge is QAR 0 for Customer Pickup.</p>}
+              {needsAddress && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Area</Label>
+                    <Input value={pArea} onChange={(e) => setPArea(e.target.value)} className="mt-1 h-10" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs text-muted-foreground">Delivery address *</Label>
+                    <Input value={pAddress} onChange={(e) => setPAddress(e.target.value)} className="mt-1 h-10" />
+                  </div>
+                </div>
+              )}
+            </div>
             {priceLines.map((line, index) => (
               <div key={line.id || `new-${line.key}-${index}`} className="rounded-2xl border border-border p-3">
                 <div className="mb-2 flex items-start justify-between gap-2">
@@ -1120,9 +1215,9 @@ function OrderBody({ data }) {
                   type="number"
                   min={0}
                   step="0.01"
-                  value={pDelivery}
+                  value={pPickup ? '0' : pDelivery}
                   onChange={(e) => setPDelivery(e.target.value)}
-                  disabled={pickup}
+                  disabled={pPickup}
                   className="mt-1 h-11"
                 />
               </div>
@@ -1134,30 +1229,49 @@ function OrderBody({ data }) {
               <Line label="Subtotal" value={money(priceTotals.subtotal)} />
               <Line label="Delivery" value={money(priceTotals.delivery)} />
               <Line label="New payable total" value={money(priceTotals.grandTotal)} />
+              <PaymentDifference received={data.amountReceived} newTotal={priceTotals.grandTotal} />
             </div>
 
+            {exchangeMode && (
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox checked={pReopen} onCheckedChange={(v) => setPReopen(v === true)} className="mt-0.5" />
+                <span>
+                  Set the order back to <b>Confirmed</b> so the new items go out for {pPickup ? 'pickup' : 'delivery'} again
+                </span>
+              </label>
+            )}
+
             <div>
-              <Label className="text-xs text-muted-foreground">Reason for this edit *</Label>
+              <Label className="text-xs text-muted-foreground">Reason for this {exchangeMode ? 'exchange' : 'edit'} *</Label>
               <Textarea
                 value={pReason}
                 onChange={(e) => setPReason(e.target.value)}
                 rows={2}
-                placeholder="e.g. Customer added a second size by phone"
-                className="mt-1"
+                placeholder={exchangeMode ? 'e.g. Exchange: size M swapped for L' : 'e.g. Customer added a second size by phone'}
+                className={`mt-1 ${pTried && reasonMissing ? 'border-destructive' : ''}`}
               />
+              {pTried && reasonMissing && (
+                <p className="mt-1 text-xs text-destructive">Write a short reason — it is saved in the order history.</p>
+              )}
             </div>
+            {pTried && addressMissing && <p className="text-xs text-destructive">Enter the delivery address to switch to Delivery.</p>}
             {badQuantity && <p className="text-xs text-destructive">Every quantity must be a whole number of at least 1.</p>}
           </div>
           <DialogFooter>
             <Button variant="outline" className="h-11" onClick={() => setPriceOpen(false)}>
               Cancel
             </Button>
+            {/* Stays clickable: a click with a missing reason points at the field instead of silently doing nothing. */}
             <Button
               className="h-11"
-              onClick={() => savePrices.mutate()}
-              disabled={savePrices.isPending || !pReason.trim() || badQuantity || !priceLines.length}
+              onClick={() => {
+                setPTried(true);
+                if (reasonMissing || addressMissing) return;
+                savePrices.mutate();
+              }}
+              disabled={savePrices.isPending || badQuantity || !priceLines.length}
             >
-              {savePrices.isPending ? 'Saving…' : 'Save changes'}
+              {savePrices.isPending ? 'Saving…' : exchangeMode ? 'Save exchange' : 'Save changes'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1299,6 +1413,22 @@ function ConsignmentLine({ item: i, cancelled }) {
       Consignment · {i.consignmentPartner || 'Partner'} · product cost {money(s.productCost)} · OP {money(s.opCost)} ·
       other {money(s.otherCost)} · FEMNIA {money(s.femniaTotal)} · partner {money(s.partnerTotal)}
     </p>
+  );
+}
+
+/** What the edit means for money already taken: collect more, or the customer is owed. */
+function PaymentDifference({ received, newTotal }) {
+  if (!(received > 0)) return null;
+  const diff = Math.round((newTotal - received) * 100) / 100;
+  if (diff === 0) return <Line label="Already paid" value={`${money(received)} — nothing to settle`} />;
+  return (
+    <>
+      <Line label="Already paid" value={money(received)} />
+      <div className={`flex items-center justify-between gap-4 py-0.5 font-semibold ${diff > 0 ? 'text-primary' : 'text-destructive'}`}>
+        <span>{diff > 0 ? 'Customer pays extra' : 'Customer is owed'}</span>
+        <span>{money(Math.abs(diff))}</span>
+      </div>
+    </>
   );
 }
 

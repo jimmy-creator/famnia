@@ -246,6 +246,7 @@ async function schedulePickup(shipmentId) {
 export async function autoCreateShipment(order) {
   if (!SHIPROCKET_SHIP_ENABLED) return;
   if (!order) return;
+  if (order.shippingMethod === 'pickup') return;   // the customer collects it — nothing to ship
 
   // Reload to get the freshest copy in case the order was updated mid-flight.
   const fresh = order.shippingMeta != null && order.id ? order : await Order.findByPk(order.id);

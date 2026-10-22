@@ -6,6 +6,7 @@ import { calculateTax } from '../utils/tax.js';
 import { calculateShipping } from '../utils/shipping.js';
 import { autoCreateShipment } from '../services/shipping.js';
 import { contactPhoneError } from '../utils/phone.js';
+import { effectivePrice } from '../services/offers.js';
 
 const generateOrderNumber = () => {
   const prefix = 'ORD';
@@ -50,6 +51,8 @@ async function buildOrderItems(items) {
       }
     }
 
+    // A running storefront offer replaces the list price.
+    price = effectivePrice(product.id, price);
     totalAmount += price * item.quantity;
 
     return {
@@ -163,7 +166,7 @@ export const createOrder = async (req, res) => {
     const shippingResult = await calculateShipping(afterDiscount, orderItems.length, shippingAddress?.state);
     // An option the store does not offer (express while hidden) falls back to standard.
     const shippingMethod = shippingResult[requestedMethod]?.rate !== undefined ? requestedMethod : 'standard';
-    const shippingCharge = shippingResult[shippingMethod]?.rate || shippingResult.standard.rate;
+    const shippingCharge = shippingResult[shippingMethod]?.rate ?? shippingResult.standard.rate;
 
     const finalAmount = Math.round((afterDiscount + shippingCharge) * 100) / 100;
 
@@ -176,6 +179,7 @@ export const createOrder = async (req, res) => {
       paymentMethod,
       shippingCharge,
       shippingMethod,
+      fulfilmentMethod: shippingMethod === 'pickup' ? 'Customer Pickup' : 'Delivery',
       couponCode: code,
       discount,
       taxAmount: totalTax,
@@ -209,7 +213,8 @@ export const createGuestOrder = async (req, res) => {
       return res.status(400).json({ message: 'Valid email is required for guest checkout' });
     }
 
-    if (!shippingAddress?.fullName || !shippingAddress?.address || !shippingAddress?.phone) {
+    // Pickup orders need no street address.
+    if (!shippingAddress?.fullName || !shippingAddress?.phone || (requestedMethod !== 'pickup' && !shippingAddress?.address)) {
       return res.status(400).json({ message: 'Shipping address with name, address, and phone is required' });
     }
     const phoneError = contactPhoneError(shippingAddress);
@@ -224,7 +229,7 @@ export const createGuestOrder = async (req, res) => {
     const shippingResult = await calculateShipping(afterDiscount, orderItems.length, shippingAddress?.state);
     // An option the store does not offer (express while hidden) falls back to standard.
     const shippingMethod = shippingResult[requestedMethod]?.rate !== undefined ? requestedMethod : 'standard';
-    const shippingCharge = shippingResult[shippingMethod]?.rate || shippingResult.standard.rate;
+    const shippingCharge = shippingResult[shippingMethod]?.rate ?? shippingResult.standard.rate;
 
     const finalAmount = Math.round((afterDiscount + shippingCharge) * 100) / 100;
 
@@ -238,6 +243,7 @@ export const createGuestOrder = async (req, res) => {
       paymentMethod,
       shippingCharge,
       shippingMethod,
+      fulfilmentMethod: shippingMethod === 'pickup' ? 'Customer Pickup' : 'Delivery',
       couponCode: code,
       discount,
       taxAmount: totalTax,

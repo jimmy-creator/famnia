@@ -43,7 +43,7 @@ function statusLine(order) {
         ? 'Good news — your order is *confirmed*. We will let you know as soon as it is ready for pickup.'
         : `Good news — your order is *confirmed* and will be delivered${order.deliveryDate ? ` on *${dateText(order.deliveryDate)}*` : ' within 1–2 days'}.`;
     case 'Awaiting Pickup':
-      return 'Your order is *ready for pickup*. You can collect it from our store at your convenience.';
+      return 'Your order is *ready for pickup*. Please reply with a convenient time and we will share the pickup details.';
     case 'Out for Delivery':
       return 'Your order is *out for delivery* and will reach you shortly. Please keep your phone reachable.';
     case 'Delivery Failed':
@@ -68,6 +68,9 @@ export function orderStatusMessage(order) {
   const balance = order.remainingBalance ?? Math.max((order.grandTotal || 0) - (order.amountReceived || 0), 0);
   const paid = order.paymentStatus === 'Paid' || (order.grandTotal > 0 && balance <= 0);
   const showMoney = !['Cancelled', 'Returned'].includes(order.status);
+  const pickup = order.fulfilmentMethod === 'Customer Pickup';
+  const delivery = Number(order.deliveryCharge) || 0;
+  const totalNote = pickup ? '' : delivery > 0 ? ` (delivery charge ${money(delivery)} included)` : ' (free delivery)';
   return [
     `Hi ${order.customerName || 'there'},`,
     '',
@@ -76,8 +79,9 @@ export function orderStatusMessage(order) {
     `*Order ${order.id}*`,
     ...itemLines(order.items),
     '',
-    showMoney && order.grandTotal != null ? `Total: ${money(order.grandTotal)}` : null,
-    showMoney && order.grandTotal != null ? (paid ? 'Payment: Paid ✅' : `Amount to pay: ${money(balance)}${order.paymentMode ? ` (${order.paymentMode})` : ''}`) : null,
+    showMoney && order.grandTotal != null ? `Total: ${money(order.grandTotal)}${totalNote}` : null,
+    showMoney && order.grandTotal != null ? (paid ? 'Payment: Paid ✅' : `Amount to pay: ${money(balance)}`) : null,
+    showMoney && order.grandTotal != null && !paid ? `You can pay by *Fawran* or *cash* on ${pickup ? 'pickup' : 'delivery'}.` : null,
     order.trackingNumber && order.status === 'Out for Delivery' ? `Tracking: ${order.trackingNumber}${order.courier ? ` (${order.courier})` : ''}` : null,
     order.fulfilmentMethod !== 'Customer Pickup' && order.address && ['Draft', 'Confirmed', 'Pending', 'Out for Delivery'].includes(order.status)
       ? `Delivery address: ${[order.address, order.area].filter(Boolean).join(', ')}`

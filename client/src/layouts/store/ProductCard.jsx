@@ -81,7 +81,8 @@ export default function ProductCard({ product, eager = false }) {
           </span>
         ) : hasDiscount ? (
           <span className="absolute left-2.5 top-2.5 rounded-full bg-primary px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-primary-foreground">
-            {t('common.sale')}
+            {/* A running offer shows how much is off; a standing compare-at price just says Sale. */}
+            {product.offer ? `−${Math.round((1 - product.price / product.comparePrice) * 100)}%` : t('common.sale')}
           </span>
         ) : null}
 

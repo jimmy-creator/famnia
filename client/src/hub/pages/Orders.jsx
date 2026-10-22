@@ -11,7 +11,7 @@ import { Input } from '@/hub/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/hub/ui/select';
 import { ordersQuery } from '@/hub/lib/api';
 import { downloadFile, toCsv } from '@/hub/lib/format';
-import { SALES_ORDER_STATUSES } from '@/hub/lib/sales';
+import { ALL_ORDER_SOURCES, SALES_ORDER_STATUSES } from '@/hub/lib/sales';
 import { useHubTitle } from '@/hub/lib/useHubTitle';
 
 const money = (v) => `QAR ${Number(v || 0).toFixed(2)}`;
@@ -37,19 +37,21 @@ export default function SalesOrdersPage() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('All');
   const [fulfilment, setFulfilment] = useState('All');
+  const [source, setSource] = useState('All');
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (orders.data ?? []).filter((o) => {
       if (status !== 'All' && o.status !== status) return false;
       if (fulfilment !== 'All' && o.fulfilmentMethod !== fulfilment) return false;
+      if (source !== 'All' && (o.orderSource ?? 'Not set') !== source) return false;
       if (!q) return true;
       return [o.id, o.customerName, o.customerCode, o.phone, o.altPhone, o.email, o.area, o.trackingNumber, o.courier, o.channel, o.couponCode, o.paymentGateway,
         ...(o.items ?? []).map((i) => i.productCode)]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [orders.data, search, status, fulfilment]);
+  }, [orders.data, search, status, fulfilment, source]);
 
   const open = (id) =>
     setParams(
@@ -93,6 +95,7 @@ export default function SalesOrdersPage() {
                     rows.map((o) => ({
                       Order: o.id,
                       Channel: o.channel,
+                      Source: o.orderSource ?? '',
                       Date: new Date(o.orderDate).toLocaleString('en-GB'),
                       Customer: o.customerName,
                       Phone: o.phone,
@@ -122,7 +125,7 @@ export default function SalesOrdersPage() {
         }
       />
 
-      <div className="card-surface mb-4 grid gap-3 p-4 sm:grid-cols-3">
+      <div className="card-surface mb-4 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="relative sm:col-span-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -156,6 +159,20 @@ export default function SalesOrdersPage() {
             <SelectItem value="Customer Pickup">Customer Pickup</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={source} onValueChange={setSource}>
+          <SelectTrigger className="h-11" aria-label="Filter by order source">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="All">All sources</SelectItem>
+            {ALL_ORDER_SOURCES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s === 'Website' ? 'Website (online store)' : s}
+              </SelectItem>
+            ))}
+            <SelectItem value="Not set">Not set</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {!rows.length && <p className="card-surface p-6 text-sm text-muted-foreground">No orders match these filters.</p>}
@@ -167,7 +184,7 @@ export default function SalesOrdersPage() {
           <button type="button" onClick={() => open(o.id)} className="w-full text-left">
             <div className="flex items-center justify-between gap-2">
               <p className="flex items-center gap-2 font-medium">
-                {o.id} <ChannelTag channel={o.channel} />
+                {o.id} <ChannelTag channel={o.orderSource ?? o.channel} />
               </p>
               <StatusBadge value={o.status} />
             </div>
@@ -205,7 +222,7 @@ export default function SalesOrdersPage() {
               <tr key={o.id} onClick={() => open(o.id)} className="cursor-pointer border-t border-border hover:bg-secondary/40">
                 <td className="p-3 font-medium">
                   <p>{o.id}</p>
-                  <ChannelTag channel={o.channel} />
+                  <ChannelTag channel={o.orderSource ?? o.channel} />
                 </td>
                 <td className="p-3">{new Date(o.orderDate).toLocaleDateString('en-GB')}</td>
                 <td className="p-3">

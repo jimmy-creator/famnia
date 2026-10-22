@@ -2,6 +2,7 @@ import User from './User.js';
 import Product from './Product.js';
 import Order from './Order.js';
 import Coupon from './Coupon.js';
+import Offer from './Offer.js';
 import Review from './Review.js';
 import Setting from './Setting.js';
 import Category from './Category.js';
@@ -489,7 +490,7 @@ export async function restoreOnlineStock(order) {
 }
 
 export {
-  User, Product, Order, Coupon, Review, Setting, Category,
+  User, Product, Order, Coupon, Offer, Review, Setting, Category,
   Pincode, AbandonedCart, PriceRequest,
   Location, ProductStock, StockTransfer, CashierSession,
   SalesReturn,

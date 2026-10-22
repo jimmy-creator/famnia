@@ -21,6 +21,7 @@ import orderRoutes from './routes/orders.js';
 import uploadRoutes from './routes/upload.js';
 import paymentRoutes from './routes/payment.js';
 import couponRoutes from './routes/coupons.js';
+import offerRoutes from './routes/offers.js';
 import reviewRoutes from './routes/reviews.js';
 import analyticsRoutes from './routes/analytics.js';
 import settingsRoutes from './routes/settings.js';
@@ -67,6 +68,7 @@ import { registerShiprocketHooks } from './services/shiprocketSync.js';
 import { startAbandonedCartJob } from './services/abandonedCartJob.js';
 import { startLowStockJob } from './services/lowStockJob.js';
 import { startDepreciationJob } from './services/depreciationJob.js';
+import { startOfferRefresh } from './services/offers.js';
 import sitemapRoutes from './routes/sitemap.js';
 import { sanitizeInput, preventInjection, forceHttps } from './middleware/security.js';
 import htmlInject from './middleware/htmlInject.js';
@@ -137,6 +139,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/coupons', couponRoutes);
+app.use('/api/offers', offerRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/settings', settingsRoutes);
@@ -236,6 +239,7 @@ const start = async () => {
       startAbandonedCartJob();
       startLowStockJob();
       startDepreciationJob();
+      startOfferRefresh();
       registerShiprocketHooks();
       seedDefaultAccountsIfEmpty().catch((err) =>
         console.error('[finance/seed]', err.message)

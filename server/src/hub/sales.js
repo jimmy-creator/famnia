@@ -47,6 +47,18 @@ export function channelLabel(order) {
   return 'Staff';
 }
 
+/** Where a staff-entered order came from; web and till orders get theirs from the channel. */
+export const ORDER_SOURCES = ['WhatsApp', 'Instagram', 'Phone call', 'Email', 'Walk-in', 'Other'];
+
+export function orderSourceOf(order) {
+  if (order.channel === 'web') return 'Website';
+  if (order.channel === 'pos') return 'Till';
+  if (order.orderSource) return order.orderSource;
+  if (order.channel === 'whatsapp') return 'WhatsApp';
+  if (order.channel === 'phone') return 'Phone call';
+  return null;
+}
+
 /** Till sales are managed at the till (returns, voids); the hub only reads them. */
 export const isTillSale = (order) => order.channel === 'pos';
 
@@ -169,6 +181,7 @@ export function toSalesOrder(order, { customerPrefix = 'CUS' } = {}) {
     id: order.orderNumber,
     dbId: order.id,
     channel: channelLabel(order),
+    orderSource: orderSourceOf(order),
     tillSale: isTillSale(order),
     customerId: order.userId ? String(order.userId) : null,
     customerCode: customerCode(order.userId, customerPrefix),
@@ -311,6 +324,7 @@ export const FIELD_LABELS = {
   pickupTime: 'Pickup time',
   pickupNotes: 'Pickup notes',
   hubPaymentMode: 'Payment method',
+  orderSource: 'Order source',
   hubPaymentStatus: 'Payment status',
   amountReceived: 'Amount received',
   paymentDate: 'Payment date',

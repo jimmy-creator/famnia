@@ -2,6 +2,7 @@ import { Op } from 'sequelize';
 import sequelize from '../config/database.js';
 import { Product, syncProductStockFromForm } from '../models/index.js';
 import { priceFromMargin, PUBLIC_PRODUCT_ATTRIBUTES, publicProduct, STOREFRONT_WHERE } from '../utils/pricing.js';
+import { productIdsOnOffer } from '../services/offers.js';
 
 // Storefront visibility (active, not POS-only, in stock). Applied to every
 // public-facing product query so a hidden product never leaks out.
@@ -51,10 +52,13 @@ export const getProducts = async (req, res) => {
       order = 'DESC',
       featured,
       ids,
+      offer,
     } = req.query;
 
     const where = { ...STOREFRONT_WHERE };
     const and = [];
+    // Products in a running offer (the storefront's Offers section).
+    if (offer) and.push({ id: { [Op.in]: productIdsOnOffer() } });
 
     if (category) {
       // Match the primary `category` OR any entry in the `categories` array.

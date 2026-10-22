@@ -42,6 +42,7 @@ function EnglishBody() {
         <ul>
           <li><strong>Free home delivery</strong> on orders of QAR 100 and above.</li>
           <li>Standard delivery is <strong>QAR 10</strong> for orders below QAR 100.</li>
+          <li><strong>Pickup is free</strong> — choose Pickup at checkout and we'll WhatsApp you when your order is ready to collect.</li>
           <li>Cash on Delivery may carry a small handling fee.</li>
         </ul>
       </section>
@@ -126,6 +127,7 @@ function ArabicBody() {
         <ul>
           <li><strong>توصيل مجاني</strong> للطلبات بقيمة 100 ريال قطري فأكثر.</li>
           <li>رسوم التوصيل العادي <strong>10 ريالات قطرية</strong> للطلبات التي تقلّ عن 100 ريال قطري.</li>
+          <li><strong>الاستلام مجاني</strong> — اختر «الاستلام» عند إتمام الطلب وسنراسلك عبر واتساب عندما يكون طلبك جاهزًا للاستلام.</li>
           <li>قد تخضع الدفع عند الاستلام لرسوم إضافية بسيطة.</li>
         </ul>
       </section>

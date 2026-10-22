@@ -8,7 +8,7 @@ import { useTheme } from '../context/ThemeContext';
 import { CURRENCY } from '../utils/currency';
 import ProductsManager from '../components/admin/ProductsManager';
 import CategoriesManager from '../components/admin/CategoriesManager';
-import { Menu, LogOut, Plus, Pencil, Trash2, X, Eye, Search, Image as ImageIcon, Star, Check, Boxes } from 'lucide-react';
+import { Menu, LogOut, Plus, Pencil, Trash2, X, Eye, Search, Image as ImageIcon, Star, Check, Boxes, Store } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -803,6 +803,15 @@ export default function Admin({ embedded = false, legacy = null, screen = null }
           sidebarOpen ? 'translate-x-0' : '-translate-x-full',
         )}>
           <div className="shrink-0 px-3 py-3 font-serif text-xl font-semibold tracking-wide">Admin</div>
+          {/* The live storefront in a new tab, to check changes made here. */}
+          <a
+            href="/?store=1"
+            target="_blank"
+            rel="noopener"
+            className="mb-2 flex shrink-0 items-center gap-2 rounded-md border border-primary/40 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-accent"
+          >
+            <Store className="size-4" /> Visit online store
+          </a>
           {/* min-h-0 is required: without it a flex child won't shrink below
               its content height and the list would overflow instead of scroll. */}
           <nav className="min-h-0 flex-1 overflow-y-auto">

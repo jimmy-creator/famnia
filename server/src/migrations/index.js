@@ -126,6 +126,8 @@ const STEPS = [
   // Purchase orders: supplier invoice in a foreign currency.
   ...[['currency', DataTypes.STRING(3)], ['exchangeRate', DataTypes.DECIMAL(14, 6)], ['foreignDiscount', DataTypes.DECIMAL(12, 3)]]
     .map(([col, type]) => [`PurchaseOrders.${col}`, () => addColumnIfMissing('PurchaseOrders', col, { type, allowNull: true })]),
+  // Sales orders: where a staff-entered order came from.
+  ['Orders.orderSource', () => addColumnIfMissing('Orders', 'orderSource', { type: DataTypes.STRING(30), allowNull: true })],
 ];
 
 export async function runMigrations({ log = console.log } = {}) {

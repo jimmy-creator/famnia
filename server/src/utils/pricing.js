@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
 import { dp } from './money.js';
+import { applyOfferToJson } from '../services/offers.js';
 
 // Selling price from landed cost + margin %: cost 10 at 25% → 12.50.
 // Rounded to the currency's precision (CURRENCY_DECIMALS); null when cost or
@@ -51,5 +52,5 @@ export function publicProduct(product) {
       ]));
     }
   }
-  return json;
+  return applyOfferToJson(json);
 }
