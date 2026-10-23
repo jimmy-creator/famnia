@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { STORE_TZ } from '@/lib/storeTime';
-import { openWhatsApp, productOrderMessage } from '@/lib/whatsapp';
+import { openWhatsApp, productEnquiryMessage } from '@/lib/whatsapp';
 import WhatsAppButton from '@/components/WhatsAppButton';
 
 function Stars({ value, size = 14 }) {
@@ -147,13 +147,10 @@ export default function ProductDetail() {
     addToCart(product, quantity, hasVariants ? selectedOptions : null);
     navigate('/checkout');
   };
-  // Opens a pre-filled WhatsApp chat — no order is created; staff add the
-  // sale in the hub once the customer confirms in the chat.
-  const handleWhatsAppOrder = () => openWhatsApp(productOrderMessage({
+  // A question in a WhatsApp chat — buying happens through the cart / checkout.
+  const handleWhatsAppEnquiry = () => openWhatsApp(productEnquiryMessage({
     name: product.name,
     productCode,
-    price: displayPrice,
-    quantity,
     selectedVariant: hasVariants ? selectedOptions : null,
     url: `${window.location.origin}/product/${product.slug}`,
   }));
@@ -343,8 +340,8 @@ export default function ProductDetail() {
               <Button type="button" size="lg" onClick={handleBuyNow} className="gap-2">
                 <Zap className="size-4" /> Buy now
               </Button>
-              <WhatsAppButton size="lg" onClick={handleWhatsAppOrder} className="w-full sm:w-auto">
-                Order on WhatsApp
+              <WhatsAppButton size="lg" onClick={handleWhatsAppEnquiry} className="w-full sm:w-auto">
+                Ask on WhatsApp
               </WhatsAppButton>
             </div>
           ) : (
@@ -388,7 +385,7 @@ export default function ProductDetail() {
           <Button type="button" className="flex-1 gap-1.5" onClick={handleBuyNow}>
             <Zap className="size-4" /> Buy now
           </Button>
-          <WhatsAppButton size="icon" onClick={handleWhatsAppOrder} aria-label="Order on WhatsApp" className="size-9 shrink-0" />
+          <WhatsAppButton size="icon" onClick={handleWhatsAppEnquiry} aria-label="Ask on WhatsApp" className="size-9 shrink-0" />
         </div>
       )}
 
