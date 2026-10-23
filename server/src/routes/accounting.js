@@ -641,13 +641,22 @@ router.get('/balance-sheet', protect, async (req, res) => {
 
     // ── Reconciliation ──────────────────────────────────────────
     // Name and quantify the gaps rather than plugging them.
-    const unbankedOnlineRevenue = num(await Order.sum('totalAmount', {
+    const paidOnlineRevenue = num(await Order.sum('totalAmount', {
       where: {
         paymentStatus: 'paid',
         cashierSessionId: null,          // POS orders carry one; web orders don't
         createdAt: { [Op.lte]: asOfEnd },
       },
     }));
+    // Web / staff orders whose payment is held in a company account post it (hub/orderCash.js).
+    const bankedOnlineRevenue = num(await CashTransaction.sum('amount', {
+      where: {
+        sourceType: 'Order',
+        date: { [Op.lte]: asOfEnd },
+        sourceId: { [Op.in]: sequelize.literal('(SELECT id FROM Orders WHERE cashierSessionId IS NULL)') },
+      },
+    }));
+    const unbankedOnlineRevenue = Math.max(paidOnlineRevenue - bankedOnlineRevenue, 0);
     const cashAccountOpeningBalances = accounts.reduce((s, a) => s + num(a.openingBalance), 0);
     const supplierOpeningBalances = num(await Supplier.sum('openingBalance'));
     const assetsWithoutCashSource = num(await FixedAsset.sum('cost', {
@@ -694,7 +703,7 @@ router.get('/balance-sheet', protect, async (req, res) => {
           assetsAcquiredWithoutCashSource: round3(assetsWithoutCashSource),
         },
         notes: [
-          'Online orders record revenue but never write a cash-account entry, so a web sale raises equity without raising an asset.',
+          'Online and hub orders whose payment is not held in a company account (gateway, driver, staff member) record revenue without a cash-account entry, so the sale raises equity without raising an asset.',
           'Cash-account opening balances have no equity counterpart. Record start-up cash as a Capital contribution instead.',
           'Supplier opening balances have no matching asset.',
           'Fixed assets bought without a cash account sit on the books with nothing credited against them.',

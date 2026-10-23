@@ -130,6 +130,9 @@ router.put('/finance/funding-accounts', need('admin.settings'), wrap(async (req,
   const changed = COMPANY_FUNDING_SOURCES.filter((s) => (previous[s] || null) !== (next[s] || null));
   if (changed.length) {
     await hubLog(req, 'Setting updated', 'Settings', MAPPING_KEY, `Funding account mapping changed: ${changed.join(', ')}`);
+    // Sales money already posted follows its holder to the newly mapped account.
+    const { resyncOrderCash } = await import('../hub/orderCash.js');
+    await resyncOrderCash();
   }
   res.json({ ok: true, changed: changed.length });
 }));

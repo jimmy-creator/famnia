@@ -13,6 +13,7 @@
     "import:hub": "node src/scripts/importHubData.js",
     "backfill:categories": "node src/scripts/backfillCategories.js",
     "backfill:order-codes": "node src/scripts/backfillOrderProductCodes.js",
+    "cash:single-pool": "node src/scripts/singleCashPool.js",
     "create:admin": "node src/scripts/createAdmin.js",
     "test:email": "node src/scripts/testEmail.js",
     "export:shiprocket": "node src/scripts/exportShiprocketInventory.js",

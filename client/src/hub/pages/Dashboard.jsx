@@ -398,8 +398,9 @@ export default function DashboardPage() {
             <DialogHeader>
               <DialogTitle>Total Available Cash</DialogTitle>
               <DialogDescription>
-                Money actually received for products, minus refunds and liability payments already made from company
-                funds. Unpaid balances, delivery charges and pending liabilities are not included.
+                All company money together — cash in hand, bank and Fawran. Sales payments add to it; expenses, assets
+                and reimbursements are paid from it. It is the same figure as Cash &amp; Bank, and the one new expenses are
+                checked against.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -409,20 +410,30 @@ export default function DashboardPage() {
               </div>
               <ul className="divide-y divide-border text-sm">
                 <li className="flex items-center justify-between py-2">
-                  <span className="text-muted-foreground">Product payments received</span>
-                  <span className="font-medium text-foreground">{QAR(d.cash.productPaymentsReceived)}</span>
+                  <span className="text-muted-foreground">Sales payments received (after refunds &amp; returns)</span>
+                  <span className="font-medium text-foreground">{QAR(d.cash.salesPaymentsNet)}</span>
                 </li>
                 <li className="flex items-center justify-between py-2">
-                  <span className="text-muted-foreground">Refunds &amp; returned items</span>
-                  <span className="font-medium text-destructive">− {QAR(d.cash.refunds)}</span>
+                  <span className="text-muted-foreground">Expenses paid</span>
+                  <span className="font-medium text-destructive">− {QAR(Math.abs(d.cash.expensesPaid))}</span>
                 </li>
                 <li className="flex items-center justify-between py-2">
-                  <span className="text-muted-foreground">Liability payments made</span>
-                  <span className="font-medium text-destructive">− {QAR(d.cash.liabilityPaymentsPaid)}</span>
+                  <span className="text-muted-foreground">Assets bought</span>
+                  <span className="font-medium text-destructive">− {QAR(Math.abs(d.cash.assetsPaid))}</span>
                 </li>
+                <li className="flex items-center justify-between py-2">
+                  <span className="text-muted-foreground">Reimbursements paid</span>
+                  <span className="font-medium text-destructive">− {QAR(Math.abs(d.cash.reimbursementsPaid))}</span>
+                </li>
+                {d.cash.other !== 0 && (
+                  <li className="flex items-center justify-between py-2">
+                    <span className="text-muted-foreground">Other (opening amounts, capital, till, suppliers)</span>
+                    <span className="font-medium text-foreground">{QAR(d.cash.other)}</span>
+                  </li>
+                )}
               </ul>
               <div>
-                <h3 className="mb-2 section-title text-sm font-semibold text-foreground">Held by / received in</h3>
+                <h3 className="mb-2 section-title text-sm font-semibold text-foreground">Sales money by where it was received</h3>
                 {d.cash.byHeldIn.length === 0 ? (
                   <EmptyState title="No payments recorded yet" />
                 ) : (
@@ -439,7 +450,8 @@ export default function DashboardPage() {
                   </ul>
                 )}
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Liability payments of {QAR(d.cash.liabilityPaymentsPaid)} are deducted from the overall total.
+                  Where customers paid — all of it is part of the one total above, including money a driver or staff
+                  member still holds.
                 </p>
               </div>
             </div>

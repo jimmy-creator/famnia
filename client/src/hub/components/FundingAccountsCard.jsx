@@ -45,8 +45,9 @@ function FundingAccountsForm({ data }) {
         <CardTitle>Funding accounts</CardTitle>
         <p className="text-sm text-muted-foreground">
           The cash account each funding source pays from. Company-paid expenses, assets and reimbursements reduce that
-          account, and are refused when it doesn’t hold enough. “Same name” uses (or creates) an account named after
-          the source.
+          account, and are refused when it doesn’t hold enough. Sales payments are added to the account for where they
+          were received (money a driver or staff member holds counts as Cash in Hand). “Same name” uses (or creates) an
+          account named after the source.
         </p>
       </CardHeader>
       <CardContent className="grid gap-4 sm:grid-cols-2">

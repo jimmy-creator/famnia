@@ -15,6 +15,7 @@ import {
   SALES_PAYMENT_STATUSES, adoptLegacy, clean, computeTotals, customerCode, emailStatusChange, normalizePhone, round2,
   samePhone, syncLegacy, toSalesOrder,
 } from '../hub/sales.js';
+import '../hub/orderCash.js';   // posts each order's received money to its Cash & Bank account on save
 import { getPaymentGateway } from '../services/paymentGateway.js';
 import { SHIPROCKET_SHIP_ENABLED } from '../utils/shipAuth.js';
 import {

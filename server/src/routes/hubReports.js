@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import { Op } from 'sequelize';
 import {
-  CashAccount, CashTransaction, Expense, HubExpenseEntry, HubLiability, HubReimbursement, Order, Product, PurchaseOrder,
+  CashAccount, CashTransaction, Expense, HubExpenseEntry, HubLiability, Order, Product, PurchaseOrder,
   StockMovement, User, Wastage,
 } from '../models/index.js';
 import { protect } from '../middleware/auth.js';
 import { bad, can, need, wrap as wrapAs } from '../hub/http.js';
 import { listSkus, skuKey } from '../hub/catalog.js';
 import { mapItem, toSalesOrder } from '../hub/sales.js';
+import { orderCashHeld } from '../hub/orderCash.js';
 import { loadAppSettings } from '../hub/settings.js';
 import { localDate, rangeEnd, rangeStart } from '../utils/dates.js';
 
@@ -157,8 +158,7 @@ router.get('/dashboard', need('dashboard.view'), wrap(async (req, res) => {
     }
   }
 
-  // Liabilities and the cash position (the design's formula: product money
-  // received, less refunds and returned items, less reimbursements paid).
+  // Liabilities and the cash position.
   let totalLiabilities = null;
   let cash;
   if (profit || can(req, 'liabilities.view')) {
@@ -166,32 +166,41 @@ router.get('/dashboard', need('dashboard.view'), wrap(async (req, res) => {
     totalLiabilities = round2(liabs.filter((l) => l.status !== 'paid').reduce((s, l) => s + Math.max(num(l.amount) - num(l.reimbursed), 0), 0));
   }
   if (profit || can(req, 'liabilities.view')) {
-    const returnedByOrder = new Map();
-    for (const o of orders) {
-      for (const it of o.items) {
-        const returned = Math.min(it.returnedQty, it.quantity);
-        if (it.quantity > 0 && returned > 0) returnedByOrder.set(o.id, (returnedByOrder.get(o.id) || 0) + (it.lineTotal / it.quantity) * returned);
-      }
-    }
+    // Where the sales money was received, on the same per-order rule the ledger books.
     const held = new Map();
-    let productPayments = 0;
-    let refunds = 0;
-    for (const o of confirmed) {
-      const received = Math.max(o.amountReceived, o.paymentStatus === 'Paid' ? o.grandTotal : 0);
-      if (received <= 0) continue;
-      const productReceived = Math.min(received, Math.max(o.grandTotal - o.deliveryCharge, 0));
-      const refund = o.paymentStatus === 'Refunded' ? productReceived : Math.min(returnedByOrder.get(o.id) || 0, productReceived);
-      productPayments += productReceived;
-      refunds += refund;
+    for (const o of orders) {
+      if (o.tillSale) continue;
+      const amount = orderCashHeld(o);
+      if (amount <= 0) continue;
       const label = (o.paymentHeldIn || '').trim() || 'Not recorded';
-      held.set(label, (held.get(label) || 0) + productReceived - refund);
+      held.set(label, (held.get(label) || 0) + amount);
     }
-    const liabilityPaid = num(await HubReimbursement.sum('amount'));
+    // The total is the cash ledger itself (every active account: sales payments
+    // in, refunds, expenses, assets and reimbursements out), so this card, Cash &
+    // Bank and the expense form's "not enough" check always show one number.
+    // The parts read every account, so history booked on accounts since merged
+    // into one (and switched off) still shows as expenses, not as transfers.
+    const accts = await CashAccount.findAll({ attributes: ['id', 'active', 'openingBalance'], raw: true });
+    const activeIds = accts.filter((a) => a.active).map((a) => a.id);
+    const bySource = await CashTransaction.findAll({
+      attributes: ['sourceType', [CashTransaction.sequelize.fn('SUM', CashTransaction.sequelize.col('amount')), 'total']],
+      group: ['sourceType'],
+      raw: true,
+    });
+    const activeSum = activeIds.length ? num(await CashTransaction.sum('amount', { where: { cashAccountId: activeIds } })) : 0;
+    const part = (...types) => round2(bySource.filter((r) => types.includes(r.sourceType)).reduce((s, r) => s + num(r.total), 0));
+    const ledgerTotal = round2(accts.filter((a) => a.active).reduce((s, a) => s + num(a.openingBalance), 0) + activeSum);
+    const salesNet = part('Order');
+    const expensesPaid = part('Expense');
+    const assetsPaid = part('FixedAsset');
+    const reimbursementsPaid = part('HubReimbursement');
     cash = {
-      total: round2(productPayments - refunds - liabilityPaid),
-      productPaymentsReceived: round2(productPayments),
-      refunds: round2(refunds),
-      liabilityPaymentsPaid: round2(liabilityPaid),
+      total: ledgerTotal,
+      salesPaymentsNet: salesNet,
+      expensesPaid,
+      assetsPaid,
+      reimbursementsPaid,
+      other: round2(ledgerTotal - salesNet - expensesPaid - assetsPaid - reimbursementsPaid),
       byHeldIn: [...held.entries()].map(([label, value]) => ({ label, value: round2(value) })).sort((a, b) => b.value - a.value),
     };
   }
