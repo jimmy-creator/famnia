@@ -82,6 +82,12 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
   );
   const [a4ShiftXMm, setA4ShiftXMm] = useState(inRange(saved?.a4ShiftXMm, -3, 3) ? Number(saved.a4ShiftXMm) : 0);
   const [a4ShiftYMm, setA4ShiftYMm] = useState(inRange(saved?.a4ShiftYMm, -3, 3) ? Number(saved.a4ShiftYMm) : 0);
+  const [a4PitchXMm, setA4PitchXMm] = useState(
+    inRange(saved?.a4PitchXMm, 39, 42) ? Number(saved.a4PitchXMm) : A4_LABEL_SHEET.pitchXMm,
+  );
+  const [a4PitchYMm, setA4PitchYMm] = useState(
+    inRange(saved?.a4PitchYMm, 20.5, 22) ? Number(saved.a4PitchYMm) : A4_LABEL_SHEET.pitchYMm,
+  );
   const [sizeFilter, setSizeFilter] = useState('');
   const [colorFilter, setColorFilter] = useState('');
   const [batch, setBatch] = useState('__all__');
@@ -118,13 +124,13 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
         JSON.stringify({
           format, showPrice, customWidthMm, customHeightMm,
           thermalSmallWidthMm, thermalSmallHeightMm, thermalSmallShiftXMm, thermalSmallShiftYMm,
-          a4ShiftXMm, a4ShiftYMm, shopSizeId, shopLayout, shopShow,
+          a4ShiftXMm, a4ShiftYMm, a4PitchXMm, a4PitchYMm, shopSizeId, shopLayout, shopShow,
         }),
       );
     } catch {
       /* storage unavailable — settings last for this session only */
     }
-  }, [format, showPrice, customWidthMm, customHeightMm, thermalSmallWidthMm, thermalSmallHeightMm, thermalSmallShiftXMm, thermalSmallShiftYMm, a4ShiftXMm, a4ShiftYMm, shopSizeId, shopLayout, shopShow]);
+  }, [format, showPrice, customWidthMm, customHeightMm, thermalSmallWidthMm, thermalSmallHeightMm, thermalSmallShiftXMm, thermalSmallShiftYMm, a4ShiftXMm, a4ShiftYMm, a4PitchXMm, a4PitchYMm, shopSizeId, shopLayout, shopShow]);
 
   const batchNumbers = useMemo(() => batchIndex.data?.numbers ?? {}, [batchIndex.data]);
   const printable = useMemo(() => products.filter((product) => product.isActive && product.productCode), [products]);
@@ -211,7 +217,7 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
     format === 'thermal-4x6' ? FOUR_BY_SIX_LABEL : format === 'a4' || format === 'custom' ? customSize : thermalSmallSize;
   const grid = sheetGrid(labelSize, DEFAULT_SHEET);
   const a4Label = format === 'a4-label';
-  const a4Shift = { xMm: a4ShiftXMm, yMm: a4ShiftYMm };
+  const a4Shift = { xMm: a4ShiftXMm, yMm: a4ShiftYMm, pitchXMm: a4PitchXMm, pitchYMm: a4PitchYMm };
   const pageCount =
     format === 'a4'
       ? Math.max(1, Math.ceil(stickers.length / grid.perPage))
@@ -222,8 +228,10 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
   // First sheet as it will print; rebuilt only when its labels or the shift change.
   const firstSheetKey = a4Label ? JSON.stringify(stickers.slice(0, A4_LABEL_SHEET.perPage)) : '';
   const a4PreviewHtml = useMemo(
-    () => (firstSheetKey ? a4LabelSheetHtml(JSON.parse(firstSheetKey), { xMm: a4ShiftXMm, yMm: a4ShiftYMm }, true) : ''),
-    [firstSheetKey, a4ShiftXMm, a4ShiftYMm],
+    () => (firstSheetKey
+      ? a4LabelSheetHtml(JSON.parse(firstSheetKey), { xMm: a4ShiftXMm, yMm: a4ShiftYMm, pitchXMm: a4PitchXMm, pitchYMm: a4PitchYMm }, true)
+      : ''),
+    [firstSheetKey, a4ShiftXMm, a4ShiftYMm, a4PitchXMm, a4PitchYMm],
   );
   const previewScale = Math.min(360 / labelSize.widthMm, 400 / labelSize.heightMm);
   const previewWidth = format === 'thermal-4x6' ? 'min(100%, 267px)' : `${labelSize.widthMm * previewScale}px`;
@@ -635,9 +643,40 @@ export function BarcodeLabelsDialog({ open, onClose, products }) {
                     {numberInput(a4ShiftYMm, setA4ShiftYMm, -3, 3, 0.25, 0)}
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Column spacing (mm)
+                    </Label>
+                    {numberInput(a4PitchXMm, setA4PitchXMm, 39, 42, 0.05, A4_LABEL_SHEET.pitchXMm)}
+                  </div>
+                  <div>
+                    <Label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">
+                      Row spacing (mm)
+                    </Label>
+                    {numberInput(a4PitchYMm, setA4PitchYMm, 20.5, 22, 0.05, A4_LABEL_SHEET.pitchYMm)}
+                  </div>
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Leave at 0 unless a test print on plain paper sits off the label outlines — then nudge the whole sheet.
+                  Test on plain paper held over a label sheet. Everything off the same way → shift the whole sheet. Middle
+                  column fits but the outer ones drift → change the column spacing: outer labels too far out → lower it,
+                  too far in → raise it (row spacing works the same for top and bottom rows). Spacing from one label’s left
+                  edge to the next is {A4_LABEL_SHEET.pitchXMm} mm across and {A4_LABEL_SHEET.pitchYMm} mm down on a
+                  standard sheet.
                 </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setA4ShiftXMm(0);
+                    setA4ShiftYMm(0);
+                    setA4PitchXMm(A4_LABEL_SHEET.pitchXMm);
+                    setA4PitchYMm(A4_LABEL_SHEET.pitchYMm);
+                  }}
+                >
+                  Reset to standard sheet
+                </Button>
               </div>
             )}
             {(format === 'custom' || format === 'a4') && (

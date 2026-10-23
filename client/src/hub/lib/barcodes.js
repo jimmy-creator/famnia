@@ -19,7 +19,20 @@ export const DEFAULT_SHEET = {
  * Side margin (210 − 5 × 38.1 − 4 × 2.5) / 2 = 4.75 mm; top margin (297 − 13 × 21.2) / 2 = 10.7 mm.
  */
 export const A4_LABEL = { widthMm: 38.1, heightMm: 21.2 };
-export const A4_LABEL_SHEET = { columns: 5, rows: 13, perPage: 65, leftMm: 4.75, topMm: 10.7, gapXMm: 2.5 };
+export const A4_LABEL_SHEET = { columns: 5, rows: 13, perPage: 65, pitchXMm: 40.6, pitchYMm: 21.2 };
+
+/**
+ * Where the grid starts for a given label pitch, keeping it centred on the page like
+ * the sheet itself — so a pitch change for a printer that scales slightly moves the
+ * outer columns / rows and leaves the middle one where it was.
+ */
+export function a4SheetOrigin(pitchXMm = A4_LABEL_SHEET.pitchXMm, pitchYMm = A4_LABEL_SHEET.pitchYMm) {
+  const { columns, rows } = A4_LABEL_SHEET;
+  return {
+    leftMm: (210 - (pitchXMm * (columns - 1) + A4_LABEL.widthMm)) / 2,
+    topMm: (297 - (pitchYMm * (rows - 1) + A4_LABEL.heightMm)) / 2,
+  };
+}
 
 /** Renders a Code 128 SVG. Width 1 is at least 0.25 mm at printed label scale. */
 export function barcodeSvg(value, size, bars = {}) {
@@ -128,10 +141,14 @@ function a4LabelHtml(item, svgFor) {
 
 /**
  * One physical A4 sheet holding up to 65 labels, filled row by row from the top left.
- * `shift` nudges the whole grid for printers that feed slightly off; `blanks` pads the
- * grid with empty cells (used by the on-screen preview).
+ * `shift` nudges the whole grid for printers that feed slightly off, and its optional
+ * `pitchXMm` / `pitchYMm` set the column / row spacing for printers that print slightly
+ * larger or smaller; `blanks` pads the grid with empty cells (used by the on-screen preview).
  */
 export function a4LabelSheetHtml(items, shift = { xMm: 0, yMm: 0 }, blanks = false) {
+  const pitchX = shift.pitchXMm || A4_LABEL_SHEET.pitchXMm;
+  const pitchY = shift.pitchYMm || A4_LABEL_SHEET.pitchYMm;
+  const origin = a4SheetOrigin(pitchX, pitchY);
   const svgs = new Map();
   const svgFor = (code) => {
     if (!svgs.has(code)) svgs.set(code, barcodeSvg(code, A4_LABEL, { height: 30, width: 2 }));
@@ -139,8 +156,9 @@ export function a4LabelSheetHtml(items, shift = { xMm: 0, yMm: 0 }, blanks = fal
   };
   const cells = items.map((item) => a4LabelHtml(item, svgFor));
   if (blanks) while (cells.length < A4_LABEL_SHEET.perPage) cells.push('<div class="a4l"></div>');
-  const padding = `${A4_LABEL_SHEET.topMm + shift.yMm}mm 0 0 ${A4_LABEL_SHEET.leftMm + shift.xMm}mm`;
-  return `<div class="a4l-sheet" style="padding:${padding}"><div class="a4l-grid">${cells.join('')}</div></div>`;
+  const padding = `${origin.topMm + shift.yMm}mm 0 0 ${origin.leftMm + shift.xMm}mm`;
+  const grid = `grid-template-columns:repeat(${A4_LABEL_SHEET.columns}, ${pitchX}mm);grid-auto-rows:${pitchY}mm`;
+  return `<div class="a4l-sheet" style="padding:${padding}"><div class="a4l-grid" style="${grid}">${cells.join('')}</div></div>`;
 }
 
 export const A4_LABEL_CSS = `
@@ -152,13 +170,8 @@ export const A4_LABEL_CSS = `
     overflow: hidden;
     background: #fff;
   }
-  .a4l-grid {
-    display: grid;
-    grid-template-columns: repeat(${A4_LABEL_SHEET.columns}, ${A4_LABEL.widthMm}mm);
-    grid-auto-rows: ${A4_LABEL.heightMm}mm;
-    column-gap: ${A4_LABEL_SHEET.gapXMm}mm;
-    row-gap: 0;
-  }
+  /* Column / row tracks are the label pitch, set inline per sheet; each label sits at its track's start. */
+  .a4l-grid { display: grid; gap: 0; }
   .a4l {
     display: flex;
     flex-direction: column;
