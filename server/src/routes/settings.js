@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Setting, Counter } from '../models/index.js';
 import { protect, admin, requirePermission } from '../middleware/auth.js';
-import { isExpressEnabled } from '../utils/shipping.js';
+import { getShippingRates, isExpressEnabled } from '../utils/shipping.js';
 import { cachedCompanyProfile, companyProfile } from '../hub/settings.js';
 
 const router = Router();
@@ -199,6 +199,25 @@ router.put('/hero-seal', protect, admin, async (req, res) => {
 // delivery until an admin enables it. Shape: { enabled: boolean }
 router.get('/shipping-express', protect, admin, async (req, res) => {
   res.json({ enabled: await isExpressEnabled() });
+});
+
+// Free-delivery threshold and standard rate (public — the storefront's
+// announcement, policies and free-delivery nudge all show them).
+router.get('/shipping', async (req, res) => {
+  res.json(await getShippingRates());
+});
+
+router.put('/shipping', protect, admin, async (req, res) => {
+  try {
+    const freeAbove = Math.round(parseFloat(req.body.freeAbove) * 100) / 100;
+    if (!Number.isFinite(freeAbove) || freeAbove < 0) {
+      return res.status(400).json({ message: 'Enter the free delivery amount (0 or more).' });
+    }
+    await Setting.upsert({ key: 'shipping-free-above', value: String(freeAbove) });
+    res.json(await getShippingRates());
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 });
 
 router.put('/shipping-express', protect, admin, async (req, res) => {

@@ -45,6 +45,7 @@ import {
 } from '@/hub/lib/apiStore';
 import { QAR } from '@/hub/lib/format';
 import { useHubTitle } from '@/hub/lib/useHubTitle';
+import { forgetShippingRates } from '@/lib/shippingRates';
 import { STORE_TZ } from '@/lib/storeTime';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/hub/ui/badge';
@@ -1301,6 +1302,11 @@ function ThemeTab() {
         )}
       />
       <SettingLoader
+        name="shipping"
+        title="Free delivery"
+        render={(data) => <FreeDeliveryEditor initial={data} />}
+      />
+      <SettingLoader
         name="shipping-express"
         title="Delivery"
         render={(data) => <ExpressDeliveryEditor initial={data?.enabled === true} />}
@@ -1614,13 +1620,58 @@ function HeroSealEditor({ initial }) {
   );
 }
 
+function FreeDeliveryEditor({ initial }) {
+  const [value, setValue] = useState(String(initial?.freeAbove ?? ''));
+  const [dirty, setDirty] = useState(false);
+  const save = useSaveSetting('shipping', (body) => ({ ...initial, freeAbove: body.freeAbove }));
+  const amount = Number(value);
+  const valid = value.trim() !== '' && Number.isFinite(amount) && amount >= 0;
+  return (
+    <Section
+      title="Free delivery"
+      description={`Orders of this amount and above get free standard delivery; below it, delivery is QAR ${initial?.flatRate ?? 10}. The checkout, the store's announcement, the shipping policy and the "add more for free delivery" nudge all use this figure. 0 makes delivery always free.`}
+    >
+      <Field label="Free delivery from (QAR)">
+        <Input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step={1}
+          value={value}
+          className="max-w-40"
+          onChange={(e) => {
+            setValue(e.target.value);
+            setDirty(true);
+          }}
+        />
+      </Field>
+      <SaveBar
+        dirty={dirty && valid}
+        saving={save.isPending}
+        onSave={() =>
+          save.mutate(
+            { freeAbove: amount },
+            {
+              onSuccess: () => {
+                setDirty(false);
+                forgetShippingRates();
+                toast.success(amount > 0 ? `Free delivery from QAR ${amount}` : 'Delivery is now always free');
+              },
+            },
+          )
+        }
+      />
+    </Section>
+  );
+}
+
 function ExpressDeliveryEditor({ initial }) {
   const [enabled, setEnabled] = useState(initial);
   const save = useSaveSetting('shipping-express', (body) => body);
   return (
     <Section
       title="Delivery"
-      description="Standard delivery is QAR 10, free on orders of QAR 100 and above. Express delivery is an extra option at checkout."
+      description="Express delivery is an extra, paid option at checkout. Standard delivery and the free-delivery amount are set above."
     >
       <label className="flex items-center gap-3 text-sm">
         <Switch

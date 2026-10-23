@@ -1,9 +1,17 @@
 import { useTranslation } from 'react-i18next';
 import StaticPage from './StaticPage';
 import { telHref, useCompany } from '@/lib/company';
+import { amountText, useShippingRates } from '@/lib/shippingRates';
+
+/** The live free-delivery threshold and standard rate as text ("135", "10"). */
+function useRateText() {
+  const r = useShippingRates();
+  return { free: r ? amountText(r.freeAbove) : '…', flat: r ? amountText(r.flatRate) : '…' };
+}
 
 function EnglishBody() {
   const c = useCompany();
+  const { free, flat } = useRateText();
   return (
     <>
       <p className="s2-static-date">Last updated: October 2026</p>
@@ -40,8 +48,8 @@ function EnglishBody() {
       <section className="s2-static-section">
         <h2>3. Shipping Charges</h2>
         <ul>
-          <li><strong>Free home delivery</strong> on orders of QAR 100 and above.</li>
-          <li>Standard delivery is <strong>QAR 10</strong> for orders below QAR 100.</li>
+          <li><strong>Free home delivery</strong> on orders of QAR {free} and above.</li>
+          <li>Standard delivery is <strong>QAR {flat}</strong> for orders below QAR {free}.</li>
           <li><strong>Pickup is free</strong> — choose Pickup at checkout and we'll WhatsApp you when your order is ready to collect.</li>
           <li>Cash on Delivery may carry a small handling fee.</li>
         </ul>
@@ -89,6 +97,7 @@ function EnglishBody() {
 
 function ArabicBody() {
   const c = useCompany();
+  const { free, flat } = useRateText();
   return (
     <>
       <p className="s2-static-date">آخر تحديث: أكتوبر 2026</p>
@@ -125,8 +134,8 @@ function ArabicBody() {
       <section className="s2-static-section">
         <h2>3. رسوم التوصيل</h2>
         <ul>
-          <li><strong>توصيل مجاني</strong> للطلبات بقيمة 100 ريال قطري فأكثر.</li>
-          <li>رسوم التوصيل العادي <strong>10 ريالات قطرية</strong> للطلبات التي تقلّ عن 100 ريال قطري.</li>
+          <li><strong>توصيل مجاني</strong> للطلبات بقيمة {free} ريال قطري فأكثر.</li>
+          <li>رسوم التوصيل العادي <strong>{flat} ريالات قطرية</strong> للطلبات التي تقلّ عن {free} ريال قطري.</li>
           <li><strong>الاستلام مجاني</strong> — اختر «الاستلام» عند إتمام الطلب وسنراسلك عبر واتساب عندما يكون طلبك جاهزًا للاستلام.</li>
           <li>قد تخضع الدفع عند الاستلام لرسوم إضافية بسيطة.</li>
         </ul>
@@ -175,12 +184,13 @@ function ArabicBody() {
 export default function ShippingPolicy() {
   const { i18n } = useTranslation();
   const isAr = i18n.language === 'ar';
+  const { free, flat } = useRateText();
   return (
     <StaticPage
       title="Shipping Policy"
       titleAr="سياسة الشحن"
-      description="FEMNIA delivery across Qatar. Free on orders of QAR 100 and above (QAR 10 below), fast delivery to most areas."
-      descriptionAr="توصيل FEMNIA في جميع أنحاء قطر. توصيل مجاني للطلبات بقيمة 100 ريال فأكثر (10 ريالات لما دون ذلك)، وتوصيل سريع لمعظم المناطق."
+      description={`FEMNIA delivery across Qatar. Free on orders of QAR ${free} and above (QAR ${flat} below), fast delivery to most areas.`}
+      descriptionAr={`توصيل FEMNIA في جميع أنحاء قطر. توصيل مجاني للطلبات بقيمة ${free} ريال فأكثر (${flat} ريالات لما دون ذلك)، وتوصيل سريع لمعظم المناطق.`}
     >
       {isAr ? <ArabicBody /> : <EnglishBody />}
     </StaticPage>

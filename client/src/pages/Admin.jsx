@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { HiPlus, HiPencil, HiTrash, HiPhotograph, HiX, HiEye, HiEyeOff, HiLogout } from 'react-icons/hi';
 import { useTheme } from '../context/ThemeContext';
 import { CURRENCY } from '../utils/currency';
+import { forgetShippingRates } from '../lib/shippingRates';
 import ProductsManager from '../components/admin/ProductsManager';
 import CategoriesManager from '../components/admin/CategoriesManager';
 import { Menu, LogOut, Plus, Pencil, Trash2, X, Eye, Search, Image as ImageIcon, Star, Check, Boxes, Store } from 'lucide-react';
@@ -391,6 +392,56 @@ function B2BBankDetailsEditor() {
       <button type="button" onClick={save} disabled={saving} className="btn btn-primary" style={{ marginTop: '0.75rem' }}>
         {saving ? 'Saving…' : 'Save bank details'}
       </button>
+    </div>
+  );
+}
+
+function FreeDeliveryEditor() {
+  const [value, setValue] = useState('');
+  const [flatRate, setFlatRate] = useState(null);
+
+  useEffect(() => {
+    api.get('/settings/shipping')
+      .then((res) => { setValue(String(res.data?.freeAbove ?? '')); setFlatRate(res.data?.flatRate ?? null); })
+      .catch(() => {});
+  }, []);
+
+  const save = async () => {
+    const amount = Number(value);
+    if (value.trim() === '' || !Number.isFinite(amount) || amount < 0) {
+      toast.error('Enter the free delivery amount (0 or more)');
+      return;
+    }
+    try {
+      await api.put('/settings/shipping', { freeAbove: amount });
+      forgetShippingRates();
+      toast.success(amount > 0 ? `Free delivery from QAR ${amount}` : 'Delivery is now always free');
+    } catch {
+      toast.error('Failed to save free delivery amount');
+    }
+  };
+
+  return (
+    <div style={{ marginTop: '3rem' }}>
+      <h3 style={{ fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: '1rem' }}>
+        Free Delivery
+      </h3>
+      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
+        Orders of this amount and above get free standard delivery{flatRate != null ? `; below it, delivery is QAR ${flatRate}` : ''}. Used by checkout, the announcement, the shipping policy and the free-delivery nudge. 0 makes delivery always free.
+      </p>
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <span style={{ fontSize: '0.88rem' }}>QAR</span>
+        <input
+          type="number"
+          min="0"
+          step="1"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } }}
+          style={{ width: '8rem', padding: '0.6rem 0.85rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: '0.88rem', background: 'var(--bg-warm)' }}
+        />
+        <button type="button" onClick={save} className="btn btn-secondary">Save</button>
+      </div>
     </div>
   );
 }
@@ -2233,6 +2284,9 @@ export default function Admin({ embedded = false, legacy = null, screen = null }
 
             {/* Category Cards — large coloured tiles on the home page */}
             <CategoryCardsEditor />
+
+            {/* Free delivery threshold — what checkout charges and the storefront quotes */}
+            <FreeDeliveryEditor />
 
             {/* Announcement bar — rotating promo strings shown above the navbar */}
             <AnnouncementEditor />

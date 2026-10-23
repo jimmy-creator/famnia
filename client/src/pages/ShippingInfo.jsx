@@ -2,6 +2,7 @@ import { Truck, Zap, Package, MapPin, Clock, HelpCircle } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import SEO from '../components/SEO';
 import { CURRENCY } from '../utils/currency';
+import { amountText, useShippingRates } from '../lib/shippingRates';
 import { cn } from '@/lib/utils';
 
 const FAQS = [
@@ -22,9 +23,11 @@ const faqSchema = {
 };
 
 export default function ShippingInfo() {
+  const rates = useShippingRates();
+  const free = rates ? amountText(rates.freeAbove) : '…';
   return (
     <div className="mx-auto max-w-3xl px-4 py-12 lg:px-8">
-      <SEO title="Shipping Information" description={`Free shipping on orders over ${CURRENCY}500. Standard and express delivery across Qatar.`} />
+      <SEO title="Shipping Information" description={`Free shipping on orders of ${CURRENCY}${free} and above. Standard and express delivery across Qatar.`} />
       <Helmet>
         <script type="application/ld+json">{JSON.stringify(faqSchema)}</script>
       </Helmet>
@@ -36,9 +39,9 @@ export default function ShippingInfo() {
 
       <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {[
-          { Icon: Truck, title: 'Standard Shipping', price: `${CURRENCY}10`, body: 'Delivered in 1-2 business days. Available for all orders across Qatar.' },
+          { Icon: Truck, title: 'Standard Shipping', price: `${CURRENCY}${rates ? amountText(rates.flatRate) : '…'}`, body: 'Delivered in 1-2 business days. Available for all orders across Qatar.' },
           { Icon: Zap, title: 'Express Shipping', price: `${CURRENCY}99`, body: 'Delivered in 1-2 business days. Get your order faster when you need it.' },
-          { Icon: Package, title: 'Free Shipping', price: `${CURRENCY}0`, body: `Free delivery on all orders of ${CURRENCY}100 and above. No code needed!`, highlight: true },
+          { Icon: Package, title: 'Free Shipping', price: `${CURRENCY}0`, body: `Free delivery on all orders of ${CURRENCY}${free} and above. No code needed!`, highlight: true },
         ].map(({ Icon, title, price, body, highlight }) => (
           <div key={title} className={cn('rounded-lg border p-5', highlight ? 'border-primary bg-primary/5' : 'border-border bg-card')}>
             <Icon className="size-6 text-primary" />

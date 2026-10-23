@@ -315,7 +315,7 @@
     "addMorePost": "more for free shipping"
   },
   "nav": {
-    "announcement": "Free delivery on orders of QAR 100 and above",
+    "announcement": "Free delivery on orders of QAR {{amount}} and above",
     "shop": "Shop",
     "bottomNav": "Primary"
   },

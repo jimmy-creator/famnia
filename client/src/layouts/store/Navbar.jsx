@@ -14,6 +14,7 @@ import { FemniaMonogram } from './Logo';
 import BottomNav from './BottomNav';
 import { CurrencySymbol, formatPrice } from '../../utils/currency';
 import { localizedName } from '../../utils/i18nHelpers';
+import { amountText, useShippingRates } from '../../lib/shippingRates';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -49,6 +50,7 @@ function CountBadge({ count }) {
 
 export default function Navbar() {
   const { t } = useTranslation();
+  const shippingRates = useShippingRates();
   const { user } = useAuth();
   const { cartCount } = useCart();
   const { wishlistCount } = useWishlist();
@@ -348,11 +350,13 @@ export default function Navbar() {
           <Link to="/contact" className={bandLinkCls}>{t('common.contact')}</Link>
         </nav>
 
-        <div className="hidden shrink-0 items-center lg:flex">
-          <span className="whitespace-nowrap rounded-full bg-[color:var(--bg-warm)] px-4 py-1.5 text-[11px] font-semibold text-[color:var(--copper)]">
-            {t('nav.announcement')}
-          </span>
-        </div>
+        {shippingRates?.freeAbove > 0 && (
+          <div className="hidden shrink-0 items-center lg:flex">
+            <span className="whitespace-nowrap rounded-full bg-[color:var(--bg-warm)] px-4 py-1.5 text-[11px] font-semibold text-[color:var(--copper)]">
+              {t('nav.announcement', { amount: amountText(shippingRates.freeAbove) })}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

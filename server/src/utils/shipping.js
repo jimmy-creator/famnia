@@ -15,9 +15,23 @@ export async function isExpressEnabled() {
   }
 }
 
+// The free-delivery threshold is edited in the hub (Online Store → Delivery) and
+// the classic admin (Theme tab); SHIPPING_FREE_ABOVE is only the fallback until
+// someone saves it. Every storefront mention of it reads /api/settings/shipping.
+export async function getShippingRates() {
+  let freeAbove = NaN;
+  try {
+    const row = await Setting.findByPk('shipping-free-above');
+    if (row?.value != null && row.value !== '') freeAbove = parseFloat(row.value);
+  } catch {
+    // fall back to the env default below
+  }
+  if (!Number.isFinite(freeAbove) || freeAbove < 0) freeAbove = parseFloat(process.env.SHIPPING_FREE_ABOVE || '135');
+  return { freeAbove, flatRate: parseFloat(process.env.SHIPPING_FLAT_RATE || '10') };
+}
+
 export async function calculateShipping(subtotal, itemCount, shippingState) {
-  const freeThreshold = parseFloat(process.env.SHIPPING_FREE_ABOVE || '100');
-  const flatRate = parseFloat(process.env.SHIPPING_FLAT_RATE || '10');
+  const { freeAbove: freeThreshold, flatRate } = await getShippingRates();
   const perItemRate = parseFloat(process.env.SHIPPING_PER_ITEM || '0');
   const expressRate = parseFloat(process.env.SHIPPING_EXPRESS_RATE || '99');
   const express = (await isExpressEnabled())

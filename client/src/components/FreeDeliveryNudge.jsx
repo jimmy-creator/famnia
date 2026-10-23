@@ -8,14 +8,7 @@ import { localizedName } from '../utils/i18nHelpers';
 import { imageOf } from '../lib/productImages';
 import { cn } from '@/lib/utils';
 
-// The threshold is the server's (SHIPPING_FREE_ABOVE), read once per page load.
-let thresholdPromise = null;
-const loadThreshold = () => {
-  thresholdPromise ??= api.post('/payment/calculate-shipping', { subtotal: 0, itemCount: 1 })
-    .then((r) => parseFloat(r.data?.freeThreshold) || 0)
-    .catch(() => { thresholdPromise = null; return 0; });
-  return thresholdPromise;
-};
+import { useShippingRates } from '../lib/shippingRates';
 
 /**
  * "Add QAR X more for free delivery" with a progress bar and a few in-stock
@@ -23,11 +16,9 @@ const loadThreshold = () => {
  * once the subtotal reaches the threshold.
  */
 export default function FreeDeliveryNudge({ subtotal, excludeIds = [], className }) {
-  const [threshold, setThreshold] = useState(0);
+  const threshold = useShippingRates()?.freeAbove || 0;
   const [products, setProducts] = useState([]);
   const gap = Math.max(0, Math.round((threshold - subtotal) * 100) / 100);
-
-  useEffect(() => { loadThreshold().then(setThreshold); }, []);
 
   useEffect(() => {
     if (!gap) return;
