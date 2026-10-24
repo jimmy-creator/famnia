@@ -172,8 +172,10 @@ export function toSalesOrder(order, { customerPrefix = 'CUS' } = {}) {
     : round2(Math.max(itemsBeforeDiscount + deliveryCharge - grandTotal, 0));
   const status = hubStatusOf(order);
   const paymentStatus = hubPaymentStatusOf(order);
+  // A Paid order counts as fully received even if the amount was left blank
+  // or short — the same rule orderCashHeld() books into Cash & Bank.
   const amountReceived = hubWritten || order.hubPaymentStatus
-    ? num(order.amountReceived)
+    ? Math.max(num(order.amountReceived), paymentStatus === 'Paid' ? grandTotal : 0)
     : (order.paymentStatus === 'paid' ? grandTotal : 0);
   const addressText = order.address
     ?? ([ship.line1, ship.line2, ship.address].filter(Boolean).join(', ') || null);
